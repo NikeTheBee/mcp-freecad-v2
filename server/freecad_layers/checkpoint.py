@@ -63,19 +63,19 @@ def save(name: str, note: str = "", doc=None) -> str:
     except Exception:  # noqa: BLE001
         fc_version = "unknown"
 
-    s = _state.load()
-    s["checkpoints"] = [c for c in s["checkpoints"] if c.get("name") != name]
-    s["checkpoints"].append({
-        "name": name,
-        "file": fname,
-        "at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-        "note": note,
-        "source_doc": doc.Name,
-        # .FCStd is version-tied: files saved by a newer FreeCAD may lose objects
-        # when reopened in an older one (see docs/COMPATIBILITY.md). Record it.
-        "freecad_version": fc_version,
-    })
-    _state.save(s)
+    def record(s):
+        s["checkpoints"] = [c for c in s["checkpoints"] if c.get("name") != name]
+        s["checkpoints"].append({
+            "name": name,
+            "file": fname,
+            "at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "note": note,
+            "source_doc": doc.Name,
+            # .FCStd is version-tied: files saved by a newer FreeCAD may lose
+            # objects when reopened in an older one (docs/COMPATIBILITY.md).
+            "freecad_version": fc_version,
+        })
+    _state.update(record)
     return str(path)
 
 

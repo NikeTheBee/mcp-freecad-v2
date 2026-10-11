@@ -31,6 +31,12 @@ def resolve_freecadcmd() -> str:
 
 FREECADCMD = resolve_freecadcmd()
 
+# (script, success sentinel) — run under the system Python, no FreeCAD needed
+PURE_TESTS = [
+    ("security_scan.py", "SECURITY_SCAN_OK"),
+    ("state_test.py", "STATE_OK"),
+]
+
 # (script, success sentinel) — run under freecadcmd
 # Graft tests need the third-party workbench clones under addons/. Set
 # MCPFC_SKIP_GRAFTS=1 (e.g. in CI with only bundled FreeCAD) to skip them.
@@ -52,6 +58,8 @@ CORE_TESTS = [
     ("drone_aero_test.py", "DRONE_AERO_OK"),
     ("layers_test.py", "LAYERS_TEST_OK"),
     ("verify_test.py", "VERIFY_OK"),
+    ("analysis_test.py", "ANALYSIS_OK"),
+    ("spec_test.py", "SPEC_OK"),
     ("techdraw_test.py", "TECHDRAW_OK"),
     ("kinematics_test.py", "KINEMATICS_OK"),
     ("bom_test.py", "BOM_OK"),
@@ -108,9 +116,10 @@ def _skip(results, name: str, why: str) -> None:
 def main() -> int:
     results = []
 
-    # Security scan (cyber / NF5 / §13) — pure Python, no FreeCAD needed.
-    ok, out = _run([sys.executable, str(HERE / "security_scan.py")])
-    _record(results, "security_scan.py", ok, out, "SECURITY_SCAN_OK")
+    # Pure-Python tests (no FreeCAD needed) — also run in CI.
+    for script, sentinel in PURE_TESTS:
+        ok, out = _run([sys.executable, str(HERE / script)])
+        _record(results, script, ok, out, sentinel)
 
     # Autostart / R10 test — system Python; also boots the headless server so
     # the live phase1/mcp-loop tests below run instead of being skipped.
