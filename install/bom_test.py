@@ -63,6 +63,50 @@ def main() -> int:
         except FileExistsError:
             print("clobber refused without overwrite=True: OK")
 
+    # --- audit B1: structure, not raw objects ---------------------------------
+    d = App.newDocument("BOMStructure")
+    body = d.addObject("PartDesign::Body", "Body")
+    pbox = body.newObject("PartDesign::AdditiveBox", "Box")
+    pbox.Length, pbox.Width, pbox.Height = 20, 20, 5
+    hole = body.newObject("PartDesign::SubtractiveCylinder", "Hole")
+    hole.Radius, hole.Height = 2, 10
+    st = d.addObject("Part::Box", "Stock")
+    tl = d.addObject("Part::Cylinder", "Cutter")
+    tl.Radius = 2
+    cut = d.addObject("Part::Cut", "Plate")
+    cut.Base, cut.Tool = st, tl
+    # an expression reference must NOT make the referenced part disappear
+    pin = d.addObject("Part::Cylinder", "Pin")
+    pin.setExpression("Radius", "Cutter.Radius")
+    pin.Placement.Base = App.Vector(100, 0, 0)
+    d.recompute()
+    rows = bom.collect(d)
+    print([(r["designation"], r["qty"]) for r in rows])
+    names = sorted(r["designation"] for r in rows)
+    assert names == ["Body", "Pin", "Plate"], rows   # not Box/Hole/Stock/Cutter
+    print("Body features and boolean inputs are not parts: OK")
+
+    # links are instances of their target; a box and a cylinder never merge
+    d2 = App.newDocument("BOMLinks")
+    screw = d2.addObject("Part::Cylinder", "Screw")
+    screw.Radius, screw.Height = 1.5, 10
+    for i in range(3):
+        lk = d2.addObject("App::Link", f"ScrewLink{i}")
+        lk.LinkedObject = screw
+    a = d2.addObject("Part::Box", "Bracket")
+    a.Length, a.Width, a.Height = 10, 20, 30
+    c = d2.addObject("Part::Cylinder", "Bracket001")
+    c.Radius, c.Height = (6000 / (3.141592653589793 * 30)) ** 0.5, 30
+    d2.recompute()
+    rows = bom.collect(d2)
+    print([(r["designation"], r["qty"]) for r in rows])
+    by = {}
+    for r in rows:
+        by.setdefault(r["designation"], []).append(r["qty"])
+    assert by["Screw"] == [4], rows                    # source + 3 links
+    assert sorted(by["Bracket"]) == [1, 1], rows       # equal volume, different parts
+    print("links counted as instances; equal-volume parts kept apart: OK")
+
     print("BOM_OK")
     return 0
 
