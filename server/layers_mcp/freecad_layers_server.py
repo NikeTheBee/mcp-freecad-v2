@@ -42,7 +42,7 @@ _p = {str(SERVER_DIR)!r}
 if _p not in sys.path:
     sys.path.insert(0, _p)
 import FreeCAD
-from freecad_layers import state, verify, checkpoint, recovery, spec, analysis, bom, drawing
+from freecad_layers import state, verify, checkpoint, recovery, spec, analysis, bom, drawing, gate
 """
 
 mcp = MCPServer(
@@ -152,18 +152,10 @@ def require(target: str, kind: str, params: dict, note: str = "") -> str:
 @_safe
 def check(target: str, expect_solid: bool = True) -> str:
     """Verify an object: geometry verdict (OK/FAIL/UNKNOWN + measures) and the user's
-    requirements on it. Autosaves the document when everything is OK."""
-    return _run("""
-_v = verify.check(_a['target'], expect_solid=_a['expect_solid'])
-_lines = [verify.verdict(_a['target'], expect_solid=_a['expect_solid'])]
-_c = None
-if [s for s in state.load()['specs'] if s['target'] == _a['target']]:
-    _c = spec.check_all(_a['target'])
-    _lines.append(spec.verdict(_a['target']))
-if _v['ok'] and (_c is None or _c['status'] == 'OK'):
-""" + _AUTOSAVE.replace("\n", "\n    ") + """
-_out = "\\n".join(_lines)
-""", target=target, expect_solid=expect_solid)
+    requirements on it. Autosaves the document when everything is OK. For a sketch:
+    constraint health (conflicts, redundancy, DoF) and open wires."""
+    return _run("_out = gate.check_target(_a['target'], _a['expect_solid'])['text']",
+                target=target, expect_solid=expect_solid)
 
 
 @mcp.tool()

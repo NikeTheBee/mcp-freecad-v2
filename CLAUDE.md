@@ -46,6 +46,8 @@ reliability tools — prefer them over `execute_python`).
 - After a validated step: `record_step(...)` (memory + autosave). Before a risky step: `checkpoint save`;
   roll back with `checkpoint restore`. After a FreeCAD crash: `recover`.
 - Holes in a PartDesign Body: `pd_hole`, never the base's `partdesign_operations hole`.
+- One rollback system: `freecad-layers` `checkpoint` — not the base's `view_control checkpoint/rollback_to_checkpoint`.
+- Sketches: `check(sketch)` before Pad/Pocket — the base's `verify_sketch` calls under-constrained sketches "fully constrained".
 - Fabrication outputs: STL only after `printability`/`check` OK; **never G-code** (`skill-cam`).
 - Text-only feedback by default. Screenshots only on request or for a complex part/assembly at a milestone
   when measurements alone can't settle it.

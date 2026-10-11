@@ -85,6 +85,13 @@ async def run(inst: Instance, project: str, out: str) -> None:
             assert "Design contract" in txt and "Recovery" in txt, txt
             txt = await call("check", target="Nope")
             assert txt.startswith("ERROR"), txt
+            inst.call("execute_python_sync", {"code": (
+                "import FreeCAD, Part\n"
+                "s = FreeCAD.ActiveDocument.addObject('Sketcher::SketchObject', 'Open')\n"
+                "s.addGeometry(Part.LineSegment(FreeCAD.Vector(0,0,0), FreeCAD.Vector(5,0,0)))\n"
+                "FreeCAD.ActiveDocument.recompute()\n'ok'")})
+            txt = await call("check", target="Open")
+            assert txt.startswith("FAIL sketch Open") and "open wire" in txt, txt
 
 
 def main() -> int:

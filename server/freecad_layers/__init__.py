@@ -36,16 +36,28 @@ def safe_out_path(path, allowed_exts, overwrite: bool = False) -> Path:
     Returns the resolved Path. Raises ValueError/FileExistsError on refusal.
     Shared by drawing/bom/... so the policy lives in ONE place.
     """
+    raw_name = Path(path).name
+    if ":" in raw_name:   # NTFS alternate data stream ("evil.exe:x.csv")
+        raise ValueError(f"refusing to write {raw_name!r}: ':' is not allowed in a file name")
     p = Path(path).expanduser().resolve()
+    if p.stem.split(".")[0].upper() in _RESERVED:
+        raise ValueError(f"refusing to write {p.name!r}: reserved Windows device name")
     exts = {e.lower() if e.startswith(".") else "." + e.lower()
             for e in allowed_exts}
     if p.suffix.lower() not in exts:
         raise ValueError(f"refusing to write {p.name!r}: extension must be "
                          f"one of {sorted(exts)}")
-    if p.exists() and not overwrite:
-        raise FileExistsError(f"{p} exists; pass overwrite=True to replace it")
     p.parent.mkdir(parents=True, exist_ok=True)
+    if not overwrite:
+        try:   # reserve the name atomically: no race between check and write
+            p.open("x").close()
+        except FileExistsError:
+            raise FileExistsError(f"{p} exists; pass overwrite=True to replace it") from None
     return p
+
+
+_RESERVED = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)),
+             *(f"LPT{i}" for i in range(1, 10))}
 
 
 def safe_under(base: Path, candidate) -> Path:

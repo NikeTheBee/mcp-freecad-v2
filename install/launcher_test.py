@@ -77,6 +77,22 @@ def main() -> int:
         assert r.returncode == 3 and info["error"] == "untrusted", (r.returncode, info)
         assert not any(got), f"data was sent to the squatter: {got}"
         print("4. port squatter refused, nothing sent to it: OK")
+
+        # 5. operation logs past retention are pruned (they contain designs)
+        import os
+        sys.path.insert(0, str(LAUNCHER.parent))
+        logs = inst.home / ".freecad-mcp" / "logs"
+        logs.mkdir(parents=True, exist_ok=True)
+        old, new = logs / "operations_20200101.json", logs / "operations_today.json"
+        old.write_text("{}")
+        new.write_text("{}")
+        os.utime(old, (time.time() - 30 * 86400,) * 2)
+        r = subprocess.run([str(VENV_PY), "-c",
+                            "import mcp_freecad_launch as m; print(m.prune_logs(14))"],
+                           env=inst.env, cwd=str(LAUNCHER.parent),
+                           capture_output=True, text=True)
+        assert r.stdout.strip().endswith("1") and not old.exists() and new.exists(), r
+        print("5. old operation logs pruned, recent kept: OK")
     finally:
         inst.stop()
     print("LAUNCHER_OK")

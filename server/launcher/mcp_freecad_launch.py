@@ -71,6 +71,26 @@ def log(msg: str) -> None:
     print(line, file=sys.stderr, flush=True)   # stderr only: stdout is MCP
 
 
+def prune_logs(days: float | None = None) -> int:
+    """Delete the base's operation logs older than N days (they hold every
+    command and result in clear text). FREECAD_MCP_LOG_RETENTION_DAYS, default
+    14; 0 keeps everything. Returns the number of files removed."""
+    if days is None:
+        days = float(os.environ.get("FREECAD_MCP_LOG_RETENTION_DAYS", "14"))
+    if days <= 0:
+        return 0
+    cutoff = time.time() - days * 86400
+    removed = 0
+    for f in (Path.home() / ".freecad-mcp" / "logs").glob("operations_*.json"):
+        try:
+            if f.stat().st_mtime < cutoff:
+                f.unlink()
+                removed += 1
+        except OSError:
+            pass
+    return removed
+
+
 def find_freecadcmd() -> Path | None:
     cands = [os.environ.get("FREECAD_MCP_FREECAD_BIN"),
              shutil.which("freecadcmd"), shutil.which("FreeCADCmd")]
@@ -238,6 +258,9 @@ def main(argv=None) -> int:
         print(json.dumps({"ok": True, "restarts": sup.restarts}))
         return 0
 
+    n = prune_logs()
+    if n:
+        log(f"pruned {n} operation log file(s) past retention")
     env = dict(os.environ, FREECAD_MCP_FREECAD_BIN=str(freecadcmd),
                FREECAD_MCP_PORT=str(PORT))
     bridge = subprocess.Popen([sys.executable, str(BRIDGE)], env=env, cwd=str(BASE))

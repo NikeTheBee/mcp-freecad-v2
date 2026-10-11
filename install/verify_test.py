@@ -112,6 +112,34 @@ def main() -> int:
     assert asm["status"] == verify.FAIL and len(asm["interferences"]) == 1, asm
     assert abs(asm["interferences"][0]["volume"] - 200) < 1e-6, asm
 
+    # sketches: the base's verify_sketch calls an under-constrained sketch
+    # "fully constrained" (it reads solve()'s 0); ours uses DoF and the
+    # conflicting/redundant lists
+    import Sketcher
+    free = doc.addObject("Sketcher::SketchObject", "FreeLine")
+    free.addGeometry(Part.LineSegment(V(0, 0, 0), V(10, 0, 0)))
+    rect = doc.addObject("Sketcher::SketchObject", "Rect")
+    pts = [V(0, 0, 0), V(20, 0, 0), V(20, 10, 0), V(0, 10, 0)]
+    for i in range(4):
+        rect.addGeometry(Part.LineSegment(pts[i], pts[(i + 1) % 4]))
+    for i in range(4):
+        rect.addConstraint(Sketcher.Constraint("Coincident", i, 2, (i + 1) % 4, 1))
+    bad = doc.addObject("Sketcher::SketchObject", "Conflict")
+    bad.addGeometry(Part.LineSegment(V(0, 0, 0), V(10, 0, 0)))
+    bad.addConstraint(Sketcher.Constraint("DistanceX", 0, 1, 0, 2, 10))
+    bad.addConstraint(Sketcher.Constraint("DistanceX", 0, 1, 0, 2, 12))
+    doc.recompute()
+    r = verify.sketch_check("FreeLine")
+    print(verify.sketch_verdict("FreeLine"))
+    assert r["status"] == verify.FAIL and r["dof"] == 4 and "open wire" in " ".join(r["issues"]), r
+    r = verify.sketch_check("Rect")
+    print(verify.sketch_verdict("Rect"))
+    assert r["status"] == verify.OK and r["dof"] > 0 and r["advisories"], r   # closed, not fully constrained
+    assert verify.sketch_check("Rect", require_fully_constrained=True)["status"] == verify.FAIL
+    r = verify.sketch_check("Conflict", require_closed=False)
+    print(verify.sketch_verdict("Conflict", require_closed=False))
+    assert r["status"] == verify.FAIL and any("conflicting" in i for i in r["issues"]), r
+
     print("VERIFY_OK")
     return 0
 

@@ -99,6 +99,25 @@ for _ in range(7):
 assert len(recovery.list_recovery(doc.Name)) == recovery.KEEP
 print("recovery pruning keeps", recovery.KEEP, "copies: OK")
 
+# --- audit P1: output gate refuses NTFS streams and device names -----------
+from freecad_layers import safe_out_path
+for bad in (os.path.join(_tmp, "evil.exe:x.csv"), os.path.join(_tmp, "CON.csv"),
+            os.path.join(_tmp, "nul.csv")):
+    try:
+        safe_out_path(bad, {".csv"})
+        print(f"FAIL: accepted {bad}")
+        sys.exit(1)
+    except ValueError:
+        pass
+assert not os.path.exists(os.path.join(_tmp, "evil.exe")), "ADS host file created"
+ok_path = safe_out_path(os.path.join(_tmp, "out", "a.csv"), {".csv"})
+try:
+    safe_out_path(ok_path, {".csv"})          # name already reserved -> refused
+    print("FAIL: second reservation accepted"); sys.exit(1)
+except FileExistsError:
+    pass
+print("output gate: streams/device names refused, atomic reservation: OK")
+
 # --- secure-by-design: a tampered state.json must not escape /checkpoints --
 s = state.load()
 s["checkpoints"].append({"name": "evil", "file": "..\\..\\outside.FCStd",

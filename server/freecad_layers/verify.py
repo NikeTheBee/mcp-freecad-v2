@@ -184,6 +184,57 @@ def watertight(obj_or_name, doc=None) -> bool:
     return r["ok"] and r["solids"] >= 1 and r["closed"]
 
 
+def sketch_check(obj_or_name, doc=None, require_closed: bool = True,
+                 require_fully_constrained: bool = False) -> Dict[str, Any]:
+    """Sketch health before a Pad/Pocket: conflicting / redundant / malformed
+    constraints, solver result, degrees of freedom, open wires.
+
+    Uses `DoF` / `FullyConstrained`, NOT `solve()`'s return code: solve()
+    returns 0 for an under-constrained sketch (the base's verify_sketch reads
+    that 0 as "fully constrained" — reported upstream).
+    Returns {status, issues, advisories, dof, wires_closed, wires_open}.
+    """
+    sk = _resolve(obj_or_name, doc)
+    if getattr(sk, "TypeId", "") != "Sketcher::SketchObject":
+        raise ValueError(f"{getattr(sk, 'Name', sk)!r} is not a sketch")
+    issues, advisories = [], []
+    code = sk.solve()
+    if code < 0:
+        issues.append(f"solver failed (code {code})")
+    for label, ids in (("conflicting", sk.ConflictingConstraints),
+                       ("redundant", sk.RedundantConstraints),
+                       ("partially redundant", sk.PartiallyRedundantConstraints),
+                       ("malformed", sk.MalformedConstraints)):
+        if ids:
+            issues.append(f"{label} constraints {list(ids)}")
+    dof = int(getattr(sk, "DoF", -1))
+    if dof > 0:
+        (issues if require_fully_constrained else advisories).append(
+            f"under-constrained: {dof} degree(s) of freedom")
+    wires = sk.Shape.Wires if not sk.Shape.isNull() else []
+    closed = sum(1 for w in wires if w.isClosed())
+    opened = len(wires) - closed
+    if require_closed and opened:
+        issues.append(f"{opened} open wire(s): cannot Pad/Pocket")
+    if require_closed and not closed:
+        issues.append("no closed profile")
+    issues += _state_issues(sk)
+    return {"status": FAIL if issues else OK, "name": sk.Name, "issues": issues,
+            "advisories": advisories, "dof": dof, "wires_closed": closed,
+            "wires_open": opened}
+
+
+def sketch_verdict(obj_or_name, doc=None, **kw) -> str:
+    r = sketch_check(obj_or_name, doc, **kw)
+    line = (f"{r['status']} sketch {r['name']}: DoF={r['dof']} closed_wires={r['wires_closed']} "
+            f"open_wires={r['wires_open']}")
+    if r["issues"]:
+        line += " | " + "; ".join(r["issues"])
+    if r["advisories"]:
+        line += " | note: " + "; ".join(r["advisories"])
+    return line
+
+
 def check_assembly(objects: Iterable, tol: float = 1e-6) -> Dict[str, Any]:
     """Interference between distinct parts of an assembly (by object).
 

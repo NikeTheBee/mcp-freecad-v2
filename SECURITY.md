@@ -70,8 +70,9 @@ The policy lives in ONE place; extend it there, not locally. Tests must exercise
 
 ## Logs
 `~/.freecad-mcp/logs/` holds the launcher log and the base's operation logs, which record the
-code sent to FreeCAD and its results in clear text. Treat that folder as containing your designs;
-delete old files if needed.
+code sent to FreeCAD and its results in clear text. Treat that folder as containing your designs.
+The launcher deletes operation logs older than 14 days at start-up
+(`FREECAD_MCP_LOG_RETENTION_DAYS`, 0 = keep everything).
 
 ## Reporting
 This is a personal/educational project. If you find a security issue, open a GitHub issue on
