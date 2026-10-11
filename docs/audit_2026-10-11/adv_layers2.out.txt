@@ -1,0 +1,175 @@
+RESULT[B1c box vs cylinder, same stem+volume] [('Bracket', 2)]
+RESULT[C2 second restore] B.Length=777.0 (checkpoint on disk has 10)
+CircularHoleBase.WARNING: Hole diameter may be inaccurate due to tessellation on face. Consider selecting hole edge.
+CircularHoleBase.WARNING: Hole diameter may be inaccurate due to tessellation on face. Consider selecting hole edge.
+CircularHoleBase.WARNING: Hole diameter may be inaccurate due to tessellation on face. Consider selecting hole edge.
+CircularHoleBase.WARNING: Hole diameter may be inaccurate due to tessellation on face. Consider selecting hole edge.
+Post Processor: grbl_post postprocessing...
+Done postprocessing.
+RESULT[K1 G-code excerpt] ( G98 ) | (G81 X3.000 Y3.000 Z0.000 R14.000) | (G81 X3.000 Y27.000 Z0.000 R14.000) | (G81 X37.000 Y27.000 Z0.000 R14.000) | (G81 X37.000 Y3.000 Z0.000 R14.000)
+RESULT[K1 tool used] TC: 5mm Endmill dia=5.0 mm -- fillet radius 3mm, no hole exists
+RESULT[D1 unknown direction 'isometric'] Direction=(0.0, -1.0, 0.0) (silently front)
+RESULT[D1 2000mm part on A4 at scale 1] OK P: views=1 dims=0 template=yes
+RESULT[D1 template 'A0_DoesNotExist'] Default_Template_A4_Landscape.svg
+RESULT[D1 template glob metachar '*'] Default_Template_A4_Landscape.svg
+RESULT[A1 aero(1.0, 0, 0.25, 10)] ZeroDivisionError: float division by zero
+RESULT[A1 aero(1.0, 4, 0.0, 10)] ZeroDivisionError: float division by zero
+RESULT[A1 aero(-2.0, 4, 0.25, 10)] TypeError: type complex doesn't define __round__ method
+RESULT[A1 aero(1.0, 4, 0.25, 1000000000.0, 1000000.0)] OK multirotor: T/W=407747196.74 hover=63.3W disk=50.0N/m2 endurance~644692.6min
+RESULT[U1 controllers_yaml('trajectory')] KeyError: 'trajectory'
+ADV2_DONE
+FreeCAD 1.1.1, Libs: 1.1.1R20260414 (Git shallow)
+(C) 2001-2026 FreeCAD contributors
+FreeCAD is free and open-source software licensed under the terms of LGPL2+ license.
+
+Recompute......
+						(50 %)	
+						(100 %)	
+								
+Recompute......
+						(100 %)	
+								
+Importing project files......
+						(100 %)	
+								
+Postprocessing......
+						(100 %)	
+								
+Recompute......
+						(100 %)	
+								
+Postprocessing......
+						(100 %)	
+								
+Recompute......
+						(100 %)	
+								
+Recompute......
+						(50 %)	
+						(100 %)	
+								
+Recompute......
+						(14 %)	
+						(28 %)	
+						(42 %)	
+						(57 %)	
+						(71 %)	
+						(85 %)	
+						(100 %)	
+								
+Importing project files......
+						(9 %)	
+						(18 %)	
+						(27 %)	
+						(36 %)	
+						(45 %)	
+						(54 %)	
+						(63 %)	
+						(72 %)	
+						(81 %)	
+						(90 %)	
+						(100 %)	
+								
+Postprocessing......
+						(100 %)	
+								
+Controller.INFO: Controller.Create: Created toolbit with ID: a3a3d8ae-cb2f-4317-85e8-c28d0188fbd2
+Importing project files......
+						(9 %)	
+						(18 %)	
+						(27 %)	
+						(36 %)	
+						(45 %)	
+						(54 %)	
+						(63 %)	
+						(72 %)	
+						(81 %)	
+						(90 %)	
+						(100 %)	
+								
+Postprocessing......
+						(100 %)	
+								
+Recompute......
+						(8 %)	
+						(16 %)	
+						(25 %)	
+						(33 %)	
+						(41 %)	
+						(50 %)	
+						(58 %)	
+						(66 %)	
+						(75 %)	
+						(83 %)	
+						(91 %)	
+						(100 %)	
+								
+Importing project files......
+						(16 %)	
+						(33 %)	
+						(50 %)	
+						(66 %)	
+						(83 %)	
+						(100 %)	
+								
+Recompute......
+						(4 %)	
+						(8 %)	
+						(13 %)	
+						(17 %)	
+						(21 %)	
+						(26 %)	
+						(30 %)	
+						(34 %)	
+						(39 %)	
+						(43 %)	
+						(47 %)	
+						(52 %)	
+						(56 %)	
+						(60 %)	
+						(65 %)	
+						(69 %)	
+						(73 %)	
+						(78 %)	
+						(82 %)	
+						(86 %)	
+						(91 %)	
+						(95 %)	
+						(100 %)	
+								
+SetupSheet.INFO: SetupSheet has no support for Drill
+Recompute......
+						(4 %)	
+						(8 %)	
+						(12 %)	
+						(16 %)	
+						(20 %)	
+						(25 %)	
+						(29 %)	
+						(33 %)	
+						(37 %)	
+						(41 %)	
+						(45 %)	
+						(50 %)	
+						(54 %)	
+						(58 %)	
+						(62 %)	
+						(66 %)	
+						(70 %)	
+						(75 %)	
+						(79 %)	
+						(83 %)	
+						(87 %)	
+						(91 %)	
+						(95 %)	
+						(100 %)	
+								
+Recompute......
+						(100 %)	
+								
+Recompute......
+						(25 %)	
+						(50 %)	
+						(75 %)	
+						(100 %)	
+								

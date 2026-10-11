@@ -1,0 +1,310 @@
+RESULT[V1 wire verdict] OK Wire: valid=True solids=0 closed=False V=0
+RESULT[V2 bowtie verdict] FAIL Bowtie: valid=False solids=1 closed=True V=2.84e-14 | shape.isValid() is False; degenerate volume (2.84e-14)
+RESULT[V2 raw shape.check(True) RAISED] ValueError: Self-intersecting wire
+Self-intersecting wire
+Unorientable shape
+Unorientable shape
+No error
+No error
+
+RESULT[V2b overlapping compound verdict] OK Overlap: valid=True solids=2 closed=True V=2e+03
+RESULT[V2b raw check RAISED] ValueError: BOP check found the following errors:
+Error in Edge: BOPAlgo SelfIntersect
+Error in Face: BOPAlgo SelfIntersect
+Error in Edge: BOPAlgo SelfIntersect
+E
+StaleBox: Length of box too small
+RESULT[V3 StaleBox state] State=['Touched', 'Invalid'] isValid(obj)=False shapeVol=999.9999999999998
+RESULT[V3 StaleBox verdict] OK StaleBox: valid=True solids=1 closed=True V=1e+03
+StaleBox: Length of box too small
+Pad: Wire is not closed.
+RESULT[V3b Pad(open sketch) state] State=['Touched', 'Invalid']
+RESULT[V3b Pad verdict] FAIL Pad: valid=False solids=0 closed=False V=0 | no shape / null shape
+RESULT[V3b Body verdict] FAIL Body: valid=False solids=0 closed=False V=0 | no shape / null shape
+StaleBox: Length of box too small
+Pad: Wire is not closed.
+StaleBox: Length of box too small
+Pad: Wire is not closed.
+RESULT[C1 collision] restored 'v1/fins' -> CkBox.Length=99.0 (expected 10 if isolated); entries=['v1/fins', 'v1 fins']
+RESULT[C1 open docs after restore] ['Adv', 'v1_fins'] active=v1_fins
+RESULT[C1 restore twice] ok -> v1_fins; docs=['Adv', 'v1_fins']
+RESULT[S1 corrupt state] summary() CRASHES: JSONDecodeError: Expecting value: line 1 column 31 (char 30)
+RESULT[S1b old-schema state] CRASH KeyError: 'updated'
+RESULT[S2 summary size] 9201 chars (~2300 tokens) for 300 features - no truncation
+RESULT[P1 safe_out_path accepted] '<TEMP>' -> <TEMP>
+RESULT[P1 safe_out_path accepted] '<TEMP>' -> <TEMP>
+RESULT[P1 safe_out_path accepted] 'CON.csv' -> <TEMP>
+RESULT[P1 safe_out_path accepted] 'nul.csv' -> <TEMP>
+RESULT[P1 ADS] wrote -> files now: ['checkpoints', 'evil.exe', 'project_state']
+RESULT[B1 BOM (expected 2 real parts: Body, Plate)] 5 lines: [('Box', 1), ('Hole', 1), ('Stock', 1), ('Cutter', 1), ('Plate', 1)]
+RESULT[B1b BOM with 3 App::Link instances (expected qty 4)] [('Screw', 1), ('ScrewLink', 3)]
+RESULT[B1c two DIFFERENT parts same stem+volume] [('Bracket', 2)]
+RESULT[K1 hole candidates on a part with ZERO holes (4 vertical fillets)] ['Face3', 'Face4', 'Face8', 'Face9']
+CircularHoleBase.WARNING: Hole diameter may be inaccurate due to tessellation on face. Consider selecting hole edge.
+CircularHoleBase.WARNING: Hole diameter may be inaccurate due to tessellation on face. Consider selecting hole edge.
+CircularHoleBase.WARNING: Hole diameter may be inaccurate due to tessellation on face. Consider selecting hole edge.
+CircularHoleBase.WARNING: Hole diameter may be inaccurate due to tessellation on face. Consider selecting hole edge.
+RESULT[K1 drill op generated on a hole-less part] {'op': 'Drill', 'holes': 4, 'commands': 16}
+Post Processor: grbl_post postprocessing...
+Done postprocessing.
+RESULT[K1 G-code] 51 lines, drill cycle present=True
+RESULT[K1 G-code drill lines] 
+RESULT[K1b round bar 'holes'] ['Face1']
+ADV_DONE <TEMP>
+FreeCAD 1.1.1, Libs: 1.1.1R20260414 (Git shallow)
+(C) 2001-2026 FreeCAD contributors
+FreeCAD is free and open-source software licensed under the terms of LGPL2+ license.
+
+Recompute......
+						(100 %)	
+								
+Recompute......
+						(50 %)	
+						(100 %)	
+								
+Recompute......
+						(33 %)	
+						(66 %)	
+						(100 %)	
+								
+Recompute......
+						(25 %)	
+						(50 %)	
+						(75 %)	
+						(100 %)	
+								
+Recompute......
+						(25 %)	
+						(50 %)	
+						(75 %)	
+								
+Recompute......
+						(6 %)	
+						(13 %)	
+						(20 %)	
+						(26 %)	
+						(33 %)	
+						(40 %)	
+						(46 %)	
+						(53 %)	
+						(60 %)	
+						(66 %)	
+						(73 %)	
+						(80 %)	
+								
+Recompute......
+						(6 %)	
+						(12 %)	
+						(18 %)	
+						(25 %)	
+						(31 %)	
+						(37 %)	
+						(43 %)	
+						(50 %)	
+						(56 %)	
+						(62 %)	
+						(68 %)	
+						(75 %)	
+						(81 %)	
+								
+Recompute......
+						(6 %)	
+						(12 %)	
+						(18 %)	
+						(25 %)	
+						(31 %)	
+						(37 %)	
+						(43 %)	
+						(50 %)	
+						(56 %)	
+						(62 %)	
+						(68 %)	
+						(75 %)	
+						(81 %)	
+								
+Importing project files......
+						(7 %)	
+						(15 %)	
+						(23 %)	
+						(30 %)	
+						(38 %)	
+						(46 %)	
+						(53 %)	
+						(61 %)	
+						(69 %)	
+						(76 %)	
+						(84 %)	
+						(92 %)	
+						(100 %)	
+								
+Postprocessing......
+						(100 %)	
+								
+Postprocessing......
+						(100 %)	
+								
+Recompute......
+						(9 %)	
+						(18 %)	
+						(27 %)	
+						(36 %)	
+						(45 %)	
+						(54 %)	
+						(63 %)	
+						(72 %)	
+						(81 %)	
+						(90 %)	
+						(100 %)	
+								
+Recompute......
+						(7 %)	
+						(14 %)	
+						(21 %)	
+						(28 %)	
+						(35 %)	
+						(42 %)	
+						(50 %)	
+						(57 %)	
+						(64 %)	
+						(71 %)	
+						(78 %)	
+						(85 %)	
+						(92 %)	
+						(100 %)	
+								
+Recompute......
+						(25 %)	
+						(50 %)	
+						(75 %)	
+						(100 %)	
+								
+Recompute......
+						(50 %)	
+						(100 %)	
+								
+Recompute......
+						(100 %)	
+								
+Recompute......
+						(50 %)	
+						(100 %)	
+								
+Recompute......
+						(14 %)	
+						(28 %)	
+						(42 %)	
+						(57 %)	
+						(71 %)	
+						(85 %)	
+						(100 %)	
+								
+Importing project files......
+						(9 %)	
+						(18 %)	
+						(27 %)	
+						(36 %)	
+						(45 %)	
+						(54 %)	
+						(63 %)	
+						(72 %)	
+						(81 %)	
+						(90 %)	
+						(100 %)	
+								
+Postprocessing......
+						(100 %)	
+								
+Controller.INFO: Controller.Create: Created toolbit with ID: ddef89d0-3f1d-4bf8-940d-4e8c18047507
+Importing project files......
+						(9 %)	
+						(18 %)	
+						(27 %)	
+						(36 %)	
+						(45 %)	
+						(54 %)	
+						(63 %)	
+						(72 %)	
+						(81 %)	
+						(90 %)	
+						(100 %)	
+								
+Postprocessing......
+						(100 %)	
+								
+Recompute......
+						(8 %)	
+						(16 %)	
+						(25 %)	
+						(33 %)	
+						(41 %)	
+						(50 %)	
+						(58 %)	
+						(66 %)	
+						(75 %)	
+						(83 %)	
+						(91 %)	
+						(100 %)	
+								
+Importing project files......
+						(16 %)	
+						(33 %)	
+						(50 %)	
+						(66 %)	
+						(83 %)	
+						(100 %)	
+								
+Recompute......
+						(4 %)	
+						(8 %)	
+						(13 %)	
+						(17 %)	
+						(21 %)	
+						(26 %)	
+						(30 %)	
+						(34 %)	
+						(39 %)	
+						(43 %)	
+						(47 %)	
+						(52 %)	
+						(56 %)	
+						(60 %)	
+						(65 %)	
+						(69 %)	
+						(73 %)	
+						(78 %)	
+						(82 %)	
+						(86 %)	
+						(91 %)	
+						(95 %)	
+						(100 %)	
+								
+SetupSheet.INFO: SetupSheet has no support for Drill
+Recompute......
+						(4 %)	
+						(8 %)	
+						(12 %)	
+						(16 %)	
+						(20 %)	
+						(25 %)	
+						(29 %)	
+						(33 %)	
+						(37 %)	
+						(41 %)	
+						(45 %)	
+						(50 %)	
+						(54 %)	
+						(58 %)	
+						(62 %)	
+						(66 %)	
+						(70 %)	
+						(75 %)	
+						(79 %)	
+						(83 %)	
+						(87 %)	
+						(91 %)	
+						(95 %)	
+						(100 %)	
+								
+Recompute......
+						(100 %)	
+								
