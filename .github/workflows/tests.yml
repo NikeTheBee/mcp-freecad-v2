@@ -1,9 +1,10 @@
 name: tests
 
-# Runs the bundled-FreeCAD test suite against a conda-forge FreeCAD.
-# Graft tests (Rocket/AirPlaneDesign) and the socket/MCP-loop tests are skipped
-# here — they need third-party clones / a live headless server. They run locally
-# via `python install/run_all_tests.py` (see install/AGENT-INSTALL.md).
+# Runs the bundled-FreeCAD test suite against a conda-forge FreeCAD, plus a
+# secret scan of the whole git history.
+# Graft tests and the end-to-end launcher / MCP-loop tests are reported as SKIP
+# here (they need the Windows install and the third-party clones); they run
+# locally via `python install/run_all_tests.py`.
 
 on:
   push:
@@ -12,6 +13,16 @@ on:
   workflow_dispatch:
 
 jobs:
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # scan every commit, not just the tip
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   freecad-core:
     runs-on: ubuntu-latest
     steps:
@@ -30,7 +41,7 @@ jobs:
         env:
           MCPFC_SKIP_GRAFTS: "1"
           # conda-forge headless TechDraw segfaults during view recompute
-          # (native crash) — feature validated on the Windows 1.1.x target.
+          # (native crash) — reported as SKIP, validated on the Windows target.
           # See docs/COMPATIBILITY.md R11.
           MCPFC_SKIP_TECHDRAW: "1"
         run: |

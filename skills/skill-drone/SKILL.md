@@ -43,7 +43,17 @@ from freecad_layers import aero
 aero.verdict_multirotor(mass_kg=1.2, n_motors=4, prop_diameter_m=0.254,
                         max_thrust_per_motor_n=8.0, battery_wh=55.5)
 ```
-For actual flow analysis (drag/lift), load `skill-cfd` (external OpenFOAM workflow).
+Inputs are validated (mass, motors, diameters must be > 0 → clear `ValueError`).
+Limits: momentum theory ignores profile drag and interference — hover power ±15–25 %.
+
+## Flow analysis (drag / lift) — external CFD only
+No CFD runs in this project. If the user needs real flow results:
+1. Gate the geometry: `check` (freecad-layers) must be `OK` and the part watertight.
+2. Export **STL** (`skill-print3d`, for `snappyHexMesh`) or **STEP** (`skill-exchange`).
+3. Describe the case: incompressible steady RANS (`simpleFoam`, k-ω SST), box domain ≥ 10
+   body-lengths downstream, `forceCoeffs` for Cd/Cl. Running OpenFOAM is outside this repo.
+4. CfdOF (GUI front-end to OpenFOAM) only if the user already has OpenFOAM + ParaView.
+Say plainly that prototype CFD is not engineering-grade aerodynamics.
 
 ## Verify
 `obj.Shape.isValid()`, `len(obj.Shape.Edges)`, `obj.Shape.Length`, `obj.Shape.BoundBox`.

@@ -3,7 +3,7 @@ Barrowman stability check (cahier des charges §4.3, no CFD required).
 
 Pure Python (no FreeCAD import): usable under freecadcmd, the bridge's
 execute_python, or system Python. Momentum-theory estimates good for sanity
-checks and first sizing; for serious aero use the skill-cfd external workflow.
+checks and first sizing; for flow analysis see skill-drone (external CFD workflow).
 
 Conventions: SI units in/out (kg, m, N, W); compact text verdicts like
 `verify.verdict` (token-efficient).

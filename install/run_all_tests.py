@@ -53,7 +53,6 @@ CORE_TESTS = [
     ("mesh_repair_test.py", "MESH_REPAIR_OK"),
     ("urdf_package_test.py", "URDF_PACKAGE_OK"),
     ("urdf_control_test.py", "URDF_CONTROL_OK"),
-    ("ik_exposure_test.py", "IK_EXPOSURE_OK"),
     ("rocket_cp_test.py", "ROCKET_CP_OK"),
     ("drone_aero_test.py", "DRONE_AERO_OK"),
     ("layers_test.py", "LAYERS_TEST_OK"),
@@ -79,6 +78,7 @@ LIVE_TESTS = [
     ("launcher_test.py", "LAUNCHER_OK"),
     ("phase1_smoke_test.py", "PHASE1_OK"),
     ("mcp_loop_test.py", "MCP_LOOP_OK"),
+    ("layers_mcp_test.py", "LAYERS_MCP_OK"),
 ]
 VENV_PY = (Path.home() / ".freecad-mcp" / "venv"
            / ("Scripts/python.exe" if os.name == "nt" else "bin/python"))

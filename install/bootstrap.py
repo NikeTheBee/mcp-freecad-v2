@@ -8,8 +8,9 @@ What it does:
   3. Creates a dedicated venv (~/.freecad-mcp/venv) with pinned dependencies:
      nothing is installed into your system Python.
   4. Installs the AICopilot addon into the versioned Mod dir (for GUI use).
-  5. Registers the supervised launcher (server/launcher/mcp_freecad_launch.py)
-     as the `freecad` MCP server with Claude Code and/or Claude Desktop.
+  5. Registers two MCP servers: `freecad` (supervised launcher + pinned base) and
+     `freecad-layers` (verification, contract, checkpoints, BOM, drawings...)
+     with Claude Code and/or Claude Desktop.
   6. Optionally clones the workbench grafts, each pinned to a commit.
   7. Runs the test suite.
 
@@ -35,6 +36,9 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 BASE_DIR = REPO / "server" / "freecad-mcp"
 LAUNCHER = REPO / "server" / "launcher" / "mcp_freecad_launch.py"
+LAYERS_SERVER = REPO / "server" / "layers_mcp" / "freecad_layers_server.py"
+# MCP servers registered with the client(s): base tools + the project's layers.
+SERVERS = {"freecad": LAUNCHER, "freecad-layers": LAYERS_SERVER}
 
 # Base server, pinned. Bump deliberately, then run the full suite.
 BASE_REPO_URL = "https://github.com/blwfish/freecad-mcp"
@@ -224,15 +228,16 @@ def register_claude_code(freecadcmd: Path, dry: bool) -> bool:
     claude = shutil.which("claude")
     if not claude:
         return False
-    if dry:
-        log("DRY: would register `freecad` with Claude Code")
-        return True
-    subprocess.run([claude, "mcp", "remove", "-s", "user", "freecad"],
-                   capture_output=True, text=True)
-    run([claude, "mcp", "add", "-s", "user", "freecad",
-         "-e", f"FREECAD_MCP_FREECAD_BIN={freecadcmd}",
-         "--", VENV_PY, LAUNCHER], capture_output=True, text=True)
-    log("registered `freecad` with Claude Code (user scope)")
+    for name, script in SERVERS.items():
+        if dry:
+            log(f"DRY: would register `{name}` with Claude Code")
+            continue
+        subprocess.run([claude, "mcp", "remove", "-s", "user", name],
+                       capture_output=True, text=True)
+        run([claude, "mcp", "add", "-s", "user", name,
+             "-e", f"FREECAD_MCP_FREECAD_BIN={freecadcmd}",
+             "--", VENV_PY, script], capture_output=True, text=True)
+        log(f"registered `{name}` with Claude Code (user scope)")
     return True
 
 
@@ -257,11 +262,12 @@ def register_claude_desktop(freecadcmd: Path, dry: bool) -> bool:
                                "it was NOT modified") from e
         if not isinstance(data, dict):
             raise InstallError(f"{cfg} does not contain a JSON object; NOT modified")
-    data.setdefault("mcpServers", {})["freecad"] = {
-        "command": str(VENV_PY),
-        "args": [str(LAUNCHER)],
-        "env": {"FREECAD_MCP_FREECAD_BIN": str(freecadcmd)},
-    }
+    for name, script in SERVERS.items():
+        data.setdefault("mcpServers", {})[name] = {
+            "command": str(VENV_PY),
+            "args": [str(script)],
+            "env": {"FREECAD_MCP_FREECAD_BIN": str(freecadcmd)},
+        }
     if dry:
         log(f"DRY: would update Claude Desktop config at {cfg}")
         return True

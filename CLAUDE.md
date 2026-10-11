@@ -35,13 +35,20 @@ User (natural language) → Claude Code → MCP `freecad` server (stdio)
    → AICopilot workbench executes the operation inside FreeCAD
 ```
 
-## Token-minimal golden rules
-- Text-only feedback by default. No automatic screenshots — only on explicit request or an ambiguous verification failure.
-- Read project memory at session start: `state.summary()` (see `skill-verify`) before asking the user to re-describe context.
-- Update project state after each *validated* step, not before: `state.record_feature(...)`.
-- Verify geometry before continuing: `verify.verdict(obj)` must say `OK` (`FAIL` = fix it, `UNKNOWN` = not verified, never treat as OK); compare its bbox/volume with what the user asked. Gate STL export on `verify.watertight(obj)`; check assemblies with `verify.check_assembly([...])`.
-- Checkpoint before risky/large ops: `checkpoint.save("name")`; roll back with `checkpoint.restore("name", replace_active=True)`. After each validated step: `recovery.autosave()` (after a crash: `recovery.open_latest(doc)`).
-- Prefer the bridge's named tools over ad hoc Python execution for recurring operations.
+## Golden rules (reliability first, then tokens)
+Two MCP servers: `freecad` (modeling tools of the base) and `freecad-layers` (this project's
+reliability tools — prefer them over `execute_python`).
+- Session start: `project_status` (memory, contract, recovery copies) before asking the user to re-describe anything.
+- When the user states dimensions/requirements, record them once with `require(target, kind, params)`
+  (bbox, holes, hole_at, mass, min_wall, no_interference...). They are re-checked automatically.
+- After each modeling step: `check(target)` must say `OK` on the geometry AND the contract.
+  `FAIL` = fix it; `UNKNOWN` = not verified — never treat as OK. A valid solid can still be the wrong part.
+- After a validated step: `record_step(...)` (memory + autosave). Before a risky step: `checkpoint save`;
+  roll back with `checkpoint restore`. After a FreeCAD crash: `recover`.
+- Holes in a PartDesign Body: `pd_hole`, never the base's `partdesign_operations hole`.
+- Fabrication outputs: STL only after `printability`/`check` OK; **never G-code** (`skill-cam`).
+- Text-only feedback by default. Screenshots only on request or for a complex part/assembly at a milestone
+  when measurements alone can't settle it.
 
 ## Anti-patterns
 - Don't take screenshots by default.
@@ -50,6 +57,7 @@ User (natural language) → Claude Code → MCP `freecad` server (stdio)
 
 ## Pointers
 - Full spec: `@docs/CAHIER_DES_CHARGES.md` · Compatibility audit: `@docs/COMPATIBILITY.md` · Security: `@SECURITY.md`
-- Domain knowledge: `/skills/<domain>/SKILL.md` — load on demand. Available: `skill-partdesign` (core sketch/Pad/Pocket + spreadsheet variants), `skill-rocket` (Rocketry WB), `skill-drone` (AirPlaneDesign WB), `skill-verify` (home-grown layers), `skill-print3d` (STL export), `skill-fem` (CalculiX FEM), `skill-exchange` (STEP/IGES), `skill-assembly` (multi-part assemblies), `skill-gear` (involute spur gears), `skill-robotics-ros` (CROSS URDF export + ros2_control/Gazebo + IK), `skill-cfd` (analytical aero + external-OpenFOAM fallback), `skill-cam` (DISABLED — never emit machine G-code; read it if CNC is requested), `skill-techdraw` (2D plans -> DXF headless), `skill-kinematics` (linkage motion laws), `skill-fasteners-bom` (ISO fasteners + nomenclature CSV).
-- Home-grown layers (§7): `server/freecad_layers/` — `state` (project memory), `verify` (geometry checks), `checkpoint` (rollback), `recovery` (autosave), `aero`, `drawing`, `kinematics`, `bom`, `robotics`. Any NEW file-writing code MUST use the shared secure-by-design gates `safe_out_path`/`safe_under` (SECURITY.md).
-- Project memory data: `/project_state/state.json` · Checkpoints: `/checkpoints/*.FCStd` (runtime artifacts, gitignored)
+- Domain knowledge: `/skills/<domain>/SKILL.md` — load on demand. Available: `skill-verify` (reliability layers & tools), `skill-partdesign` (sketch/Pad/Pocket/holes + spreadsheet variants), `skill-assembly` (multi-part assemblies, fits), `skill-print3d` (STL export), `skill-exchange` (STEP/IGES), `skill-techdraw` (2D plans -> DXF), `skill-bom` (nomenclature), `skill-fem` (CalculiX setup), `skill-gear` (involute spur gears), `skill-kinematics` (linkage motion laws), `skill-rocket` (Rocketry WB), `skill-drone` (AirPlaneDesign WB + analytical aero + external CFD), `skill-robotics-ros` (CROSS URDF export + ros2_control/Gazebo), `skill-cam` (DISABLED — never emit machine G-code; read it if CNC is requested).
+- Home-grown layers (§7): `server/freecad_layers/` — `state` (project memory), `spec` (design contract), `verify` (geometry checks), `analysis` (holes, walls, printability), `checkpoint` (rollback), `recovery` (autosave), `bom`, `drawing`, `kinematics`, `aero`, `urdf_aug`; exposed as MCP tools by `server/layers_mcp/`. Any NEW file-writing code MUST use the shared gates `safe_out_path`/`safe_under` (SECURITY.md).
+- Project memory data: `/project_state/state.json` · Checkpoints: `/checkpoints/` · Autosaves: `/recovery/` (runtime artifacts, gitignored)
+- Audit & repair plan: `@docs/AUDIT_2026-10-11.md` (§8 final verdict, §9 feature list).

@@ -1,7 +1,6 @@
 # skill-robotics-ros
 
-**Load when:** robots / ROS — defining links & joints, generating **URDF/xacro** robot descriptions,
-inverse kinematics (IK).
+**Load when:** robots / ROS — defining links & joints, generating **URDF/xacro** robot descriptions.
 
 ## What this is
 The [CROSS workbench](https://github.com/galou/freecad.cross) (galou, cloned in `addons/freecad.cross`).
@@ -52,20 +51,11 @@ To hand off to a ROS2 workspace, emit an `ament_cmake` package
 `robot_state_publisher`/`rviz2` deps) + `CMakeLists.txt` (installs `urdf/` + `launch/`) +
 `urdf/<pkg>.urdf`. No ROS2 runtime needed to *generate* it; `colcon build` it later in a workspace.
 
-## Inverse kinematics (CROSS + Pinocchio — ask availability FIRST)
-CROSS ships an IK solver (`freecad.cross.ik`: Pinocchio single/Newton-Raphson/DLS/transpose/
-closed-form). It needs the **Pinocchio binary package** (conda-forge/ROS; exotic on Windows), so
-always probe before promising IK:
-```python
-from freecad_layers import robotics
-ok, why = robotics.ik_available()          # soft check, never raises
-if ok:
-    sols = robotics.solve_ik(robot, "base_link", "tool_link", target_placement,
-                             algorithm="PINOCCHIO_NR", seed=[0.0]*n_joints)
-    # -> list of joint-value solutions (mm / degrees)
-```
-Without Pinocchio, say so plainly (the layer's `why` message is user-ready) — URDF export and
-everything else still works. Test: `install/ik_exposure_test.py` (IK_EXPOSURE_OK).
+## Inverse kinematics — not supported here
+CROSS's IK needs the Pinocchio binary package, which is not available in FreeCAD's or the bridge's
+Python on Windows; the former wrapper could never solve anything on the target OS and was removed
+(audit 2026-10-11, X4). Say so plainly. For IK, export the URDF and use MoveIt / KDL in a ROS 2
+workspace. Planar linkages (grippers, four-bars) are solved exactly by `skill-kinematics`.
 
 ## ros2_control · sensors · Gazebo (generation only — §4.2)
 `server/freecad_layers/urdf_aug.py` augments the bare `<robot>` element for ROS 2 Humble+ /

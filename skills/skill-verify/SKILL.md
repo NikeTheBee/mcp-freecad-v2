@@ -2,7 +2,22 @@
 
 **Load when:** you need to confirm produced geometry is sound before continuing, gate an STL export, check an assembly for overlaps, save a checkpoint / roll back, recover after a crash, or read/update project memory. These are the home-grown robustness layers (cahier des charges §7).
 
-## Availability
+## Use the `freecad-layers` MCP tools first
+| Tool | Does |
+|---|---|
+| `project_status` | memory + contract + recovery copies + open documents (session start) |
+| `project_init(name, intent)` | start a project memory |
+| `require(target, kind, params)` | record a user requirement (bbox, holes, hole_at, volume, mass, solids, min_wall, no_interference, valid) |
+| `check(target)` | geometry verdict + the target's requirements; autosaves when all OK |
+| `analyze(target)` | holes (Ø, position, through/blind), min wall estimate |
+| `check_assembly([...])`, `printability(target)` | overlaps between parts; FDM checks |
+| `record_step(feature, ftype, params, decision)` | memory + autosave after a validated step |
+| `checkpoint(save/restore/list)`, `recover(list/open)` | rollback; reopen after a crash |
+| `bill_of_materials`, `drawing_sheet`, `pd_hole` | see `skill-bom`, `skill-techdraw`, `skill-partdesign` |
+
+The Python API below is the same code, for use inside `execute_python` when a tool is missing.
+
+## Python API
 Python package at `server/freecad_layers/` (tracked, first-party). Import it inside FreeCAD / the MCP server's `execute_python`:
 ```python
 import sys; sys.path.insert(0, r"<repo>\server")

@@ -41,7 +41,14 @@ doc.recompute()
 Pick edge ids from `pad.Shape.Edges` / `measurement_operations list_faces`.
 
 ## Holes & patterns
-- Holes: `PartDesign::Hole` (counterbore/countersink/threaded via `.HoleCutType`, `.Threaded`) on a circle sketch.
+- **Do NOT use the base tool `partdesign_operations hole`**: it builds a `Part::Cut` *outside* the
+  Body, so the Body (and every later feature) has no hole while the call reports success
+  (audit 2026-10-11 §2.4).
+- Simple vertical hole (through or blind): **`pd_hole(body, diameter, x, y, through, depth)`** from
+  the `freecad-layers` server — a real feature inside the Body.
+- Counterbore/countersink/threaded: `PartDesign::Hole` (`.HoleCutType`, `.Threaded`) on a circle sketch.
+- After any hole, `check(body)`; record the expected holes once with
+  `require(body, "holes", {"count": n, "diameter": d})` so a missing hole FAILs.
 - Repetition: `PartDesign::LinearPattern` / `PolarPattern` / `Mirrored` — set `.Originals=[feature]`,
   `.Direction`, `.Occurrences`/`.Angle`.
 
@@ -56,5 +63,6 @@ sheet.set("B1", "60"); doc.recompute()            # -> the part rebuilds at the 
 ```
 
 ## Verify
-Always `verify.verdict(obj)` (see `skill-verify`) after a feature; `state.record_feature(...)` once valid.
+After each feature: `check(target)` (freecad-layers) must be `OK`, then `record_step(...)`
+(records + autosaves). Python fallback: `verify.verdict(obj)` (see `skill-verify`).
 Runnable examples: `install/partdesign_test.py`, `install/spreadsheet_variants_test.py`.

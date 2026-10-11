@@ -5,97 +5,93 @@
 [![FreeCAD 1.1](https://img.shields.io/badge/FreeCAD-1.1.x-red.svg)](https://www.freecad.org)
 🇫🇷 [Version française](README.fr.md)
 
-Design mechanical, aero & robotics projects in **FreeCAD** using **natural language** — no manual coding — through any AI client that speaks **MCP**. Built for minimal token cost and long, robust design sessions.
+Design mechanical, aero & robotics parts in **FreeCAD** using **natural language**, through any AI
+client that speaks **MCP** — with a reliability layer that **measures** the result instead of
+trusting the AI's reading of it.
 
-> Describe intent ("a 450mm quad frame with foldable arms", "a 3-fin rocket with an ogive nose"); the AI models it, verifies the geometry, checkpoints progress, and prepares it for fabrication.
+> Describe intent ("a 60×40×8 mm plate with a Ø6 through-hole in the centre"); the AI models it,
+> records your requirements as checks, verifies geometry and requirements after every step,
+> autosaves, and lets you roll back.
 
 ## Project goal: local-first AI CAD
-The end goal of this project is **CAD modeling driven by LOCAL AI models** — everything running on
-your own machine, no cloud dependency. That is why the architecture is built on **MCP**, an open
-protocol: any MCP-capable agent runner with a local LLM can drive it, today or tomorrow.
-Frontier models (e.g. Claude Code) are currently ahead of local models on long tool-use sessions,
-so they are used **in the meantime** as the reference client — but nothing here is tied to them.
-When local models catch up, you swap the client and keep the whole stack (server, skills, layers).
+The end goal is CAD driven by **local** AI models. The architecture is built on **MCP**, an open
+protocol, so any MCP-capable agent can drive it. Frontier models (e.g. Claude Code) are used as the
+reference client in the meantime.
 
 ## How it works
 ```
 You (natural language)
-  → AI client (Claude Code / any MCP client)
-    → freecad MCP server  (base: blwfish/freecad-mcp, ~32 tools)
-      → FreeCAD 1.1.1  (+ domain workbench grafts)
-        → home-grown layers: project memory · geometry verification · checkpoints
+  → AI client (Claude Code / Claude Desktop / any MCP client)
+    ├─ `freecad`         launcher (starts/supervises FreeCAD, refuses a hijacked port)
+    │                      → blwfish/freecad-mcp bridge (pinned v8.2.3, unmodified, ~39 tools)
+    └─ `freecad-layers`  13 reliability tools: project_status · require · check · analyze ·
+                          check_assembly · printability · record_step · checkpoint · recover ·
+                          bill_of_materials · drawing_sheet · pd_hole · project_init
+         → FreeCAD 1.1 headless on localhost:23456 (token auth) + domain workbench grafts
 ```
-- **Token-minimal:** text-only feedback by default (no auto-screenshots), compact tool results, a
-  short `CLAUDE.md` loaded each session, and heavy domain knowledge kept in on-demand **skills**.
-- **Robust:** OCCT crash capture in the base, plus first-party verification + checkpoint/rollback layers.
+- **The code decides, not the AI.** `check` returns `OK`, `FAIL` or `UNKNOWN` (a check that could
+  not run is never reported as OK), plus kernel measurements and the user's requirements
+  (bounding box, holes and their positions, mass, wall thickness, interferences).
+- **Nothing is lost.** Project memory survives sessions and concurrent writers; autosave copies
+  after each validated step; checkpoints reload from disk; FreeCAD is restarted at once after a
+  crash.
+- **Token-aware.** The reliability tools cost ~2,000 tokens of schema; results are short text
+  verdicts; no screenshots by default.
 
-## Prerequisites
-- **FreeCAD 1.1.x** · **Python 3.10+** (for the MCP bridge) · **git** · an MCP client (e.g. Claude Code).
-- Current target OS: **Windows** (uses TCP `localhost:23456`); the architecture is cross-platform — see
-  [`docs/CAHIER_DES_CHARGES.md`](docs/CAHIER_DES_CHARGES.md).
-
-## Install (one command)
+## Install (one command, Windows)
 ```
-git clone <repo> "MCP FREECAD" && cd "MCP FREECAD"
-python install/bootstrap.py --with-grafts        # add --client both for Claude Code + Desktop
+git clone https://github.com/NikeTheBee/mcp-freecad "MCP FREECAD" && cd "MCP FREECAD"
+python install/bootstrap.py --with-grafts
 ```
-`bootstrap.py` auto-detects FreeCAD, resolves its real version-specific Mod dir, installs the base
-server + workbench + bridge, registers with your MCP client(s), activates grafts, and runs the tests.
-It is idempotent and cross-platform. Manual/explained steps: [`install/AGENT-INSTALL.md`](install/AGENT-INSTALL.md);
-as-built reference log: [`install/WINDOWS-SETUP.md`](install/WINDOWS-SETUP.md).
-
-> **What "plug-and-play" can and can't mean:** FreeCAD must be installed, and the AI client must speak
-> **MCP** (Claude Code, Claude Desktop, any MCP client). A bare local LLM needs an MCP-capable agent
-> runner. CFD needs OpenFOAM; ROS2 simulation needs a ROS2 runtime. CAM/G-code is disabled (see below).
+Needs **FreeCAD 1.1.x**, **Python 3.10+**, **git**, and an MCP client. The installer pins every
+third-party component to a commit, creates a dedicated venv (`~/.freecad-mcp/venv`, nothing goes
+into your system Python), registers both MCP servers, and runs the tests. It stops on the first
+error and never overwrites an unreadable Claude Desktop config. Re-running it is safe.
+Linux/macOS: the pieces are portable but untested — contributions welcome.
 
 ## Verify
 ```
-python install/run_all_tests.py    # grafts + layers + Phase 1 socket + MCP-protocol loop (if :23456 live)
+python install/run_all_tests.py
 ```
-The MCP-protocol loop test ([`install/mcp_loop_test.py`](install/mcp_loop_test.py)) drives the bridge as a
-real MCP client and proves the full client→bridge→FreeCAD path end-to-end.
+~33 tests: the audit's traps (verdicts that used to pass on wrong parts), layers, grafts, the
+launcher (auth, crash restart, port-squatting refusal) and full MCP loops — all end-to-end tests
+run on an **isolated** FreeCAD (port 23499, private home), never on your live instance. A skipped
+test is reported as SKIP, never as a pass.
 
-## Example
-> "Create a 10×20×30mm box."
+## Capabilities and maturity
+**Stable** = covered by exactness tests (known values + traps). **Beta** = tested end to end, limits
+documented. **Experimental** = works on the tested cases only.
 
-The AI calls the `freecad` tools, FreeCAD builds the parametric box headless, and the AI reports the
-volume / bounding box in plain text — no manual modeling, no screenshot on the happy path.
-
-## Capabilities
-| Area | Capability | Status |
+| Area | Capability | Maturity |
 |---|---|---|
-| Core | Parametric modeling: sketch · Pad/Pocket · spreadsheet-driven variants (loop proven) | ✅ |
-| Robustness | Project memory · geometric verification · checkpoints/rollback | ✅ |
-| Security | localhost-only RPC · **shared-token socket auth** · no-secrets scan · trust model ([SECURITY.md](SECURITY.md)) | ✅ |
-| Onboarding | One-command cross-platform installer; Claude Code + Desktop; FreeCAD auto-started by the bridge (zero manual steps) | ✅ |
-| Rocketry | Rocket WB graft — nose/body/fins · Barrowman CP & stability | ✅ |
-| Aero | AirPlaneDesign graft — NACA airfoils, fuselage profiles | ✅ |
-| Fabrication | STL (watertight-gated) · mesh repair · STEP/IGES exchange | ✅ |
-| Analysis | FEM (CalculiX, ships with FreeCAD) · drone sizing (momentum theory: T/W, hover power, endurance) | ✅ setup |
-| Memory | Resume a project across sessions from state alone — runnable proof: [examples/resume_between_sessions.py](examples/resume_between_sessions.py) | ✅ |
-| Mechanism | Assemblies · spur gears · fillet/chamfer/holes/patterns · fits & tolerances · linkage kinematics (slider-crank/four-bar) | ✅ |
-| 2D plans | TechDraw views + dimensions → DXF (headless) | ✅ |
-| CAM | G-code generation | ❌ **removed** — the former drilling layer produced unsafe G-code ([audit §2.2](docs/AUDIT_2026-10-11.md)); export STEP and program toolpaths in a CAM tool you control |
-| Docs | Bill of materials / nomenclature → CSV | ✅ |
-| Robotics | URDF/xacro export + full ament_cmake ROS2 package (CROSS graft, no ROS2 needed) · ros2_control/sensors/Gazebo-Sim tags + controllers YAML | ✅ |
-| CFD · Gazebo sim | OpenFOAM · ROS2 simulation | needs external runtimes |
+| Reliability | Geometry verdicts (stale recompute, self-intersection, interference), design contract, part analysis (holes, walls), project memory, checkpoints, autosave/recovery | **Stable** |
+| Core modeling | PartDesign (sketch, Pad/Pocket, real holes in the Body), spreadsheet variants | **Stable** |
+| Fabrication | STL gated on watertight + FDM printability (bed, walls, overhangs) · STEP/IGES · mesh repair | **Stable** |
+| Documentation | Bill of materials (real parts, links, CSV) | **Stable** |
+| 2D plans | TechDraw views, auto ISO scale, page-fit check, overall dims → DXF (headless) | **Beta** (PDF needs the GUI) |
+| Mechanism | Assemblies (placement), spur gears, fits, linkage kinematics (slider-crank, four-bar) | **Beta** |
+| Analysis | FEM CalculiX (study setup; solving is not automated) · analytical drone sizing · rocket CP/stability (Barrowman) | **Experimental** |
+| Grafts | Rocket WB · AirPlaneDesign (headless core only) · CROSS URDF/xacro + ROS 2 package, ros2_control/sensor/Gazebo tags | **Experimental** |
+| CAM / G-code | — | **Removed**: the former layer produced unsafe G-code. Export STEP and program toolpaths in a CAM tool you control. |
+| Inverse kinematics | — | **Removed**: needs Pinocchio, unavailable on Windows. Use MoveIt with the exported URDF. |
+| CFD | — | Not included: export for an external OpenFOAM case (see `skill-drone`). |
 
-Domain knowledge lives in [`skills/`](skills) — `skill-partdesign`, `skill-rocket`, `skill-drone`,
-`skill-print3d`, `skill-exchange`, `skill-fem`, `skill-assembly`, `skill-gear`, `skill-robotics-ros`,
-`skill-verify`, `skill-cfd` (external-OpenFOAM fallback), `skill-cam` (disabled: safety guidance only),
-`skill-techdraw` (2D plans), `skill-kinematics` (linkage motion), `skill-fasteners-bom` — loaded on
-demand to keep token cost low. The full suite (`python install/run_all_tests.py`) is **30/30** and
-also runs as a core subset in CI ([.github/workflows/tests.yml](.github/workflows/tests.yml)).
+Domain knowledge lives in [`skills/`](skills), loaded on demand.
+
+## Documentation
+- [`docs/AUDIT_2026-10-11.md`](docs/AUDIT_2026-10-11.md) — full audit, test results, repair plan.
+- [`SECURITY.md`](SECURITY.md) — trust model, auth, anti-squatting, supply chain.
+- [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md) — version risks and upgrade checklist.
+- [`docs/CAHIER_DES_CHARGES.md`](docs/CAHIER_DES_CHARGES.md) — original specification (French).
 
 ## Repository layout
-- `CLAUDE.md` — short, loaded each session · `docs/` — full spec (cahier des charges)
-- `server/freecad_layers/` — first-party memory/verify/checkpoint layers · `server/freecad-mcp/` — base (gitignored)
-- `addons/` — third-party workbench grafts (gitignored) · `skills/` — domain knowledge
-- `install/` — install guides + test suite · `project_state/`, `checkpoints/` — runtime data (gitignored)
+- `server/freecad_layers/` — first-party layers · `server/layers_mcp/` — the `freecad-layers` MCP server
+- `server/launcher/` — supervised launcher · `server/freecad-mcp/` — pinned base (cloned, gitignored)
+- `skills/` — domain knowledge · `install/` — installer + tests · `addons/` — grafts (cloned, gitignored)
+- `project_state/`, `checkpoints/`, `recovery/` — runtime data (gitignored)
 
 ## License
-[CC BY-NC 4.0](LICENSE) © 2026 NikeTheBee — everyone is free to **download, modify and share** this
-project, under two conditions: **attribution is mandatory** (credit NikeTheBee AND the third-party
-projects listed in [`CREDITS.md`](CREDITS.md)), and **no commercial use** without prior written
-permission. Human-readable summary: [`NOTICE`](NOTICE). FreeCAD and the grafted workbenches keep
+[CC BY-NC 4.0](LICENSE) © 2026 NikeTheBee — free to **download, modify and share**, with
+**attribution** (NikeTheBee and the projects in [`CREDITS.md`](CREDITS.md)) and **no commercial use**
+without written permission. Summary: [`NOTICE`](NOTICE). FreeCAD and the grafted workbenches keep
 their own licenses (LGPL-2.1, not vendored here).

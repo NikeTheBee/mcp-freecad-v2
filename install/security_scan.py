@@ -18,10 +18,19 @@ SECRET_RES = [
     re.compile(r"ghp_[A-Za-z0-9]{36}"),                    # GitHub PAT
     re.compile(r"github_pat_[A-Za-z0-9_]{40,}"),
     re.compile(r"xox[baprs]-[A-Za-z0-9-]{10,}"),           # Slack
-    re.compile(r"sk-[A-Za-z0-9]{32,}"),                    # OpenAI-style
+    re.compile(r"sk-ant-[A-Za-z0-9_-]{20,}"),              # Anthropic API key
+    re.compile(r"sk-(?:proj|svcacct|admin)-[A-Za-z0-9_-]{20,}"),  # OpenAI project/service keys
+    re.compile(r"sk-[A-Za-z0-9]{32,}"),                    # OpenAI legacy
+    re.compile(r"hf_[A-Za-z0-9]{30,}"),                    # Hugging Face
+    re.compile(r"AIza[0-9A-Za-z_-]{35}"),                  # Google API key
+    re.compile(r"gh[ousr]_[A-Za-z0-9]{36}"),               # GitHub OAuth/user/server tokens
     re.compile(r"(?i)(password|passwd|api[_-]?key|secret|access[_-]?token)"
                r"\s*[=:]\s*['\"][^'\"]{8,}['\"]"),         # quoted credential
+    # unquoted env-style assignment of a long opaque value (e.g. in .ps1/.bat/.md)
+    re.compile(r"(?m)^\s*(?:set\s+|export\s+|\$env:)?[A-Z][A-Z0-9_]*(?:API_KEY|TOKEN|SECRET)"
+               r"\s*=\s*[A-Za-z0-9_\-]{24,}\s*$"),
 ]
+# This is a fast local guard; CI also runs Gitleaks (.github/workflows/tests.yml).
 # Files that legitimately contain the *patterns themselves* (this scanner + the policy).
 SELF = {"install/security_scan.py", "SECURITY.md"}
 SENSITIVE = re.compile(r"(^|/)(\.env|.*\.pem|.*\.key|id_rsa|credentials\.json|secrets\.)")
