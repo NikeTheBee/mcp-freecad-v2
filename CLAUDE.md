@@ -4,32 +4,34 @@ AI-piloted FreeCAD (natural language → parametric CAD/robotics), via MCP, on W
 
 ## Stack
 - FreeCAD 1.1.1 at `A:\FreeCAD\bin\` (`freecad.exe` GUI, `freecadcmd.exe` headless, bundled Python 3.11).
-- MCP base: `blwfish/freecad-mcp` (dev branch), cloned into `/server/freecad-mcp`.
-  - Bridge server: `~/.freecad-mcp/freecad_mcp_server.py`, runs under system Python 3.13 (`mcp` package installed there).
-  - FreeCAD-side addon: `AICopilot` workbench installed at `%APPDATA%\FreeCAD\Mod\AICopilot`.
-  - Registered with Claude Code as user-scoped MCP server `freecad` (see `claude mcp get freecad`).
-  - `FREECAD_MCP_FREECAD_BIN` env var (baked into the MCP server's launch env) points at `A:\FreeCAD\bin\freecadcmd.exe` since FreeCAD isn't in a default install location.
+- MCP base: `blwfish/freecad-mcp` **pinned** (v8.2.3, SHA in `install/bootstrap.py`), cloned into
+  `/server/freecad-mcp` and run **unmodified** (no patches).
+  - Entry point registered as user-scoped MCP server `freecad`: the supervised launcher
+    `server/launcher/mcp_freecad_launch.py`, run by the dedicated venv `~/.freecad-mcp/venv`
+    (mcp 2.x, psutil — nothing in the system Python). See `claude mcp get freecad`.
+  - FreeCAD-side addon `AICopilot`: headless server started from the pinned clone; a copy is
+    installed in `%APPDATA%\FreeCAD\v1-1\Mod` for GUI use.
+  - `FREECAD_MCP_FREECAD_BIN` (in the server's launch env) points at `A:\FreeCAD\bin\freecadcmd.exe`.
 
 ## Key commands
 - Start FreeCAD GUI: `A:\FreeCAD\bin\freecad.exe`
 - Run a script headless: `A:\FreeCAD\bin\freecadcmd.exe <script.py>`
 - Check MCP server health: `claude mcp list` / `claude mcp get freecad`
 
-## FreeCAD startup is automatic (R10 fixed)
-The bridge auto-starts FreeCAD headless whenever `localhost:23456` is down — on the first tool
-call, on `check_freecad_connection`, or via `spawn_freecad_instance` (patch:
-`install/apply_bridge_patches.py`, applied by bootstrap). Just call `check_freecad_connection`
-at session start; expect a one-time ~10–30 s cold start. Never launch FreeCAD manually.
-User-facing fallback if the bridge misbehaves: desktop shortcut "Demarrer FreeCAD pour Claude"
-(`start-freecad-server.bat`). Disable autostart with `FREECAD_MCP_AUTOSTART=0`. See
-`docs/COMPATIBILITY.md` R10.
-- Re-register / full install: `python install/bootstrap.py [--with-grafts]` (idempotent, cross-platform).
-- Run all tests: `python install/run_all_tests.py` (grafts, layers, socket smoke, MCP-protocol loop).
+## FreeCAD startup is automatic
+The launcher starts FreeCAD headless on `localhost:23456` when needed, restarts it at once if it
+dies, and refuses to run if a non-FreeCAD process holds the port (anti-squatting). Just call
+`check_freecad_connection` at session start; expect a one-time ~5–30 s cold start. Never launch
+FreeCAD manually. After a crash: `recovery.open_latest(<doc>)` (see `skill-verify`).
+Logs: `~/.freecad-mcp/logs/launcher.log`. The base's `spawn_freecad_instance` is Unix-only.
+- Re-register / full install: `python install/bootstrap.py [--with-grafts]` (idempotent; stops on any error).
+- Run all tests: `python install/run_all_tests.py` (layers, traps, grafts, launcher, MCP loop on an isolated test instance).
 
 ## Architecture
 ```
 User (natural language) → Claude Code → MCP `freecad` server (stdio)
-   → bridge spawns/talks to FreeCAD (headless by default, GUI on request)
+   → launcher (supervision, anti-squatting) → upstream bridge (pinned, unmodified)
+   → FreeCAD headless on localhost:23456 (token auth from upstream)
    → AICopilot workbench executes the operation inside FreeCAD
 ```
 

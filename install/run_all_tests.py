@@ -3,8 +3,9 @@
 Usage (system Python):  py -3.13 install/run_all_tests.py
 
 - The graft/layer tests run standalone under freecadcmd.
-- The Phase 1 smoke test needs the headless MCP socket server live on
-  localhost:23456; it is run only if that port is open, otherwise skipped.
+- The end-to-end tests (launcher, socket smoke, MCP loop) run with the bridge
+  venv on an ISOLATED FreeCAD (port 23499, private home): they never touch the
+  live localhost:23456 instance.
 - A test that prints "<PREFIX>_SKIP" validated nothing: it is reported as
   SKIP, never counted as a pass.
 
@@ -13,7 +14,6 @@ Exit code 0 iff every test that ran passed.
 import os
 import re
 import shutil
-import socket
 import subprocess
 import sys
 from pathlib import Path
@@ -74,18 +74,21 @@ CORE_TESTS = [
 FREECAD_TESTS = (CORE_TESTS if os.environ.get("MCPFC_SKIP_GRAFTS")
                  else GRAFT_TESTS + CORE_TESTS)
 
+# (script, sentinel) — run with the bridge venv Python on an isolated instance
+LIVE_TESTS = [
+    ("launcher_test.py", "LAUNCHER_OK"),
+    ("phase1_smoke_test.py", "PHASE1_OK"),
+    ("mcp_loop_test.py", "MCP_LOOP_OK"),
+]
+VENV_PY = (Path.home() / ".freecad-mcp" / "venv"
+           / ("Scripts/python.exe" if os.name == "nt" else "bin/python"))
+
 _SKIP_LINE = re.compile(r"^[A-Z0-9_]+_SKIP\b.*$", re.MULTILINE)
 
 
-def _port_open(host="localhost", port=23456) -> bool:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.settimeout(0.5)
-        return s.connect_ex((host, port)) == 0
-
-
-def _run(cmd) -> tuple[bool, str]:
+def _run(cmd, env=None) -> tuple[bool, str]:
     try:
-        p = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+        p = subprocess.run(cmd, capture_output=True, text=True, timeout=300, env=env)
         return p.returncode == 0, (p.stdout or "") + (p.stderr or "")
     except Exception as e:  # noqa: BLE001
         return False, f"<runner error: {e}>"
@@ -121,15 +124,6 @@ def main() -> int:
         ok, out = _run([sys.executable, str(HERE / script)])
         _record(results, script, ok, out, sentinel)
 
-    # Autostart / R10 test — system Python; also boots the headless server so
-    # the live phase1/mcp-loop tests below run instead of being skipped.
-    # Skipped in CI (MCPFC_SKIP_GRAFTS) where no real FreeCAD install exists.
-    if not os.environ.get("MCPFC_SKIP_GRAFTS"):
-        for script, sentinel in (("autostart_test.py", "AUTOSTART_OK"),
-                                 ("auth_test.py", "AUTH_OK")):
-            ok, out = _run([sys.executable, str(HERE / script)])
-            _record(results, script, ok, out, sentinel)
-
     if not Path(FREECADCMD).exists():
         print(f"!! freecadcmd not found at {FREECADCMD} "
               f"(set FREECAD_MCP_FREECAD_BIN)")
@@ -139,23 +133,18 @@ def main() -> int:
         ok, out = _run([FREECADCMD, str(HERE / script)])
         _record(results, script, ok, out, sentinel)
 
-    # Phase 1 smoke test needs the live socket server
-    if _port_open():
-        ok, out = _run([sys.executable, str(HERE / "phase1_smoke_test.py")])
-        ok = ok and '"result"' in out and "6000" in out
-        _record(results, "phase1_smoke_test.py", ok, out, '"result"')
-    else:
-        _skip(results, "phase1_smoke_test.py",
-              "no server on localhost:23456 — start the 'freecad-headless' server first")
-
-    # MCP-protocol loop test needs the `mcp` SDK + a reachable FreeCAD instance
-    have_mcp = subprocess.run([sys.executable, "-c", "import mcp"],
-                              capture_output=True).returncode == 0
-    if have_mcp and _port_open():
-        ok, out = _run([sys.executable, str(HERE / "mcp_loop_test.py")])
-        _record(results, "mcp_loop_test.py", ok, out, "MCP_LOOP_OK")
-    else:
-        _skip(results, "mcp_loop_test.py", "needs the `mcp` SDK and a server on :23456")
+    # End-to-end tests: launcher -> isolated FreeCAD (test port, private home)
+    # -> upstream bridge. Need the bridge venv (install/bootstrap.py); they
+    # never touch the live :23456 instance.
+    for script, sentinel in LIVE_TESTS:
+        if os.environ.get("MCPFC_SKIP_GRAFTS"):
+            _skip(results, script, "CI: no Windows FreeCAD install")
+        elif not VENV_PY.exists():
+            _skip(results, script, f"bridge venv missing at {VENV_PY} — run install/bootstrap.py")
+        else:
+            env = dict(os.environ, FREECAD_MCP_FREECAD_BIN=FREECADCMD)
+            ok, out = _run([str(VENV_PY), str(HERE / script)], env=env)
+            _record(results, script, ok, out, sentinel)
 
     failed = [n for n, s in results if s == "FAIL"]
     skipped = [n for n, s in results if s == "SKIP"]

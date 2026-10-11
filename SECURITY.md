@@ -16,16 +16,22 @@ grafts). That is powerful **by design** (it's how natural-language CAD works) an
 - The FreeCAD socket server binds **`localhost:23456` only** (Windows TCP) / a **filesystem Unix socket**
   (macOS/Linux). It is **not** reachable from the network. Verified: `WINDOWS_HOST = "localhost"` in
   `freecad_mcp_handler.py`; there is **no** `0.0.0.0` bind.
-- **Shared-secret authentication (NF5 hardening):** every command on the socket must carry an
-  `"auth"` token matching `~/.freecad-mcp/auth_token` (generated on first use, owner-only perms;
-  constant-time comparison). The bridge attaches it automatically; unauthenticated or wrong-token
-  commands are rejected before dispatch. This protects against **other local processes/users**
-  reaching the loopback port — the level a localhost bind alone cannot give you.
-  - Patch source: `server/bridge_patches/mcp_auth.py`, applied to the bridge and every deployed
-    AICopilot copy by `install/apply_bridge_patches.py` (run by `bootstrap.py`).
-  - Regression test: `install/auth_test.py` (reject no-token, reject wrong-token, accept token).
-  - Rotate: delete the token file, restart FreeCAD + the bridge. Emergency escape hatch:
-    `FREECAD_MCP_NO_AUTH=1` (both sides) — not recommended.
+- **Token authentication (from the pinned base, v8.2.3):** the FreeCAD side writes a fresh
+  shared secret to `~/.freecad-mcp/windows_auth_token` at each launch (ACL restricted to the user
+  with `icacls`, best effort); every command must carry it (constant-time comparison). The bridge
+  reads and attaches it. Our former home-made token patch was removed: it no longer applied to the
+  current base and failed open when its module was missing (audit 2026-10-11, §2.6, §3.1).
+- **The client side is protected too (anti-squatting).** A token only proves the *client* to the
+  server. If another process grabs port 23456 first, a bare bridge would send it the token and
+  every command, and relay its answers to the AI. The launcher
+  (`server/launcher/mcp_freecad_launch.py`) therefore checks, before starting the bridge and every
+  second afterwards, that **every** listener on the port is a FreeCAD binary from the configured
+  install, run by the current user; otherwise it refuses to start or stops the bridge (fail closed).
+  Regression test: `install/launcher_test.py` (no/wrong token rejected, squatter refused with
+  nothing sent, crash restart).
+  - Residual risk: a squatter that wins the race in the ~1 s between a FreeCAD crash and the
+    supervisor's check. The launcher restarts FreeCAD immediately to keep that window short.
+    True mutual authentication needs a change in the base (proposed upstream).
 - **Never** change the bind to `0.0.0.0` / a LAN IP without putting an **IP allowlist** (and ideally
   TLS) in front — NF5. The token protects against local callers, not network eavesdropping.
 - For remote/multi-machine use, tunnel over SSH rather than exposing the port.
@@ -54,8 +60,18 @@ The policy lives in ONE place; extend it there, not locally. Tests must exercise
 
 ## Third-party code (supply chain)
 - The base server and grafts are **cloned, not vendored** (gitignored `server/freecad-mcp`, `addons/`).
-- Grafts are **pinned** to tested refs where possible (`bootstrap.py`: Rocket `v5.1.1`) so upstream drift
-  can't silently change behavior — see `docs/COMPATIBILITY.md` R3.
+- Everything is **pinned to a commit SHA** in `install/bootstrap.py` (base `blwfish/freecad-mcp`
+  v8.2.3, Rocket, AirPlaneDesign, CROSS) and run **unmodified**: no more string patches on
+  third-party code. Upgrading the base = bump the SHA deliberately, then run the full suite.
+- Python dependencies live in a dedicated venv (`~/.freecad-mcp/venv`), with version bounds;
+  nothing is installed into the system Python.
+- The installer refuses to touch a clone with local modifications, and never overwrites an
+  unreadable Claude Desktop config (backup + atomic write otherwise).
+
+## Logs
+`~/.freecad-mcp/logs/` holds the launcher log and the base's operation logs, which record the
+code sent to FreeCAD and its results in clear text. Treat that folder as containing your designs;
+delete old files if needed.
 
 ## Reporting
 This is a personal/educational project. If you find a security issue, open a GitHub issue on

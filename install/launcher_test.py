@@ -1,0 +1,87 @@
+"""Launcher + socket auth (replaces autostart_test / auth_test) — bridge venv Python.
+
+On an isolated instance (port 23499, private home):
+1. the launcher starts FreeCAD and reports a trusted PID;
+2. the upstream auth: no token / wrong token rejected, right token accepted;
+3. FreeCAD killed -> the supervisor restarts it at once (audit: 2-minute lockout);
+4. a foreign process on the port -> the launcher refuses, and nothing is sent to it
+   (audit: the token leaked to a port squatter).
+Sentinel: LAUNCHER_OK
+"""
+import json
+import socket
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _fc_instance import LAUNCHER, VENV_PY, Instance  # noqa: E402
+
+
+def main() -> int:
+    inst = Instance()
+    try:
+        t0 = time.monotonic()
+        pid = inst.start()
+        print(f"1. FreeCAD started by the launcher: pid={pid} in {time.monotonic() - t0:.1f}s")
+
+        r = inst.call("execute_python_sync", {"code": "1+1"}, token=None)
+        assert r and "error" in r and "result" not in r, r
+        r = inst.call("execute_python_sync", {"code": "1+1"}, token="0" * 64)
+        assert r and "error" in r and "result" not in r, r
+        r = inst.call("execute_python_sync", {"code": "1+1"})
+        assert r and r.get("result") == "2", r
+        print("2. upstream auth: no/wrong token rejected, right token accepted: OK")
+
+        sup = subprocess.Popen([str(VENV_PY), str(LAUNCHER), "--supervise", "60"],
+                               env=inst.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                               text=True)
+        time.sleep(2)
+        inst.kill()
+        t0 = time.monotonic()
+        while time.monotonic() - t0 < 60:
+            if inst.alive():
+                break
+            time.sleep(0.5)
+        took = time.monotonic() - t0
+        assert inst.alive(), "FreeCAD was not restarted"
+        r = inst.call("execute_python_sync", {"code": "2+2"})
+        assert r and r.get("result") == "4", r
+        print(f"3. crash -> back and answering in {took:.1f}s (was a 120 s lockout)")
+        sup.terminate()
+        sup.wait(10)
+
+        inst.kill()
+        time.sleep(1)
+        fake = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        fake.bind(("127.0.0.1", inst.port))
+        fake.listen(5)
+        fake.settimeout(0.2)
+        r = inst.launcher("--check")
+        got = []
+        try:
+            while True:
+                c, _ = fake.accept()
+                c.settimeout(0.5)
+                try:
+                    got.append(c.recv(65536))
+                except OSError:
+                    got.append(b"")
+                c.close()
+        except OSError:
+            pass
+        fake.close()
+        info = json.loads(r.stdout.strip().splitlines()[-1])
+        print("4.", r.returncode, info)
+        assert r.returncode == 3 and info["error"] == "untrusted", (r.returncode, info)
+        assert not any(got), f"data was sent to the squatter: {got}"
+        print("4. port squatter refused, nothing sent to it: OK")
+    finally:
+        inst.stop()
+    print("LAUNCHER_OK")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
