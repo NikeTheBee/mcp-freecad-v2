@@ -34,7 +34,7 @@ def safe_out_path(path, allowed_exts, overwrite: bool = False) -> Path:
       mkdir with parents is bounded by the resolved location).
 
     Returns the resolved Path. Raises ValueError/FileExistsError on refusal.
-    Shared by drawing/cam/bom/... so the policy lives in ONE place.
+    Shared by drawing/bom/... so the policy lives in ONE place.
     """
     p = Path(path).expanduser().resolve()
     exts = {e.lower() if e.startswith(".") else "." + e.lower()

@@ -46,7 +46,7 @@ as-built reference log: [`install/WINDOWS-SETUP.md`](install/WINDOWS-SETUP.md).
 
 > **What "plug-and-play" can and can't mean:** FreeCAD must be installed, and the AI client must speak
 > **MCP** (Claude Code, Claude Desktop, any MCP client). A bare local LLM needs an MCP-capable agent
-> runner. CAM needs FreeCAD 1.2-dev; CFD needs OpenFOAM; ROS2 simulation needs a ROS2 runtime.
+> runner. CFD needs OpenFOAM; ROS2 simulation needs a ROS2 runtime. CAM/G-code is disabled (see below).
 
 ## Verify
 ```
@@ -75,14 +75,14 @@ volume / bounding box in plain text — no manual modeling, no screenshot on the
 | Memory | Resume a project across sessions from state alone — runnable proof: [examples/resume_between_sessions.py](examples/resume_between_sessions.py) | ✅ |
 | Mechanism | Assemblies · spur gears · fillet/chamfer/holes/patterns · fits & tolerances · linkage kinematics (slider-crank/four-bar) | ✅ |
 | 2D plans | TechDraw views + dimensions → DXF (headless) | ✅ |
-| CAM | G-code on FreeCAD 1.1 (drilling + grbl post) | ✅ basic |
+| CAM | G-code generation | ❌ **removed** — the former drilling layer produced unsafe G-code ([audit §2.2](docs/AUDIT_2026-10-11.md)); export STEP and program toolpaths in a CAM tool you control |
 | Docs | Bill of materials / nomenclature → CSV | ✅ |
 | Robotics | URDF/xacro export + full ament_cmake ROS2 package (CROSS graft, no ROS2 needed) · ros2_control/sensors/Gazebo-Sim tags + controllers YAML | ✅ |
-| CAM · CFD · Gazebo sim | G-code · OpenFOAM · ROS2 simulation | needs FreeCAD 1.2-dev / external runtimes |
+| CFD · Gazebo sim | OpenFOAM · ROS2 simulation | needs external runtimes |
 
 Domain knowledge lives in [`skills/`](skills) — `skill-partdesign`, `skill-rocket`, `skill-drone`,
 `skill-print3d`, `skill-exchange`, `skill-fem`, `skill-assembly`, `skill-gear`, `skill-robotics-ros`,
-`skill-verify`, `skill-cfd` (external-OpenFOAM fallback), `skill-cam` (G-code on 1.1),
+`skill-verify`, `skill-cfd` (external-OpenFOAM fallback), `skill-cam` (disabled: safety guidance only),
 `skill-techdraw` (2D plans), `skill-kinematics` (linkage motion), `skill-fasteners-bom` — loaded on
 demand to keep token cost low. The full suite (`python install/run_all_tests.py`) is **30/30** and
 also runs as a core subset in CI ([.github/workflows/tests.yml](.github/workflows/tests.yml)).

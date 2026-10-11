@@ -5,10 +5,13 @@ Usage (system Python):  py -3.13 install/run_all_tests.py
 - The graft/layer tests run standalone under freecadcmd.
 - The Phase 1 smoke test needs the headless MCP socket server live on
   localhost:23456; it is run only if that port is open, otherwise skipped.
+- A test that prints "<PREFIX>_SKIP" validated nothing: it is reported as
+  SKIP, never counted as a pass.
 
 Exit code 0 iff every test that ran passed.
 """
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -50,7 +53,6 @@ CORE_TESTS = [
     ("layers_test.py", "LAYERS_TEST_OK"),
     ("techdraw_test.py", "TECHDRAW_OK"),
     ("kinematics_test.py", "KINEMATICS_OK"),
-    ("cam_test.py", "CAM_OK"),
     ("bom_test.py", "BOM_OK"),
     ("print3d_test.py", "PRINT3D_OK"),
     ("exchange_test.py", "EXCHANGE_OK"),
@@ -62,6 +64,8 @@ CORE_TESTS = [
 ]
 FREECAD_TESTS = (CORE_TESTS if os.environ.get("MCPFC_SKIP_GRAFTS")
                  else GRAFT_TESTS + CORE_TESTS)
+
+_SKIP_LINE = re.compile(r"^[A-Z0-9_]+_SKIP\b.*$", re.MULTILINE)
 
 
 def _port_open(host="localhost", port=23456) -> bool:
@@ -78,16 +82,34 @@ def _run(cmd) -> tuple[bool, str]:
         return False, f"<runner error: {e}>"
 
 
+def _record(results, name: str, ok: bool, out: str, sentinel: str) -> None:
+    """PASS only on exit 0 + sentinel; an explicit *_SKIP line is a SKIP."""
+    skip = _SKIP_LINE.search(out)
+    if ok and sentinel in out:
+        status = "PASS"
+    elif ok and skip:
+        status = "SKIP"
+    else:
+        status = "FAIL"
+    results.append((name, status))
+    print(f"[{status}] {name}")
+    if status == "SKIP":
+        print("    " + skip.group(0))
+    elif status == "FAIL":
+        print("    " + out.strip().replace("\n", "\n    ")[-1200:])
+
+
+def _skip(results, name: str, why: str) -> None:
+    results.append((name, "SKIP"))
+    print(f"[SKIP] {name} ({why})")
+
+
 def main() -> int:
     results = []
 
     # Security scan (cyber / NF5 / §13) — pure Python, no FreeCAD needed.
     ok, out = _run([sys.executable, str(HERE / "security_scan.py")])
-    passed = ok and "SECURITY_SCAN_OK" in out
-    results.append(("security_scan.py", passed))
-    print(f"[{'PASS' if passed else 'FAIL'}] security_scan.py")
-    if not passed:
-        print("    " + out.strip().replace("\n", "\n    ")[-1200:])
+    _record(results, "security_scan.py", ok, out, "SECURITY_SCAN_OK")
 
     # Autostart / R10 test — system Python; also boots the headless server so
     # the live phase1/mcp-loop tests below run instead of being skipped.
@@ -96,11 +118,7 @@ def main() -> int:
         for script, sentinel in (("autostart_test.py", "AUTOSTART_OK"),
                                  ("auth_test.py", "AUTH_OK")):
             ok, out = _run([sys.executable, str(HERE / script)])
-            passed = ok and sentinel in out
-            results.append((script, passed))
-            print(f"[{'PASS' if passed else 'FAIL'}] {script}")
-            if not passed:
-                print("    " + out.strip().replace("\n", "\n    ")[-1200:])
+            _record(results, script, ok, out, sentinel)
 
     if not Path(FREECADCMD).exists():
         print(f"!! freecadcmd not found at {FREECADCMD} "
@@ -109,39 +127,32 @@ def main() -> int:
 
     for script, sentinel in FREECAD_TESTS:
         ok, out = _run([FREECADCMD, str(HERE / script)])
-        passed = ok and sentinel in out
-        results.append((script, passed))
-        print(f"[{'PASS' if passed else 'FAIL'}] {script}")
-        if not passed:
-            print("    " + out.strip().replace("\n", "\n    ")[-1200:])
+        _record(results, script, ok, out, sentinel)
 
     # Phase 1 smoke test needs the live socket server
     if _port_open():
         ok, out = _run([sys.executable, str(HERE / "phase1_smoke_test.py")])
-        passed = ok and '"result"' in out and "6000" in out
-        results.append(("phase1_smoke_test.py", passed))
-        print(f"[{'PASS' if passed else 'FAIL'}] phase1_smoke_test.py")
-        if not passed:
-            print("    " + out.strip().replace("\n", "\n    ")[-1200:])
+        ok = ok and '"result"' in out and "6000" in out
+        _record(results, "phase1_smoke_test.py", ok, out, '"result"')
     else:
-        print("[SKIP] phase1_smoke_test.py (no server on localhost:23456 — "
-              "start the 'freecad-headless' server first)")
+        _skip(results, "phase1_smoke_test.py",
+              "no server on localhost:23456 — start the 'freecad-headless' server first")
 
     # MCP-protocol loop test needs the `mcp` SDK + a reachable FreeCAD instance
     have_mcp = subprocess.run([sys.executable, "-c", "import mcp"],
                               capture_output=True).returncode == 0
     if have_mcp and _port_open():
         ok, out = _run([sys.executable, str(HERE / "mcp_loop_test.py")])
-        passed = ok and "MCP_LOOP_OK" in out
-        results.append(("mcp_loop_test.py", passed))
-        print(f"[{'PASS' if passed else 'FAIL'}] mcp_loop_test.py")
-        if not passed:
-            print("    " + out.strip().replace("\n", "\n    ")[-1200:])
+        _record(results, "mcp_loop_test.py", ok, out, "MCP_LOOP_OK")
     else:
-        print("[SKIP] mcp_loop_test.py (needs the `mcp` SDK and a server on :23456)")
+        _skip(results, "mcp_loop_test.py", "needs the `mcp` SDK and a server on :23456")
 
-    failed = [n for n, ok in results if not ok]
-    print(f"\n{len(results) - len(failed)}/{len(results)} passed"
+    failed = [n for n, s in results if s == "FAIL"]
+    skipped = [n for n, s in results if s == "SKIP"]
+    passed = len(results) - len(failed) - len(skipped)
+    print(f"\n{passed} passed, {len(skipped)} skipped, {len(failed)} failed "
+          f"(of {len(results)})"
+          + (f"; SKIPPED: {', '.join(skipped)}" if skipped else "")
           + (f"; FAILED: {', '.join(failed)}" if failed else ""))
     return 1 if failed else 0
 

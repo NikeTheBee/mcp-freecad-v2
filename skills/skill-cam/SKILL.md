@@ -1,36 +1,24 @@
-# skill-cam
+# skill-cam — DISABLED (safety)
 
-**Load when:** machining / CNC — toolpaths, G-code, drilling/milling, "Path/CAM job" (§4.5).
+**Load when:** the user asks for machining / CNC — toolpaths, G-code, drilling/milling, "Path/CAM job".
 
-## Status: CAM works on FreeCAD 1.1 (gap-analysis correction)
-Earlier notes said "wait for 1.2". The opposite is true: **1.1 is the right target** — Path/CAM is
-scriptable **headless** here (Job + operations + post-processor), whereas **1.2 has a custom
-post-processor regression** ([FreeCAD#26006](https://github.com/FreeCAD/FreeCAD/issues/26006)).
-Stay on 1.1 for scripted CAM.
+## Status: CAM is switched off in this project
+The former `freecad_layers/cam.py` was **removed** (audit 2026-10-11, §2.2 K1/K2): it treated every
+cylindrical face (fillets, bosses, the outside of a round bar) as a hole, used a default Ø5 end mill
+whatever the hole size, and posted G-code with **no spindle start (`M3`) and a zero feed (`F0`)**.
+That output can break a tool or a machine.
 
-## Drill + post G-code in one call
-```python
-import sys; sys.path.insert(0, r"<repo>\server")
-from freecad_layers import cam
-res = cam.drill_and_post(part, r"<out>\part.nc", processor="grbl")
-print(cam.verdict(res))   # OK CAM: holes=1 cmds=10 post=grbl -> ...\part.nc
-```
-`drill_and_post` finds every cylindrical hole on the part, drills it, and posts real G-code.
+## What to do instead
+1. **Never** produce G-code meant for a real machine — not with `execute_python`, not with the base
+   server's `cam_operations` tool.
+2. Export the part as **STEP** (`skill-exchange`) and tell the user to program the toolpaths in a CAM
+   tool they control (FreeCAD CAM workbench in the GUI, or their usual CAM software), with a
+   simulation before cutting.
+3. If the user explicitly insists on a draft toolpath, say clearly that it is **not machine-safe**
+   and must be reviewed and simulated by a person who knows the machine.
 
-## Building blocks
-| Call | Does |
-|---|---|
-| `make_job(part, name)` | create a CAM Job (a part belongs to ONE job) with a default tool controller |
-| `drill_holes(job, part, tool_controller=None)` | Drilling op on all cylindrical faces → `{op, holes, commands}` |
-| `post_gcode(job, path, processor="grbl", overwrite=False)` | post to a `.nc/.gcode/.ngc/.tap/.cnc/.g` file (refuses other extensions & silent clobber) |
-
-Installed post-processors include `grbl`, `linuxcnc`, `mach3_4`, etc. — pass the name to `processor`.
-
-## Limits (honest)
-- Covered here: **drilling** (the most common, robust op). Profile/Pocket/MillFace ops exist
-  (`Path.Op.*`) and can be added the same way — extend `cam.py`, validated one op at a time (§11).
-- Always sanity-check the G-code against your machine/post before cutting metal. Simulate first.
-
-## Verify
-`install/cam_test.py` (`CAM_OK`) — drills a plate, posts grbl G-code, and checks the secure output
-gate (extension + clobber refusal).
+## When it may come back
+Only with a G-code validator that refuses any program without `M3`/`S>0` before the first cut, with
+an `F0` move, with a cut below the stock, with a tool larger than the hole, or drilling anything but
+a **concave, through** cylindrical hole — and that re-checks drilled positions against the measured
+hole centres (audit §7.4 N7).

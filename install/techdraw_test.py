@@ -42,13 +42,11 @@ def main() -> int:
     if os.environ.get("MCPFC_SKIP_TECHDRAW"):
         print("TECHDRAW_SKIP: MCPFC_SKIP_TECHDRAW set (headless TechDraw "
               "segfaults on this build — R11)")
-        print("TECHDRAW_OK")
         return 0
 
     td_mod, why = _techdraw_ready()
     if td_mod is None:
         print(f"TECHDRAW_SKIP: {why} — validated on the Windows 1.1.1 target")
-        print("TECHDRAW_OK")
         return 0
 
     doc = App.newDocument("TDTest")
