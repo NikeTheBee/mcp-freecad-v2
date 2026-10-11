@@ -104,6 +104,31 @@ def main() -> int:
         svg = drawing.view_svg(view)
         assert svg.strip().startswith("<") and len(svg) > 50
 
+        # --- audit D1–D3: no silent fallbacks -----------------------------
+        try:
+            drawing.add_view(page, b, "isometric")
+            print("FAIL: unknown direction silently accepted"); return 1
+        except ValueError:
+            print("unknown view direction refused: OK")
+        try:
+            drawing.make_page(doc, "Bad", "A0_DoesNotExist")
+            print("FAIL: unknown template silently replaced"); return 1
+        except FileNotFoundError:
+            print("unknown template refused: OK")
+        a3 = drawing._find_template("A3_Landscape_ISO5457_minimal")
+        assert a3.endswith("A3_Landscape_ISO5457_minimal.svg"), a3
+
+        # a 2 m part: auto scale makes it fit; forcing 1:1 is reported as FAIL
+        big = doc.addObject("Part::Box", "Big")
+        big.Length, big.Width, big.Height = 2000, 1000, 500
+        doc.recompute()
+        auto = drawing.sheet_for(big, dims=False)
+        print("auto:", auto["scale"], auto["verdict"])
+        assert auto["scale"] < 0.1 and auto["verdict"].startswith("OK"), auto
+        forced = drawing.sheet_for(big, dims=False, scale=1.0)
+        print("forced 1:1:", forced["verdict"])
+        assert forced["verdict"].startswith("FAIL") and "exceeds" in forced["verdict"]
+
     print("TECHDRAW_OK")
     return 0
 

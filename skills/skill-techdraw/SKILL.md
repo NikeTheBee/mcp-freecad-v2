@@ -13,16 +13,17 @@ FreeCAD). Fully **headless** under freecadcmd: pages, projected views, dimension
 import sys; sys.path.insert(0, r"<repo>\server")
 from freecad_layers import drawing
 res = drawing.sheet_for(part, dxf_path=r"<out>\part.dxf",
-                        views=("front", "top", "right"), scale=2.0)
-# {'page': 'Page_Part', 'views': [...], 'dims': 4, 'dxf': '...\\part.dxf'}
-print(drawing.verdict(doc.getObject(res["page"])))   # token-minimal check
+                        views=("front", "top", "right"))   # scale="auto" by default
+# {'page': 'Page_Part', 'views': [...], 'scale': 0.5, 'dims': 4, 'dxf': '...', 'verdict': 'OK ...'}
+print(res["verdict"])   # must start with OK
 ```
 
 ## Building blocks
 | Call | Does |
 |---|---|
-| `make_page(doc, template="A4_Landscape")` | page + SVG template (name fragment, anti-traversal) |
-| `add_view(page, obj, "front"/"top"/"right"/"iso", scale, x, y)` | projected view (XDirection handled) |
+| `make_page(doc, template="A4_Landscape")` | page + SVG template by name fragment (e.g. `"A3_Landscape_ISO5457_minimal"`); unknown name = error |
+| `add_view(page, obj, "front"/"back"/"top"/"bottom"/"left"/"right"/"iso", scale, x, y)` | projected view; unknown name = error; `x, y` = page mm from bottom-left |
+| `auto_scale(shapes, views, slot_w, slot_h)` | largest ISO scale (2:1, 1:1, 1:2, 1:5…) that fits |
 | `add_extent_dims(view)` | overall width/height dimensions |
 | `add_distance_dim(view, (x1,y1), (x2,y2), "Distance"/"DistanceX"/"DistanceY")` | point-to-point dim (unscaled 2D view coords) |
 | `export_dxf(page, path, overwrite=False)` | full page → DXF (refuses clobber without overwrite) |
@@ -34,6 +35,10 @@ print(drawing.verdict(doc.getObject(res["page"])))   # token-minimal check
   or convert the DXF externally.
 - Auto-dimensioning beyond overall extents (each hole, each feature) is per-feature work:
   use `add_distance_dim` with coordinates from the model.
+
+## verdict(page)
+`OK` only if every view has a source and fits inside the page; `FAIL` names the view that sticks
+out; `UNKNOWN` if an extent could not be computed. `sheet_for` returns it in `res["verdict"]`.
 
 ## Verify
 `install/techdraw_test.py` (sentinel `TECHDRAW_OK`) — includes the secure-by-design refusal
