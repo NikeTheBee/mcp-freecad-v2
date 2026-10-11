@@ -45,6 +45,14 @@ def main() -> int:
     assert 45 < wl < 55, wl
     print(f"fixed wing: V_stall={vs:.1f} m/s, loading={wl:.0f} N/m²")
 
+    # audit A1: meaningless inputs are refused with a clear ValueError
+    for bad in [(1.0, 0, 0.25, 10), (1.0, 4, 0.0, 10), (-2.0, 4, 0.25, 10)]:
+        try:
+            aero.verdict_multirotor(*bad)
+            print(f"FAIL: accepted {bad}")
+            return 1
+        except ValueError as e:
+            print(f"refused {bad}: {e}")
     print("DRONE_AERO_OK")
     return 0
 

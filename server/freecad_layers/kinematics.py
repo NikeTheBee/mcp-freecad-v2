@@ -132,7 +132,25 @@ class SliderCrank:
             c = ex*ex + ey*ey - reach*reach
             disc = b*b - 4*c
             if disc >= 0:
-                out[label] = (-b - math.sqrt(disc)) / 2
+                roots = ((-b - math.sqrt(disc)) / 2, (-b + math.sqrt(disc)) / 2)
+                out[label] = min(roots, key=abs)    # the one nearest the working point
+        return out
+
+    def dead_points_all(self) -> Dict[str, Tuple[float, ...]]:
+        """Both slider positions (if any) for each alignment, sorted."""
+        px, py = self.pivot
+        ox, oy = self.slider_origin
+        dx, dy = self.slider_dir
+        out = {}
+        for label, reach in (("extended", self.crank + self.link),
+                             ("folded", abs(self.crank - self.link))):
+            ex, ey = ox - px, oy - py
+            b = 2 * (ex*dx + ey*dy)
+            c = ex*ex + ey*ey - reach*reach
+            disc = b*b - 4*c
+            if disc >= 0:
+                out[label] = tuple(sorted(((-b - math.sqrt(disc)) / 2,
+                                           (-b + math.sqrt(disc)) / 2)))
         return out
 
 

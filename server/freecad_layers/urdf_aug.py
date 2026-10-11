@@ -36,6 +36,9 @@ def add_ros2_control(robot: et.Element, joint_names: Iterable[str],
     interface: "position" | "velocity" | "effort" — the command interface;
     state interfaces (position+velocity) are always exposed.
     """
+    if interface not in _CONTROLLERS:
+        raise ValueError(f"unknown command interface {interface!r}; "
+                         f"use one of {sorted(_CONTROLLERS)}")
     rc = et.SubElement(robot, "ros2_control",
                        {"name": _valid_name(name), "type": "system"})
     hw = et.SubElement(rc, "hardware")
@@ -64,14 +67,19 @@ def add_gazebo_ros2_control_plugin(robot: et.Element,
     return gz
 
 
+_CONTROLLERS = {"position": "position_controllers/JointGroupPositionController",
+                "velocity": "velocity_controllers/JointGroupVelocityController",
+                "effort": "effort_controllers/JointGroupEffortController"}
+
+
 def controllers_yaml(joint_names: Iterable[str],
                      controller: str = "position") -> str:
     """ros2_controllers YAML: joint_state_broadcaster + one trajectory controller."""
+    if controller not in _CONTROLLERS:
+        raise ValueError(f"unknown controller {controller!r}; use one of {sorted(_CONTROLLERS)}")
     joints = [_valid_name(j) for j in joint_names]
     joint_lines = "\n".join(f"      - {j}" for j in joints)
-    ctrl_type = {"position": "position_controllers/JointGroupPositionController",
-                 "velocity": "velocity_controllers/JointGroupVelocityController",
-                 "effort": "effort_controllers/JointGroupEffortController"}[controller]
+    ctrl_type = _CONTROLLERS[controller]
     return f"""controller_manager:
   ros__parameters:
     update_rate: 100

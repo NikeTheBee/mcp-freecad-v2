@@ -65,6 +65,16 @@ def main() -> int:
         print("invalid ROS name refused: OK")
 
     print(urdf_aug.verdict(reparsed))
+    # audit U1: unknown controller / interface -> clear ValueError, not KeyError
+    for call in (lambda: urdf_aug.controllers_yaml(["j1"], controller="trajectory"),
+                 lambda: urdf_aug.add_ros2_control(et.Element("robot"), ["j1"],
+                                                   interface="torque")):
+        try:
+            call()
+            print("FAIL: unknown controller accepted")
+            return 1
+        except ValueError as e:
+            print(f"refused: {e}")
     print("URDF_CONTROL_OK")
     return 0
 
