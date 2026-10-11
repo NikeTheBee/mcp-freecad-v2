@@ -28,6 +28,7 @@ secrets.*
 /project_state/*.json
 /checkpoints/*.FCStd
 /checkpoints/*.FCStd[0-9]*
+/recovery/
 
 # Runtime output of examples/resume_between_sessions.py
 /examples/demo_state/

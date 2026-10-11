@@ -51,6 +51,7 @@ CORE_TESTS = [
     ("rocket_cp_test.py", "ROCKET_CP_OK"),
     ("drone_aero_test.py", "DRONE_AERO_OK"),
     ("layers_test.py", "LAYERS_TEST_OK"),
+    ("verify_test.py", "VERIFY_OK"),
     ("techdraw_test.py", "TECHDRAW_OK"),
     ("kinematics_test.py", "KINEMATICS_OK"),
     ("bom_test.py", "BOM_OK"),

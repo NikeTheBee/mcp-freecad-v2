@@ -58,6 +58,47 @@ names = [o.Name for o in restored.Objects]
 print("RESTORED_OBJECTS:", names)
 assert "Box" in names
 
+# --- audit C1: two different names must never share a checkpoint file ------
+b = doc.getObject("Box")
+checkpoint.save("v1/fins", doc=doc)
+b.Length = 99
+doc.recompute()
+checkpoint.save("v1 fins", doc=doc)
+r = checkpoint.restore("v1/fins")
+assert r.getObject("Box").Length.Value == 10, "checkpoint name collision"
+print("distinct names keep distinct checkpoints: OK")
+
+# --- audit C2: restore must reload from DISK, not the modified open copy ----
+r.getObject("Box").Length = 777
+r.recompute()
+r2 = checkpoint.restore("v1/fins")
+assert r2.getObject("Box").Length.Value == 10, "rollback returned in-memory edits"
+print("restore reloads the saved content: OK")
+
+# --- true rollback: the abandoned document is kept in /recovery, then closed --
+from freecad_layers import recovery
+work = FreeCAD.newDocument("Work")
+wb = work.addObject("Part::Box", "B")
+work.recompute()
+checkpoint.save("good", doc=work)
+wb.Length = 555
+work.recompute()
+FreeCAD.setActiveDocument("Work")
+back = checkpoint.restore("good", replace_active=True)
+assert "Work" not in FreeCAD.listDocuments(), "abandoned doc still open"
+assert back.getObject("B").Length.Value == 10
+saved = recovery.latest("Work")
+assert saved, "abandoned work was not autosaved"
+lost = FreeCAD.openDocument(saved)
+assert lost.getObject("B").Length.Value == 555, "recovery copy is not the abandoned state"
+print("rollback keeps the abandoned work in recovery: OK")
+
+# --- autosave keeps only the newest copies ---------------------------------
+for _ in range(7):
+    recovery.autosave(doc)
+assert len(recovery.list_recovery(doc.Name)) == recovery.KEEP
+print("recovery pruning keeps", recovery.KEEP, "copies: OK")
+
 # --- secure-by-design: a tampered state.json must not escape /checkpoints --
 s = state.load()
 s["checkpoints"].append({"name": "evil", "file": "..\\..\\outside.FCStd",
