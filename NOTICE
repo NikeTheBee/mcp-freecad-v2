@@ -1,24 +1,33 @@
-MCP FREECAD — NOTICE
-====================
+MCP FREECAD 2 — NOTICE
+======================
 
-Copyright (c) 2026 NikeTheBee
-https://github.com/NikeTheBee/mcp-freecad
+Required Notice: Copyright (c) 2026 NikeTheBee (https://github.com/NikeTheBee/mcp-freecad-v2)
 
-This project is licensed under the Creative Commons
-Attribution-NonCommercial 4.0 International license (see LICENSE, or
-https://creativecommons.org/licenses/by-nc/4.0/).
+This project is licensed under the PolyForm Noncommercial License 1.0.0
+(see LICENSE, or https://polyformproject.org/licenses/noncommercial/1.0.0).
 
 In plain words:
 
-  * Everyone is free to DOWNLOAD, MODIFY and SHARE this project.
-  * ATTRIBUTION IS MANDATORY: credit the original author (NikeTheBee,
-    link above), indicate changes, and RETAIN THE THIRD-PARTY CREDITS
-    listed in CREDITS.md (FreeCAD, blwfish/freecad-mcp, Rocket,
-    AirPlaneDesign and CROSS workbenches, MCP SDK).
-  * NO COMMERCIAL USE without prior written permission from the author.
+  * Everyone may USE, STUDY, MODIFY and SHARE this project for any
+    noncommercial purpose (personal use, hobby, research, education,
+    charities, public institutions).
+  * NOBODY may SELL it, or use it to make money in any way, without prior
+    written permission from the author.
+  * Whoever passes it on must pass on the licence and the
+    "Required Notice:" line above.
 
-Third-party components are NOT relicensed by this project: they are
-cloned at install time (never vendored here) and keep their own
-licenses (LGPL-2.1, MIT) — see CREDITS.md.
+Exception — the vendored base server
+------------------------------------
 
-THE WORK IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
+The folder server/freecad-mcp/ is a modified copy of freecad-mcp by
+Brian L Wong (https://github.com/blwfish/freecad-mcp, v8.2.3), imported as a
+git subtree. It is NOT covered by the PolyForm licence: it stays under its
+own licence, the GNU Lesser General Public License v2.1 or later (see
+server/freecad-mcp/LICENSE). The modifications are listed, with their dates,
+in server/freecad-mcp/CHANGES-NikeTheBee.md.
+
+Other third-party components (FreeCAD, the Rocket, AirPlaneDesign and CROSS
+workbenches, the MCP SDK) are not part of this repository: they are installed
+separately and keep their own licences — see CREDITS.md.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
