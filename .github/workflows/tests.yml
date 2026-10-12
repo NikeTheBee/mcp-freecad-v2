@@ -53,6 +53,8 @@ jobs:
           create-args: >-
             python=3.11
             freecad=1.1
+            calculix
+            gmsh
 
       - name: Run core test suite
         shell: bash -el {0}

@@ -19,8 +19,9 @@ trusting the AI's reading of it.
   (`python install/bootstrap.py --update-base`). Fixed in it: holes in a PartDesign Body, sketch
   "fully constrained" verdict, oversized replies that hung for 2 minutes
   ([`CHANGES-NikeTheBee.md`](server/freecad-mcp/CHANGES-NikeTheBee.md)).
-- **Reliability layer** (`freecad-layers`, 13 tools): OK/FAIL/UNKNOWN verdicts, design contract,
-  part analysis, checkpoints, autosave/recovery, supervised FreeCAD restart, anti-squatting.
+- **Reliability layer** (`freecad-layers`, 14 tools): OK/FAIL/UNKNOWN verdicts, design contract,
+  part analysis, **real FEM stress analysis (CalculiX)**, checkpoints, autosave/recovery,
+  supervised FreeCAD restart, anti-squatting, and FreeCAD proves its identity before any command.
 - **New licence**: PolyForm Noncommercial (free to use and modify, not to sell).
 - Version 1 stays available, unchanged, at
   [NikeTheBee/mcp-freecad](https://github.com/NikeTheBee/mcp-freecad).
@@ -36,7 +37,7 @@ You (natural language)
   → AI client (Claude Code / Claude Desktop / any MCP client)
     ├─ `freecad`         launcher (starts/supervises FreeCAD, refuses a hijacked port)
     │                      → freecad-mcp bridge (blwfish v8.2.3, vendored + fixed, ~39 tools)
-    └─ `freecad-layers`  13 reliability tools: project_status · require · check · analyze ·
+    └─ `freecad-layers`  14 reliability tools: project_status · require · check · analyze · fem_static ·
                           check_assembly · printability · record_step · checkpoint · recover ·
                           bill_of_materials · drawing_sheet · pd_hole · project_init
          → FreeCAD 1.1 headless on localhost:23456 (token auth) + domain workbench grafts
@@ -83,7 +84,8 @@ documented. **Experimental** = works on the tested cases only.
 | Documentation | Bill of materials (real parts, links, CSV) | **Stable** |
 | 2D plans | TechDraw views, auto ISO scale, page-fit check, overall dims → DXF (headless) | **Beta** (PDF needs the GUI) |
 | Mechanism | Assemblies (placement), spur gears, fits, linkage kinematics (slider-crank, four-bar) | **Beta** |
-| Analysis | FEM CalculiX (study setup; solving is not automated) · analytical drone sizing · rocket CP/stability (Barrowman) | **Experimental** |
+| Structural FEM | `fem_static`: CalculiX linear static, displacement, von Mises, safety factor, convergence check (matches F·L³/3EI within 0.3 %) | **Beta** (linear elastic only) |
+| Analysis | Analytical drone sizing · rocket CP/stability (Barrowman) | **Experimental** |
 | Grafts | Rocket WB · AirPlaneDesign (headless core only) · CROSS URDF/xacro + ROS 2 package, ros2_control/sensor/Gazebo tags | **Experimental** |
 | CAM / G-code | — | **Removed**: the former layer produced unsafe G-code. Export STEP and program toolpaths in a CAM tool you control. |
 | Inverse kinematics | — | **Removed**: needs Pinocchio, unavailable on Windows. Use MoveIt with the exported URDF. |

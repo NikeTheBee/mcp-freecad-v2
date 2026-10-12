@@ -63,8 +63,8 @@ def _consumers(o) -> List[Any]:
     for x in o.InList:
         if _is_container(x) or _is_link(x) or not hasattr(x, "Shape"):
             continue
-        if x.TypeId.startswith(("TechDraw::", "Spreadsheet::", "Sketcher::")):
-            continue
+        if x.TypeId.startswith(("TechDraw::", "Spreadsheet::", "Sketcher::", "Fem::")):
+            continue                         # a FEM mesh/constraint does not consume the part
         for prop in x.PropertiesList:
             if prop.startswith("_") or prop == "ExpressionEngine":
                 continue
@@ -81,7 +81,8 @@ def _consumers(o) -> List[Any]:
 
 def _solid_shape(o):
     shp = getattr(o, "Shape", None)
-    if shp is None or shp.isNull() or not shp.Solids:
+    # Some objects (e.g. a FEM mesh) have a "Shape" LINK to another object, not a shape.
+    if shp is None or not hasattr(shp, "isNull") or shp.isNull() or not shp.Solids:
         return None
     return shp
 
@@ -108,6 +109,8 @@ def _parts(doc, include_hidden: bool):
             continue
         if o.TypeId.startswith(("PartDesign::", "Sketcher::")) and o.TypeId != "PartDesign::Body":
             continue                         # features/sketches live inside a Body
+        if o.TypeId.startswith("Fem::") or re.match(r"FEM_.+_Dir\d+$", o.Name):
+            continue                         # analysis objects and fem.py's load-direction helpers
         if _solid_shape(o) is None or _consumers(o):
             continue
         linked_only = (getattr(o, "Visibility", True) is False and

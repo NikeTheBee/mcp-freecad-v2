@@ -42,7 +42,7 @@ _p = {str(SERVER_DIR)!r}
 if _p not in sys.path:
     sys.path.insert(0, _p)
 import FreeCAD
-from freecad_layers import state, verify, checkpoint, recovery, spec, analysis, bom, drawing, gate
+from freecad_layers import state, verify, checkpoint, recovery, spec, analysis, bom, drawing, gate, fem
 """
 
 mcp = MCPServer(
@@ -61,9 +61,10 @@ class FreeCADError(RuntimeError):
     pass
 
 
-def _run(template: str, /, **args: Any) -> Any:
+def _run(template: str, /, _timeout: float = 30.0, **args: Any) -> Any:
     """Execute a fixed template in FreeCAD; `args` arrive as `_a` (parsed JSON).
-    The template must assign its JSON-serialisable result to `_out`."""
+    The template must assign its JSON-serialisable result to `_out`.
+    `_timeout`: seconds FreeCAD may spend on it (its default is 30)."""
     fc = launcher.find_freecadcmd()
     if fc is None:
         raise FreeCADError("freecadcmd not found (set FREECAD_MCP_FREECAD_BIN)")
@@ -78,17 +79,23 @@ def _run(template: str, /, **args: Any) -> Any:
             + template
             + "\njson.dumps(_out, default=str)")
     token = TOKEN_PATH.read_text(encoding="ascii").strip()
-    payload = {"tool": "execute_python_sync", "args": {"code": code}, "token": token}
-    with socket.create_connection(("127.0.0.1", launcher.PORT), timeout=120) as s:
+    payload = {"tool": "execute_python_sync", "args": {"code": code, "timeout": _timeout},
+               "token": token}
+    wait = max(120.0, _timeout + 15.0)
+    with socket.create_connection(("127.0.0.1", launcher.PORT), timeout=wait) as s:
         refusal = verify_listener(s, token)   # FreeCAD proves itself before the token leaves
         if refusal:
             raise FreeCADError(f"not sent: {refusal}")
         send_message(s, json.dumps(payload))
-        raw = receive_message(s, timeout=120)
+        raw = receive_message(s, timeout=wait)
     resp = json.loads(raw) if raw else {"error": "no response from FreeCAD"}
     if "error" in resp:
         raise FreeCADError(str(resp["error"])[:2000])
     result = resp.get("result")
+    if isinstance(result, str) and "\n" in result.strip():
+        # FreeCAD returns captured stdout first (e.g. CalculiX's own prints),
+        # then the value's repr on the last line (a repr is always one line).
+        result = result.strip().rsplit("\n", 1)[-1]
     if isinstance(result, str) and result[:1] in ("'", '"'):
         result = ast.literal_eval(result)
     return json.loads(result) if isinstance(result, str) else result
@@ -187,6 +194,27 @@ _out['bbox'] = _r['measures']['bbox']
 _out['min_wall_mm'] = _r['measures']['min_wall']['min_mm']
 _out['overhang_area_mm2'] = _r['measures']['overhang_area_mm2']
 """, target=target, bed=bed_mm or [220, 220, 250], w=min_wall_mm)
+
+
+@mcp.tool()
+@_safe
+def fem_static(target: str, fixed: list[str], loads: list[dict], material: str | dict = "steel",
+               mesh_size_mm: float | None = None, min_safety_factor: float = 2.0,
+               max_displacement_mm: float | None = None, refine: bool = False) -> str:
+    """Linear static stress analysis (CalculiX): max displacement, von Mises stress, safety factor.
+
+    fixed: faces held in place, "FaceN" or a bounding-box side "xmin|xmax|ymin|ymax|zmin|zmax".
+    loads: [{"faces": "xmax", "force_N": 100, "direction": [0, 0, -1]}] (total force per entry).
+    material: steel|stainless|aluminium|pla|petg|abs or {"E": MPa, "nu", "rho": kg/m3, "yield": MPa}.
+    refine=True re-solves on a finer mesh and reports convergence. Not for buckling/plasticity/contact.
+    """
+    return _run("""
+_r = fem.static(_a['target'], _a['fixed'], _a['loads'], material=_a['material'],
+                mesh_size_mm=_a['mesh'], min_safety_factor=_a['sf'],
+                max_displacement_mm=_a['dmax'], refine=_a['refine'])
+_out = fem.summary(_r)
+""", _timeout=600.0, target=target, fixed=fixed, loads=loads, material=material,
+        mesh=mesh_size_mm, sf=min_safety_factor, dmax=max_displacement_mm, refine=refine)
 
 
 @mcp.tool()

@@ -1,45 +1,107 @@
-"""Validate the FEM (structural) domain setup headless (missing-domain: FEM).
+"""FEM exactness test: CalculiX results against closed-form values (headless).
 
-Run with:  A:\FreeCAD\bin\freecadcmd.exe install\fem_test.py
+Run with:  A:\\FreeCAD\\bin\\freecadcmd.exe install\\fem_test.py
 
-Uses bundled FreeCAD Fem + ObjectsFem. Builds a complete analysis container
-(CalculiX solver, solid material, fixed + force constraints, Netgen mesh) on a
-box and best-effort generates the mesh. The CalculiX solver binary (ccx) ships
-with FreeCAD, so solving is possible; full solve needs face references and is
-left to the skill. Prints FEM_OK on success.
+Known values (linear elasticity), steel E = 210000 MPa unless said otherwise:
+- cantilever 100x10x10 mm, fixed at x = 0, 100 N down at the tip:
+  delta = F*L^3 / (3*E*I) = 0.1905 mm; the same in aluminium scales by E;
+- bar in tension, 1000 N on a 10x10 mm section: sigma = 10 MPa, delta = F*L / (E*A);
+- the load direction is honoured (up = +z displacement).
+Traps: limits that must FAIL, bad inputs that must be refused, a non-solid
+that must be UNKNOWN. Prints FEM_OK on success.
 """
-import FreeCAD
-import ObjectsFem
+import os
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.join(os.path.dirname(HERE), "server"))
+
+import shutil  # noqa: E402
+
+import FreeCAD  # noqa: E402
+import Part  # noqa: E402
+from freecad_layers import fem, verify  # noqa: E402
+
+
+def _tool(name):
+    exe = name + (".exe" if os.name == "nt" else "")
+    bundled = os.path.join(FreeCAD.getHomePath(), "bin", exe)
+    return shutil.which(name) or (bundled if os.path.isfile(bundled) else None)
+
+
+missing = [n for n in ("ccx", "gmsh") if not _tool(n)]
+if missing:
+    print(f"FEM_SKIP: {', '.join(missing)} not found (FreeCAD's Windows build bundles both; "
+          "on conda install calculix + gmsh)")
+    sys.exit(0)
 
 doc = FreeCAD.newDocument("FemTest")
-box = doc.addObject("Part::Box", "Box")
-box.Length, box.Width, box.Height = 100, 20, 20
+beam = doc.addObject("Part::Box", "Beam")
+beam.Length, beam.Width, beam.Height = 100, 10, 10
 doc.recompute()
 
-analysis = ObjectsFem.makeAnalysis(doc, "Analysis")
-solver = ObjectsFem.makeSolverCalculiXCcxTools(doc, "CalculiX")
-material = ObjectsFem.makeMaterialSolid(doc, "Steel")
-fixed = ObjectsFem.makeConstraintFixed(doc, "Fixed")
-force = ObjectsFem.makeConstraintForce(doc, "Force")
-mesh = ObjectsFem.makeMeshNetgen(doc, "Mesh")
-mesh.Shape = box
+F, L, b, h = 100.0, 100.0, 10.0, 10.0
+I = b * h ** 3 / 12.0
 
-for obj in (solver, material, fixed, force, mesh):
-    analysis.addObject(obj)
+
+def close(got, want, rel, what):
+    err = abs(got - want) / want
+    print(f"{what}: got {got:.5g}, closed form {want:.5g}, error {err * 100:.2f} %")
+    assert err <= rel, f"{what} off by {err * 100:.2f} % (> {rel * 100:.0f} %)"
+
+
+# 1. cantilever, steel
+r = fem.static("Beam", ["xmin"], [{"faces": "xmax", "force_N": F, "direction": [0, 0, -1]}])
+print(fem.summary(r))
+assert r["status"] == verify.OK, r
+close(r["measures"]["max_disp_mm"], F * L ** 3 / (3 * 210000 * I), 0.02, "cantilever steel delta")
+close(r["measures"]["vm_away_from_supports_MPa"], F * L * (h / 2) / I, 0.10, "root bending stress")
+
+# direction honoured: the tip goes UP for an upward load
+r_up = fem.static("Beam", ["xmin"], [{"faces": "xmax", "force_N": F, "direction": [0, 0, 1]}])
+res = [o for o in doc.getObject("FEM_Beam_Analysis").Group if o.isDerivedFrom("Fem::FemResultObject")][0]
+dz = [v.z for v in res.DisplacementVectors]
+assert max(dz) > 0.18 and min(dz) > -1e-3, (max(dz), min(dz))
+print("upward load -> upward tip: OK")
+
+# 2. cantilever, aluminium (delta scales with 1/E)
+r_al = fem.static("Beam", ["xmin"], [{"faces": "xmax", "force_N": F, "direction": [0, 0, -1]}],
+                  material="aluminium")
+close(r_al["measures"]["max_disp_mm"], F * L ** 3 / (3 * 69000 * I), 0.02, "cantilever aluminium delta")
+
+# 3. bar in tension: uniform 10 MPa
+bar = doc.addObject("Part::Box", "Bar")
+bar.Length, bar.Width, bar.Height = 100, 10, 10
 doc.recompute()
+r_bar = fem.static("Bar", ["xmin"], [{"faces": "xmax", "force_N": 1000, "direction": [1, 0, 0]}])
+print(fem.summary(r_bar))
+close(r_bar["measures"]["vm_away_from_supports_MPa"], 1000 / 100.0, 0.05, "tension stress")
+close(r_bar["measures"]["max_disp_mm"], 1000 * 100 / (210000 * 100.0), 0.05, "tension elongation")
 
-names = [o.Name for o in analysis.Group]
-print("ANALYSIS_GROUP:", names)
-for required in ("CalculiX", "Steel", "Fixed", "Force", "Mesh"):
-    assert required in names, f"missing FEM object {required}"
+# 4. traps: limits that must FAIL
+r_f = fem.static("Beam", ["xmin"], [{"faces": "xmax", "force_N": F, "direction": [0, 0, -1]}],
+                 max_displacement_mm=0.1)
+assert r_f["status"] == verify.FAIL and "displacement" in r_f["issues"][0], r_f
+r_sf = fem.static("Beam", ["xmin"], [{"faces": "xmax", "force_N": F, "direction": [0, 0, -1]}],
+                  min_safety_factor=10)
+assert r_sf["status"] == verify.FAIL and "safety factor" in r_sf["issues"][0], r_sf
+print("limits exceeded -> FAIL: OK")
 
-# Best-effort headless mesh generation (Netgen) — non-fatal if unavailable
-try:
-    from femmesh import gmshtools  # noqa: F401
-    print("mesh tooling importable")
-except Exception as e:  # noqa: BLE001
-    print("mesh tooling note:", repr(e)[:100])
-
-import shutil
-print("ccx solver:", shutil.which("ccx") or "MISSING")
+# 5. bad inputs are refused, a non-solid is UNKNOWN (never OK)
+for bad in (dict(fixed=[], loads=[{"faces": "xmax", "force_N": 1}]),
+            dict(fixed=["top"], loads=[{"faces": "xmax", "force_N": 1}]),
+            dict(fixed=["xmin"], loads=[{"faces": "xmax", "force_N": 1, "direction": [0, 0, 0]}]),
+            dict(fixed=["xmin"], loads=[{"faces": "xmax", "force_N": 1}], material="unobtainium")):
+    try:
+        fem.static("Beam", **bad)
+    except ValueError as e:
+        print("refused:", str(e)[:70])
+    else:
+        raise AssertionError(f"accepted bad input {bad}")
+sheet = doc.addObject("Part::Feature", "Sheet")
+sheet.Shape = Part.makePlane(10, 10)
+doc.recompute()
+r_u = fem.static("Sheet", ["xmin"], [{"faces": "xmax", "force_N": 1}])
+assert r_u["status"] == verify.UNKNOWN, r_u
+print("non-solid -> UNKNOWN: OK")
 print("FEM_OK")

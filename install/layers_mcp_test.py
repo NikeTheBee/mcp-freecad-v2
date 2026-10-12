@@ -67,6 +67,13 @@ async def run(inst: Instance, project: str, out: str) -> None:
             assert "D6.0 @ [0.0, 0.0, 4.0]" in txt, txt
             txt = await call("printability", target="Body")
             assert '"status": "OK"' in txt, txt
+            txt = await call("fem_static", target="Body", fixed=["xmin"], material="aluminium",
+                             loads=[{"faces": "xmax", "force_N": 500, "direction": [0, 0, -1]}])
+            assert txt.startswith("OK FEM static (aluminium") and "safety factor" in txt, txt
+            txt = await call("fem_static", target="Body", fixed=["xmin"], material="pla",
+                             loads=[{"faces": "xmax", "force_N": 500, "direction": [0, 0, -1]}],
+                             max_displacement_mm=0.01)
+            assert txt.startswith("FAIL FEM static") and "max displacement" in txt, txt
             txt = await call("bill_of_materials")
             assert "1 distinct part(s), 1 total" in txt, txt
             txt = await call("drawing_sheet", target="Body",

@@ -11,6 +11,7 @@
 | `check(target)` | geometry verdict + the target's requirements; autosaves when all OK |
 | `analyze(target)` | holes (Ø, position, through/blind), min wall estimate |
 | `check_assembly([...])`, `printability(target)` | overlaps between parts; FDM checks |
+| `fem_static(target, fixed, loads, material)` | CalculiX stress analysis: displacement, von Mises, safety factor (see `skill-fem`) |
 | `record_step(feature, ftype, params, decision)` | memory + autosave after a validated step |
 | `checkpoint(save/restore/list)`, `recover(list/open)` | rollback; reopen after a crash |
 | `bill_of_materials`, `drawing_sheet`, `pd_hole` | see `skill-bom`, `skill-techdraw`, `skill-partdesign` |

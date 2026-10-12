@@ -53,6 +53,8 @@ reliability tools — prefer them over `execute_python`).
 - One rollback system: `freecad-layers` `checkpoint` — not the base's `view_control checkpoint/rollback_to_checkpoint`.
 - Sketches: `check(sketch)` before Pad/Pocket (the base's `verify_sketch` now reports DoF/conflicts too since v2).
 - Fabrication outputs: STL only after `printability`/`check` OK; **never G-code** (`skill-cam`).
+- "Will it hold?": `fem_static` (CalculiX) with the user's supports, loads and material — never guess
+  a strength; report the safety factor and its limits (linear elastic only, see `skill-fem`).
 - Text-only feedback by default. Screenshots only on request or for a complex part/assembly at a milestone
   when measurements alone can't settle it.
 
@@ -64,6 +66,6 @@ reliability tools — prefer them over `execute_python`).
 ## Pointers
 - Full spec: `@docs/CAHIER_DES_CHARGES.md` · Compatibility audit: `@docs/COMPATIBILITY.md` · Security: `@SECURITY.md`
 - Domain knowledge: `/skills/<domain>/SKILL.md` — load on demand. Available: `skill-verify` (reliability layers & tools), `skill-partdesign` (sketch/Pad/Pocket/holes + spreadsheet variants), `skill-assembly` (multi-part assemblies, fits), `skill-print3d` (STL export), `skill-exchange` (STEP/IGES), `skill-techdraw` (2D plans -> DXF), `skill-bom` (nomenclature), `skill-fem` (CalculiX setup), `skill-gear` (involute spur gears), `skill-kinematics` (linkage motion laws), `skill-rocket` (Rocketry WB), `skill-drone` (AirPlaneDesign WB + analytical aero + external CFD), `skill-robotics-ros` (CROSS URDF export + ros2_control/Gazebo), `skill-cam` (DISABLED — never emit machine G-code; read it if CNC is requested).
-- Home-grown layers (§7): `server/freecad_layers/` — `state` (project memory), `spec` (design contract), `verify` (geometry checks), `analysis` (holes, walls, printability), `checkpoint` (rollback), `recovery` (autosave), `bom`, `drawing`, `kinematics`, `aero`, `urdf_aug`; exposed as MCP tools by `server/layers_mcp/`. Any NEW file-writing code MUST use the shared gates `safe_out_path`/`safe_under` (SECURITY.md).
+- Home-grown layers (§7): `server/freecad_layers/` — `state` (project memory), `spec` (design contract), `verify` (geometry checks), `analysis` (holes, walls, printability), `fem` (CalculiX static stress), `checkpoint` (rollback), `recovery` (autosave), `bom`, `drawing`, `kinematics`, `aero`, `urdf_aug`; exposed as MCP tools by `server/layers_mcp/`. Any NEW file-writing code MUST use the shared gates `safe_out_path`/`safe_under` (SECURITY.md).
 - Project memory data: `/project_state/state.json` · Checkpoints: `/checkpoints/` · Autosaves: `/recovery/` (runtime artifacts, gitignored)
 - Audit & repair plan: `@docs/AUDIT_2026-10-11.md` (§8 final verdict, §9 feature list).
