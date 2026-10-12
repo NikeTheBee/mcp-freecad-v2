@@ -2,9 +2,9 @@ name: tests
 
 # Runs the bundled-FreeCAD test suite against a conda-forge FreeCAD, plus a
 # secret scan of the whole git history.
-# Graft tests and the end-to-end launcher / MCP-loop tests are reported as SKIP
-# here (they need the Windows install and the third-party clones); they run
-# locally via `python install/run_all_tests.py`.
+# On Linux, graft tests and the end-to-end launcher / MCP-loop tests are SKIP
+# (they need the Windows install); the windows-full job runs them all on the
+# official FreeCAD Windows build.
 
 on:
   push:
@@ -70,3 +70,55 @@ jobs:
           echo "freecadcmd: $FCBIN"
           export FREECAD_MCP_FREECAD_BIN="$FCBIN"
           python install/run_all_tests.py
+
+  # The real target: Windows + the official FreeCAD 1.1.1 build (portable
+  # archive, SHA-256 pinned). One-command install with the grafts, then EVERY
+  # test, including the launcher, the MCP loops and the live base fixes on an
+  # isolated FreeCAD instance. Nothing is skipped here.
+  windows-full:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      FC_VERSION: "1.1.1"
+      FC_ARCHIVE: FreeCAD_1.1.1-Windows-x86_64-py311.7z
+      FC_SHA256: aef51acb6725d5667bbae73494d04794a1e1725e17c6589650b044c15808144f
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache FreeCAD
+        id: fccache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}\freecad
+          key: freecad-win-${{ env.FC_SHA256 }}
+
+      - name: Download FreeCAD (SHA-256 checked)
+        if: steps.fccache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $ProgressPreference = 'SilentlyContinue'
+          $out = Join-Path $env:RUNNER_TEMP $env:FC_ARCHIVE
+          Invoke-WebRequest "https://github.com/FreeCAD/FreeCAD/releases/download/$env:FC_VERSION/$env:FC_ARCHIVE" -OutFile $out
+          $got = (Get-FileHash $out -Algorithm SHA256).Hash.ToLower()
+          if ($got -ne $env:FC_SHA256) { throw "FreeCAD archive SHA-256 mismatch: $got" }
+          7z x $out "-o$env:RUNNER_TEMP\freecad" -y | Out-Null
+          Remove-Item $out
+
+      - name: Locate freecadcmd
+        shell: pwsh
+        run: |
+          $bin = Get-ChildItem "$env:RUNNER_TEMP\freecad" -Recurse -Filter freecadcmd.exe | Select-Object -First 1
+          if (-not $bin) { throw "freecadcmd.exe not found in the archive" }
+          "FREECAD_MCP_FREECAD_BIN=$($bin.FullName)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "freecadcmd: $($bin.FullName)"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Install (venv, addon, grafts) and run every test
+        shell: pwsh
+        run: python install/bootstrap.py --with-grafts --client none
