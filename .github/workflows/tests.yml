@@ -108,7 +108,9 @@ jobs:
       - name: Locate freecadcmd
         shell: pwsh
         run: |
-          $bin = Get-ChildItem "$env:RUNNER_TEMP\freecad" -Recurse -Filter freecadcmd.exe | Select-Object -First 1
+          # the real binary lives in bin\ (the archive root also has a launcher stub)
+          $bin = Get-ChildItem "$env:RUNNER_TEMP\freecad" -Recurse -Filter freecadcmd.exe |
+                 Where-Object { $_.Directory.Name -eq 'bin' } | Select-Object -First 1
           if (-not $bin) { throw "freecadcmd.exe not found in the archive" }
           "FREECAD_MCP_FREECAD_BIN=$($bin.FullName)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           Write-Host "freecadcmd: $($bin.FullName)"
