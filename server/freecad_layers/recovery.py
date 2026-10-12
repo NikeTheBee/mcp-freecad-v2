@@ -37,9 +37,19 @@ def autosave(doc=None, keep: int = KEEP, reason: str = "") -> str:
     if doc is None:
         raise ValueError("No document to autosave")
     d = _doc_dir(doc.Name)
-    stamp = time.strftime("%Y%m%d-%H%M%S") + f"-{int(time.time() * 1000) % 1000:03d}"
+    now = time.time()   # one clock read: seconds and milliseconds must agree
+    stamp = time.strftime("%Y%m%d-%H%M%S", time.localtime(now)) + f"-{int(now * 1000) % 1000:03d}"
     tag = ("-" + re.sub(r"[^A-Za-z0-9_-]+", "_", reason)[:40]) if reason else ""
-    path = safe_out_path(d / f"{stamp}{tag}.FCStd", {".fcstd"})
+    # Two saves in the same millisecond (fast machines) get the next sequence
+    # number; it sorts after the first, so latest() stays right.
+    for seq in range(100):
+        try:
+            path = safe_out_path(d / f"{stamp}-{seq:02d}{tag}.FCStd", {".fcstd"})
+            break
+        except FileExistsError:
+            continue
+    else:
+        raise FileExistsError(f"100 autosaves of {doc.Name} in the same millisecond")
     doc.saveCopy(str(path))
     for old in sorted(d.glob("*.FCStd"), reverse=True)[max(keep, 1):]:
         old.unlink(missing_ok=True)

@@ -32,7 +32,7 @@ SECRET_RES = [
 ]
 # This is a fast local guard; CI also runs Gitleaks (.github/workflows/tests.yml).
 # Files that legitimately contain the *patterns themselves* (this scanner + the policy).
-SELF = {"install/security_scan.py", "SECURITY.md"}
+SELF = {"install/security_scan.py", "SECURITY.md", ".gitleaks.toml"}
 # Known FAKE secrets used as test inputs, by (file, exact match) — never a whole-file skip.
 # The vendored base tests its crash-report redaction with these (.gitleaks.toml mirrors it).
 FAKE_FIXTURES = {

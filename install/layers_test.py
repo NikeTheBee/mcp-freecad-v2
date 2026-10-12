@@ -99,6 +99,17 @@ for _ in range(7):
 assert len(recovery.list_recovery(doc.Name)) == recovery.KEEP
 print("recovery pruning keeps", recovery.KEEP, "copies: OK")
 
+# --- two autosaves in the same millisecond (CI on Linux hit this) ----------
+_real_time = recovery.time.time
+recovery.time.time = lambda: 4102444800.123     # frozen in 2100: same stamp, newest copies
+try:
+    a, b = recovery.autosave(doc), recovery.autosave(doc)
+finally:
+    recovery.time.time = _real_time
+assert a != b and os.path.exists(a) and os.path.exists(b), (a, b)
+assert recovery.latest(doc.Name) == b, (recovery.latest(doc.Name), b)
+print("same-millisecond autosaves get distinct names, latest() = newest: OK")
+
 # --- audit P1: output gate refuses NTFS streams and device names -----------
 from freecad_layers import safe_out_path
 for bad in (os.path.join(_tmp, "evil.exe:x.csv"), os.path.join(_tmp, "CON.csv"),
