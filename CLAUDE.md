@@ -1,15 +1,19 @@
-# MCP FREECAD
+# MCP FREECAD 2
 
 AI-piloted FreeCAD (natural language → parametric CAD/robotics), via MCP, on Windows.
 
 ## Stack
 - FreeCAD 1.1.1 at `A:\FreeCAD\bin\` (`freecad.exe` GUI, `freecadcmd.exe` headless, bundled Python 3.11).
-- MCP base: `blwfish/freecad-mcp` **pinned** (v8.2.3, SHA in `install/bootstrap.py`), cloned into
-  `/server/freecad-mcp` and run **unmodified** (no patches).
+- MCP base: `blwfish/freecad-mcp` v8.2.3, **vendored and modified** in `/server/freecad-mcp`
+  (git subtree, stays LGPL). Edit it like our own code, log every change in
+  `server/freecad-mcp/CHANGES-NikeTheBee.md`, and pull upstream with
+  `python install/bootstrap.py --update-base`. Its unit tests: `pytest tests/unit` from that folder
+  (venv Python; deselect `test_headless_server.py::TestMainStartupSuccess`, it hangs on Windows;
+  ~132 POSIX-only failures pre-exist — compare against the previous run, never expect 0).
   - Entry point registered as user-scoped MCP server `freecad`: the supervised launcher
     `server/launcher/mcp_freecad_launch.py`, run by the dedicated venv `~/.freecad-mcp/venv`
     (mcp 2.x, psutil — nothing in the system Python). See `claude mcp get freecad`.
-  - FreeCAD-side addon `AICopilot`: headless server started from the pinned clone; a copy is
+  - FreeCAD-side addon `AICopilot`: headless server started from `/server/freecad-mcp`; a copy is
     installed in `%APPDATA%\FreeCAD\v1-1\Mod` for GUI use.
   - `FREECAD_MCP_FREECAD_BIN` (in the server's launch env) points at `A:\FreeCAD\bin\freecadcmd.exe`.
 
@@ -30,7 +34,7 @@ Logs: `~/.freecad-mcp/logs/launcher.log`. The base's `spawn_freecad_instance` is
 ## Architecture
 ```
 User (natural language) → Claude Code → MCP `freecad` server (stdio)
-   → launcher (supervision, anti-squatting) → upstream bridge (pinned, unmodified)
+   → launcher (supervision, anti-squatting) → base bridge (vendored, see CHANGES-NikeTheBee.md)
    → FreeCAD headless on localhost:23456 (token auth from upstream)
    → AICopilot workbench executes the operation inside FreeCAD
 ```
@@ -45,9 +49,9 @@ reliability tools — prefer them over `execute_python`).
   `FAIL` = fix it; `UNKNOWN` = not verified — never treat as OK. A valid solid can still be the wrong part.
 - After a validated step: `record_step(...)` (memory + autosave). Before a risky step: `checkpoint save`;
   roll back with `checkpoint restore`. After a FreeCAD crash: `recover`.
-- Holes in a PartDesign Body: `pd_hole`, never the base's `partdesign_operations hole`.
+- Holes in a PartDesign Body: `pd_hole` (fixed in v2, the base's `partdesign_operations hole` now also cuts inside the Body).
 - One rollback system: `freecad-layers` `checkpoint` — not the base's `view_control checkpoint/rollback_to_checkpoint`.
-- Sketches: `check(sketch)` before Pad/Pocket — the base's `verify_sketch` calls under-constrained sketches "fully constrained".
+- Sketches: `check(sketch)` before Pad/Pocket (the base's `verify_sketch` now reports DoF/conflicts too since v2).
 - Fabrication outputs: STL only after `printability`/`check` OK; **never G-code** (`skill-cam`).
 - Text-only feedback by default. Screenshots only on request or for a complex part/assembly at a milestone
   when measurements alone can't settle it.

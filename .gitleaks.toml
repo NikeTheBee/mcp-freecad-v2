@@ -1,0 +1,16 @@
+# Gitleaks (CI, .github/workflows/tests.yml): default rules + one narrow allowlist.
+# The vendored base tests its crash-report redaction with FAKE secrets; only those exact
+# strings in that one test file are allowed (install/security_scan.py FAKE_FIXTURES mirrors this).
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Fake secrets used as redaction test inputs in the vendored base"
+paths = ['''server/freecad-mcp/tests/unit/test_crash_watcher\.py''']
+regexes = [
+  '''AKIAABCDEFGHIJKLMNOP''',
+  '''hunter2\d*''',
+  '''sk-abcdef1234567890ABCDEFGHIJ''',
+  '''ghp_ABCDEFGHIJKLMNOPQRSTUVWX''',
+]
+condition = "AND"

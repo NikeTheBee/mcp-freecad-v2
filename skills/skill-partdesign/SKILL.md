@@ -41,11 +41,10 @@ doc.recompute()
 Pick edge ids from `pad.Shape.Edges` / `measurement_operations list_faces`.
 
 ## Holes & patterns
-- **Do NOT use the base tool `partdesign_operations hole`**: it builds a `Part::Cut` *outside* the
-  Body, so the Body (and every later feature) has no hole while the call reports success
-  (audit 2026-10-11 §2.4).
 - Simple vertical hole (through or blind): **`pd_hole(body, diameter, x, y, through, depth)`** from
-  the `freecad-layers` server — a real feature inside the Body.
+  the `freecad-layers` server — a real feature inside the Body. Since v2 the base tool
+  `partdesign_operations hole` (no `face_index`) also cuts inside the Body (it used to build a
+  `Part::Cut` *outside* it, audit 2026-10-11 §2.4); `pd_hole` stays the preferred, tested path.
 - Counterbore/countersink/threaded: `PartDesign::Hole` (`.HoleCutType`, `.Threaded`) on a circle sketch.
 - After any hole, `check(body)`; record the expected holes once with
   `require(body, "holes", {"count": n, "diameter": d})` so a missing hole FAILs.

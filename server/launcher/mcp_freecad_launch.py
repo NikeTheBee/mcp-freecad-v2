@@ -3,7 +3,8 @@
 
 Registered as the MCP server command instead of the bare upstream bridge.
 It replaces the old string patches applied to third-party code
-(audit 2026-10-11, §3.8) — the pinned upstream files run unmodified:
+(audit 2026-10-11, §3.8) — nothing is patched at run time; the base is the
+vendored server/freecad-mcp (its own changes: CHANGES-NikeTheBee.md):
 
 1. Make sure a headless FreeCAD (AICopilot headless_server.py) listens on the
    port, starting one if needed.

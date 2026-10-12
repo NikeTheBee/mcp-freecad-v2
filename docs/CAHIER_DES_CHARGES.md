@@ -308,7 +308,7 @@ Chargé **chaque** session → budget strict < ~150 lignes. Contenu cible :
 | # | Décision | Choix retenu |
 |---|---|---|
 | D1 | OS principal | **Windows** (validé bout-en-bout ; architecture multi-OS, Linux/macOS non testés) |
-| D2 | Licence finale | **CC BY-NC 4.0** — libre de télécharger/modifier/partager, citation obligatoire (auteur + projets tiers de CREDITS.md), pas d'usage commercial. Possible car ni la base ni les workbenches (LGPL) ne sont vendorisés : ils sont clonés à l'install |
+| D2 | Licence finale | **CC BY-NC 4.0** — libre de télécharger/modifier/partager, citation obligatoire (auteur + projets tiers de CREDITS.md), pas d'usage commercial. Possible car ni la base ni les workbenches (LGPL) ne sont vendorisés : ils sont clonés à l'install. **Remplacé en v2 (2026-10-12)** : PolyForm Noncommercial 1.0.0 (utiliser/modifier/partager librement, jamais vendre) ; la base `server/freecad-mcp/`, désormais intégrée et modifiée, reste LGPL-2.1-or-later |
 | D3 | Génération image→3D incluse ? | **Non** (hors MVP, GPU requis) |
 | D4 | `project_state` public ou privé | **Privé** (gitignoré ; contient les projets de l'utilisateur) |
 | D5 | Niveau CAM visé | **Différé à FreeCAD 1.2** ; en attendant, repli STEP/STL (`skill-cam` documente la conduite à tenir) |

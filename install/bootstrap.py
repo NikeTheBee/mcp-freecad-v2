@@ -3,12 +3,13 @@
 
 What it does:
   1. Finds FreeCAD (freecadcmd) and its REAL version-specific user Mod dir.
-  2. Clones / updates the base server `blwfish/freecad-mcp` at a PINNED commit
-     (server/freecad-mcp, gitignored) — upstream code runs UNMODIFIED.
+  2. Checks the base server: a modified copy of `blwfish/freecad-mcp` v8.2.3 is part of
+     this repository (server/freecad-mcp, git subtree, LGPL — see its
+     CHANGES-NikeTheBee.md). Nothing is downloaded for it.
   3. Creates a dedicated venv (~/.freecad-mcp/venv) with pinned dependencies:
      nothing is installed into your system Python.
   4. Installs the AICopilot addon into the versioned Mod dir (for GUI use).
-  5. Registers two MCP servers: `freecad` (supervised launcher + pinned base) and
+  5. Registers two MCP servers: `freecad` (supervised launcher + base) and
      `freecad-layers` (verification, contract, checkpoints, BOM, drawings...)
      with Claude Code and/or Claude Desktop.
   6. Optionally clones the workbench grafts, each pinned to a commit.
@@ -21,6 +22,9 @@ atomically; an unreadable config is never overwritten.
 Usage:
     python install/bootstrap.py [--with-grafts] [--client {auto,code,desktop,both,none}]
                                 [--freecad-bin PATH] [--python PATH] [--skip-tests] [--dry-run]
+    python install/bootstrap.py --update-base [--dry-run]
+        Merges upstream blwfish/freecad-mcp changes into server/freecad-mcp
+        (git subtree pull --squash; our changes are kept, conflicts are shown by git).
 """
 from __future__ import annotations
 
@@ -40,9 +44,10 @@ LAYERS_SERVER = REPO / "server" / "layers_mcp" / "freecad_layers_server.py"
 # MCP servers registered with the client(s): base tools + the project's layers.
 SERVERS = {"freecad": LAUNCHER, "freecad-layers": LAYERS_SERVER}
 
-# Base server, pinned. Bump deliberately, then run the full suite.
+# Base server: vendored as a git subtree (server/freecad-mcp). Upstream, for --update-base.
 BASE_REPO_URL = "https://github.com/blwfish/freecad-mcp"
-BASE_SHA = "00732265e0aa70ef6c85bd465a3049262e6fdb89"          # v8.2.3, 2026-10-04
+BASE_BRANCH = "main"
+BASE_PREFIX = "server/freecad-mcp"
 
 # Bridge venv dependencies (match the pinned base's pyproject + the launcher).
 VENV_DEPS = [
@@ -145,6 +150,36 @@ def checkout_pinned(url: str, dest: Path, sha: str, dry: bool) -> None:
             run(["git", "-C", dest, "fetch", "--quiet", "origin"])
         run(["git", "-C", dest, "checkout", "--quiet", sha])
     log(f"{dest.name} pinned at {sha[:10]}")
+
+
+def check_base() -> None:
+    """The base is part of this repository; refuse a partial checkout."""
+    needed = ["freecad_mcp_server.py", "mcp_bridge_framing.py", "AICopilot/headless_server.py",
+              "AICopilot/freecad_mcp_handler.py"]
+    missing = [n for n in needed if not (BASE_DIR / n).is_file()]
+    if missing:
+        raise InstallError(f"{BASE_DIR} is incomplete (missing {missing}); re-clone the "
+                           "repository — the base server ships inside it")
+    log(f"base server: {BASE_DIR} (vendored, see CHANGES-NikeTheBee.md)")
+
+
+def update_base(dry: bool) -> None:
+    """Merge upstream blwfish/freecad-mcp into the vendored copy (keeps our changes)."""
+    dirty = run(["git", "-C", REPO, "status", "--porcelain", "--untracked-files=no"],
+                capture_output=True, text=True).stdout.strip()
+    if dirty:
+        raise InstallError(f"commit or stash your changes first:\n{dirty}")
+    cmd = ["git", "-C", REPO, "subtree", "pull", f"--prefix={BASE_PREFIX}",
+           BASE_REPO_URL, BASE_BRANCH, "--squash", "-m",
+           f"Update {BASE_PREFIX} from upstream {BASE_REPO_URL}"]
+    if dry:
+        log("DRY: " + " ".join(map(str, cmd)))
+        return
+    if run(cmd, check=False).returncode != 0:
+        raise InstallError("upstream merge stopped (conflicts?): fix the files git lists, "
+                           "`git add` them, `git commit`, then run install/run_all_tests.py")
+    log("base updated. Now: python install/run_all_tests.py, and note the upstream "
+        f"version in {BASE_PREFIX}/CHANGES-NikeTheBee.md")
 
 
 def copy_tree(src: Path, dst: Path, dry: bool) -> None:
@@ -291,8 +326,18 @@ def main() -> int:
                     help="interpreter used to create the venv (3.10+)")
     ap.add_argument("--skip-tests", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--update-base", action="store_true",
+                    help="merge upstream blwfish/freecad-mcp changes, then stop")
     args = ap.parse_args()
     dry = args.dry_run
+
+    if args.update_base:
+        try:
+            update_base(dry)
+        except InstallError as e:
+            log(f"STOPPED: {e}")
+            return 1
+        return 0
 
     try:
         freecadcmd = find_freecadcmd(args.freecad_bin)
@@ -300,7 +345,7 @@ def main() -> int:
         moddir = freecad_user_mod_dir(freecadcmd)
         log(f"User Mod dir: {moddir}")
 
-        checkout_pinned(BASE_REPO_URL, BASE_DIR, BASE_SHA, dry)
+        check_base()
         make_venv(Path(args.python), dry)
         stop_stale_headless(dry)          # first: a running server locks its folder
         retire_legacy(moddir, dry)

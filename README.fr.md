@@ -1,7 +1,7 @@
-# MCP FREECAD 🇫🇷
+# MCP FREECAD 2 🇫🇷
 
-[![Tests](https://github.com/NikeTheBee/mcp-freecad/actions/workflows/tests.yml/badge.svg)](https://github.com/NikeTheBee/mcp-freecad/actions/workflows/tests.yml)
-[![License: CC BY-NC 4.0](https://img.shields.io/badge/License-CC_BY--NC_4.0-lightgrey.svg)](LICENSE)
+[![Tests](https://github.com/NikeTheBee/mcp-freecad-v2/actions/workflows/tests.yml/badge.svg)](https://github.com/NikeTheBee/mcp-freecad-v2/actions/workflows/tests.yml)
+[![Licence : PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/License-PolyForm_Noncommercial_1.0.0-lightgrey.svg)](LICENSE)
 🇬🇧 [English version](README.md)
 
 Concevez des pièces **mécaniques, aéro et robotiques** dans **FreeCAD** en **langage naturel**, via
@@ -11,6 +11,19 @@ au lieu de croire la lecture qu'en fait l'IA.
 > Décrivez l'intention (« une plaque 60×40×8 mm avec un trou débouchant Ø6 au centre ») ; l'IA
 > modélise, enregistre vos exigences comme des contrôles, vérifie la géométrie et les exigences après
 > chaque étape, sauvegarde automatiquement, et permet de revenir en arrière.
+
+## Nouveautés de la 2.0
+- **Le serveur de base fait partie du projet.** blwfish/freecad-mcp v8.2.3 est intégré dans
+  `server/freecad-mcp/` (git subtree) : corrigé ici, et toujours capable de récupérer les mises à
+  jour d'origine (`python install/bootstrap.py --update-base`). Corrigés : trous dans un Body
+  PartDesign, verdict « entièrement contrainte » des esquisses, réponses trop grosses qui bloquaient
+  2 minutes ([`CHANGES-NikeTheBee.md`](server/freecad-mcp/CHANGES-NikeTheBee.md)).
+- **Couche de fiabilité** (`freecad-layers`, 13 outils) : verdicts OK/FAIL/UNKNOWN, contrat de
+  conception, analyse de pièce, checkpoints, sauvegarde/récupération, relance supervisée de
+  FreeCAD, anti-usurpation du port.
+- **Nouvelle licence** : PolyForm Noncommercial (libre d'utiliser et modifier, interdit de vendre).
+- La version 1 reste disponible, inchangée :
+  [NikeTheBee/mcp-freecad](https://github.com/NikeTheBee/mcp-freecad).
 
 ## Objectif : l'IA locale d'abord
 Le but final est la CAO pilotée par des modèles d'IA **locaux**. L'architecture repose sur **MCP**,
@@ -22,7 +35,7 @@ Code) servent de client de référence en attendant.
 Vous (langage naturel)
   → client IA (Claude Code / Claude Desktop / tout client MCP)
     ├─ `freecad`         lanceur (démarre/surveille FreeCAD, refuse un port usurpé)
-    │                      → bridge blwfish/freecad-mcp (figé en v8.2.3, non modifié, ~39 outils)
+    │                      → bridge freecad-mcp (blwfish v8.2.3, intégré + corrigé, ~39 outils)
     └─ `freecad-layers`  13 outils de fiabilité : project_status · require · check · analyze ·
                           check_assembly · printability · record_step · checkpoint · recover ·
                           bill_of_materials · drawing_sheet · pd_hole · project_init
@@ -39,11 +52,11 @@ Vous (langage naturel)
 
 ## Installation (une commande, Windows)
 ```
-git clone https://github.com/NikeTheBee/mcp-freecad "MCP FREECAD" && cd "MCP FREECAD"
+git clone https://github.com/NikeTheBee/mcp-freecad-v2 "MCP FREECAD" && cd "MCP FREECAD"
 python install/bootstrap.py --with-grafts
 ```
-Prérequis : **FreeCAD 1.1.x**, **Python 3.10+**, **git**, un client MCP. L'installeur fige chaque
-composant tiers sur un commit, crée un environnement Python dédié (`~/.freecad-mcp/venv`, rien dans
+Prérequis : **FreeCAD 1.1.x**, **Python 3.10+**, **git**, un client MCP. Le serveur de base est livré
+dans le dépôt ; l'installeur fige chaque autre composant tiers sur un commit, crée un environnement Python dédié (`~/.freecad-mcp/venv`, rien dans
 votre Python système), enregistre les deux serveurs MCP et lance les tests. Il s'arrête à la
 première erreur et n'écrase jamais une configuration Claude Desktop illisible. Relançable sans risque.
 
@@ -54,7 +67,8 @@ python install/run_all_tests.py
 ~33 tests : les pièges de l'audit (verdicts qui passaient sur des pièces fausses), couches, greffes,
 lanceur (authentification, relance après crash, refus d'un port usurpé) et boucles MCP complètes —
 sur une instance FreeCAD **isolée** (port 23499), jamais sur votre instance réelle. Un test ignoré
-s'affiche SKIP, jamais comme réussi.
+s'affiche SKIP, jamais comme réussi. La base intégrée garde aussi ses ~2 100 tests unitaires
+(`pytest tests/unit` dans `server/freecad-mcp`).
 
 ## Capacités et maturité
 **Stable** = tests d'exactitude (valeurs connues + pièges). **Bêta** = testé de bout en bout, limites
@@ -82,8 +96,9 @@ Connaissance métier : [`skills/`](skills), chargée à la demande.
   [`docs/CAHIER_DES_CHARGES.md`](docs/CAHIER_DES_CHARGES.md) (spécification d'origine).
 
 ## Licence
-[CC BY-NC 4.0](LICENSE) © 2026 NikeTheBee — chacun est libre de **télécharger, modifier et
-partager**, à deux conditions : **citation obligatoire** (créditer NikeTheBee ET les projets tiers
-de [`CREDITS.md`](CREDITS.md)), et **pas d'usage commercial** sans autorisation écrite préalable.
-Résumé lisible : [`NOTICE`](NOTICE). FreeCAD et les workbenches greffés gardent leurs propres
-licences (LGPL-2.1, non vendorisés ici).
+[PolyForm Noncommercial 1.0.0](LICENSE) © 2026 NikeTheBee — chacun est libre d'**utiliser,
+modifier et partager** pour tout usage non commercial ; **le vendre ou tout usage commercial**
+demande une autorisation écrite. Gardez la ligne `Required Notice` de [`NOTICE`](NOTICE) et les
+crédits de [`CREDITS.md`](CREDITS.md). Exception : `server/freecad-mcp/` (blwfish/freecad-mcp,
+modifié) reste sous **LGPL-2.1-or-later**. FreeCAD et les ateliers greffés gardent leurs propres
+licences (LGPL-2.1, non inclus ici).

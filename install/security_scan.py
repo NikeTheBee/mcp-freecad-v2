@@ -25,7 +25,7 @@ SECRET_RES = [
     re.compile(r"AIza[0-9A-Za-z_-]{35}"),                  # Google API key
     re.compile(r"gh[ousr]_[A-Za-z0-9]{36}"),               # GitHub OAuth/user/server tokens
     re.compile(r"(?i)(password|passwd|api[_-]?key|secret|access[_-]?token)"
-               r"\s*[=:]\s*['\"][^'\"]{8,}['\"]"),         # quoted credential
+               r"[ \t]*[=:][ \t]*['\"][^'\"\r\n]{8,}['\"]"),  # quoted credential, one line
     # unquoted env-style assignment of a long opaque value (e.g. in .ps1/.bat/.md)
     re.compile(r"(?m)^\s*(?:set\s+|export\s+|\$env:)?[A-Z][A-Z0-9_]*(?:API_KEY|TOKEN|SECRET)"
                r"\s*=\s*[A-Za-z0-9_\-]{24,}\s*$"),
@@ -33,6 +33,14 @@ SECRET_RES = [
 # This is a fast local guard; CI also runs Gitleaks (.github/workflows/tests.yml).
 # Files that legitimately contain the *patterns themselves* (this scanner + the policy).
 SELF = {"install/security_scan.py", "SECURITY.md"}
+# Known FAKE secrets used as test inputs, by (file, exact match) — never a whole-file skip.
+# The vendored base tests its crash-report redaction with these (.gitleaks.toml mirrors it).
+FAKE_FIXTURES = {
+    ("server/freecad-mcp/tests/unit/test_crash_watcher.py", "AKIAABCDEFGHIJKLMNOP"),
+    ("server/freecad-mcp/tests/unit/test_crash_watcher.py", "password: 'hunter2222'"),
+    ("server/freecad-mcp/tests/unit/test_crash_watcher.py",
+     'secret = "sk-abcdef1234567890ABCDEFGHIJ"'),
+}
 SENSITIVE = re.compile(r"(^|/)(\.env|.*\.pem|.*\.key|id_rsa|credentials\.json|secrets\.)")
 
 
@@ -58,9 +66,11 @@ def main() -> int:
         except OSError:
             continue
         for rx in SECRET_RES:
-            m = rx.search(text)
-            if m:
+            for m in rx.finditer(text):
+                if (rel, m.group(0)) in FAKE_FIXTURES:
+                    continue
                 problems.append(f"secret-shaped string in {rel}: {m.group(0)[:24]}…")
+                break
 
     # Bind must be local only (best-effort: check the base handler if cloned)
     handler = REPO / "server" / "freecad-mcp" / "AICopilot" / "freecad_mcp_handler.py"

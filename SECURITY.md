@@ -59,10 +59,12 @@ The policy lives in ONE place; extend it there, not locally. Tests must exercise
   ```
 
 ## Third-party code (supply chain)
-- The base server and grafts are **cloned, not vendored** (gitignored `server/freecad-mcp`, `addons/`).
-- Everything is **pinned to a commit SHA** in `install/bootstrap.py` (base `blwfish/freecad-mcp`
-  v8.2.3, Rocket, AirPlaneDesign, CROSS) and run **unmodified**: no more string patches on
-  third-party code. Upgrading the base = bump the SHA deliberately, then run the full suite.
+- The base server `blwfish/freecad-mcp` v8.2.3 is **vendored** in `server/freecad-mcp/`
+  (git subtree): what runs is exactly what is reviewed in this repository. Our changes are listed
+  in `server/freecad-mcp/CHANGES-NikeTheBee.md`. Upstream updates come in only through
+  `python install/bootstrap.py --update-base` (a reviewable merge commit), then the full suite.
+- The grafts (Rocket, AirPlaneDesign, CROSS) are **cloned, not vendored** (gitignored `addons/`),
+  each **pinned to a commit SHA** in `install/bootstrap.py`.
 - Python dependencies live in a dedicated venv (`~/.freecad-mcp/venv`), with version bounds;
   nothing is installed into the system Python.
 - The installer refuses to touch a clone with local modifications, and never overwrites an
@@ -76,5 +78,5 @@ The launcher deletes operation logs older than 14 days at start-up
 
 ## Reporting
 This is a personal/educational project. If you find a security issue, open a GitHub issue on
-[NikeTheBee/mcp-freecad](https://github.com/NikeTheBee/mcp-freecad) (or contact the maintainer
+[NikeTheBee/mcp-freecad-v2](https://github.com/NikeTheBee/mcp-freecad-v2) (or contact the maintainer
 privately first for anything sensitive).
