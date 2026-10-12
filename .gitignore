@@ -3,8 +3,6 @@ __pycache__/
 *.FCBak
 .vscode/
 
-# Third-party MCP base server — cloned locally, not vendored (see install/WINDOWS-SETUP.md)
-/server/freecad-mcp/
 
 # Third-party FreeCAD workbenches (grafts) — cloned locally, not vendored
 /addons/
