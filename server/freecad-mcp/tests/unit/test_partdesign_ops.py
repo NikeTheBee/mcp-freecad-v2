@@ -548,23 +548,59 @@ class TestHoleWizard(unittest.TestCase):
         assert_error_contains(self, result, "out of range", "6 faces")
         body.newObject.assert_not_called()
 
-    def test_no_face_index_uses_standalone_csg_even_when_object_is_in_body(self):
-        """face_index is what opts into the Body-aware path -- a Body-
-        resident object with no face_index given must still get the old
-        CSG cylinder-and-cut behavior, not silently switch mechanisms."""
+    def test_no_face_index_in_body_drills_inside_the_body(self):
+        """MCP FREECAD v2: a Body-resident object with no face_index used
+        to get a CSG Part::Cut OUTSIDE the Body, so the Body kept no hole.
+        It must now get a PartDesign::SubtractiveCylinder inside the Body
+        (through-hole when depth reaches the bottom)."""
+        box = make_box_object("Pad")
+        body = make_body("Body", group=[box])
+        doc = make_mock_doc([body, box])
+        mock_FreeCAD.ActiveDocument = doc
+        cyl = body.newObject.return_value
+        cyl.State = []
+
+        result = self.handler.hole_wizard({
+            'object_name': 'Pad', 'hole_type': 'simple', 'diameter': 6, 'depth': 10,
+        })
+
+        body.newObject.assert_called_once()
+        self.assertEqual(body.newObject.call_args.args[0], "PartDesign::SubtractiveCylinder")
+        self.assertEqual(cyl.Radius, 3)
+        self.assertEqual(cyl.Height, 12.0)  # body is 10 mm tall: through + 1 mm each side
+        type_ids_added = [c.args[0] for c in doc.addObject.call_args_list]
+        self.assertNotIn("Part::Cylinder", type_ids_added)
+        self.assertNotIn("Part::Cut", type_ids_added)
+        assert_success_contains(self, result, "simple", "6mm", "through", "Body")
+
+    def test_no_face_index_in_body_blind_hole_starts_at_top(self):
+        box = make_box_object("Pad")
+        body = make_body("Body", group=[box])
+        doc = make_mock_doc([body, box])
+        mock_FreeCAD.ActiveDocument = doc
+        cyl = body.newObject.return_value
+        cyl.State = []
+
+        result = self.handler.hole_wizard({
+            'object_name': 'Pad', 'hole_type': 'simple', 'diameter': 4, 'depth': 3,
+        })
+
+        self.assertEqual(cyl.Height, 4.0)
+        assert_success_contains(self, result, "3mm deep from the top")
+
+    def test_no_face_index_in_body_counterbore_asks_for_a_face(self):
         box = make_box_object("Pad")
         body = make_body("Body", group=[box])
         doc = make_mock_doc([body, box])
         mock_FreeCAD.ActiveDocument = doc
 
         result = self.handler.hole_wizard({
-            'object_name': 'Pad', 'hole_type': 'simple', 'diameter': 6, 'depth': 10,
+            'object_name': 'Pad', 'hole_type': 'counterbore', 'diameter': 6,
         })
 
+        self.assertIn("needs face_index", result)
         body.newObject.assert_not_called()
-        type_ids_added = [c.args[0] for c in doc.addObject.call_args_list]
-        self.assertIn("Part::Cylinder", type_ids_added)
-        assert_success_contains(self, result, "simple", "6mm", "Pad")
+        doc.addObject.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

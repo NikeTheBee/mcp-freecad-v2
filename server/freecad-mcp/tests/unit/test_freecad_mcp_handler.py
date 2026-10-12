@@ -148,6 +148,25 @@ class TestServerFraming:
             client.close()
             peer.close()
 
+    def test_oversized_reply_becomes_explicit_error(self, ss_module):
+        """MCP FREECAD v2: an oversized reply used to send nothing, so the
+        bridge waited ~120 s and reported a timeout. It must now send a
+        short in-limit JSON error at once. socketpair() (not AF_UNIX) so it
+        also runs on Windows."""
+        import socket as sock_mod
+        client, peer = sock_mod.socketpair()
+        try:
+            big = "x" * (ss_module.MAX_MESSAGE_SIZE + 1)
+            assert ss_module.send_message(client, big) is True
+            reply = ss_module.receive_message(peer, timeout=5.0)
+            assert reply is not None
+            err = json.loads(reply)
+            assert err["result_too_large"] is True
+            assert str(len(big)) in err["error"]
+        finally:
+            client.close()
+            peer.close()
+
     def test_max_message_size_aligned(self, ss_module):
         """Server-side MAX_MESSAGE_SIZE should be 50KB, matching bridge."""
         assert ss_module.MAX_MESSAGE_SIZE == 50 * 1024

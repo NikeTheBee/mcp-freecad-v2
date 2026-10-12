@@ -437,6 +437,34 @@ class PartDesignOpsHandler(BaseHandler):
         except Exception as e:
             return f"Error creating auto chamfer: {e}"
 
+    def _body_simple_hole(self, doc, body, object_name: str, hole_type: str,
+                          diameter: float, depth: float, x: float, y: float) -> str:
+        """Vertical hole as a PartDesign::SubtractiveCylinder inside `body`
+        (MCP FREECAD v2). `depth` is measured from the top face; a depth
+        reaching the bottom (or 0/None) gives a through-hole."""
+        if str(hole_type).lower() != 'simple':
+            return (f"A {hole_type} hole on a PartDesign Body needs face_index (the face "
+                    "to drill from); use measurement_operations list_faces to pick it")
+        if not diameter or diameter <= 0:
+            return "Error creating hole: diameter must be > 0"
+        bb = body.Shape.BoundBox
+        through = not depth or depth >= bb.ZLength - 1e-9
+        cyl = body.newObject("PartDesign::SubtractiveCylinder", f"{object_name}_Hole")
+        cyl.Radius = diameter / 2
+        if through:
+            cyl.Height = bb.ZLength + 2.0
+            cyl.Placement.Base = FreeCAD.Vector(x, y, bb.ZMin - 1.0)
+        else:
+            cyl.Height = depth + 1.0
+            cyl.Placement.Base = FreeCAD.Vector(x, y, bb.ZMax - depth)
+        self.recompute(doc)
+        err = self._check_feature_state(cyl, "Hole")
+        if err:
+            return err
+        kind = "through" if through else f"{depth}mm deep from the top"
+        return (f"Created simple hole: {diameter}mm diameter at ({x}, {y}), {kind} "
+                f"(PartDesign::SubtractiveCylinder in {body.Name})")
+
     def hole_wizard(self, args: dict[str, Any]) -> str:
         """Create standard holes (simple, counterbore, countersink).
 
@@ -448,8 +476,10 @@ class PartDesignOpsHandler(BaseHandler):
         support the old "just x,y in space, no face needed" convenience
         without a face reference, so face_index (1-based, same
         convention as datum_from_face's face_index) is required to opt
-        into this path; omit it (or target a non-Body object) and
-        hole_wizard behaves exactly as it always has.
+        into this path. Target a non-Body object and hole_wizard behaves
+        exactly as it always has; omit face_index on a Body object and
+        (MCP FREECAD v2) a simple hole becomes a SubtractiveCylinder in
+        the Body -- counterbore/countersink then require face_index.
 
         The generated sketch's local (x, y) origin is recentered to the
         selected face's own centroid (confirmed live: FlatFace
@@ -492,6 +522,18 @@ class PartDesignOpsHandler(BaseHandler):
                 return f"Object not found: {object_name}"
 
             body = self.find_body_for_object(base_obj, doc) if face_index is not None else None
+
+            # MCP FREECAD v2 (NikeTheBee, 2026-10-12): without face_index, an
+            # object inside a PartDesign Body used to fall through to the CSG
+            # path below, which builds a Part::Cut OUTSIDE the Body -- the
+            # Body (and every later feature) silently kept no hole. Build a
+            # real PartDesign feature inside the Body instead.
+            if body is None and face_index is None:
+                in_body = (base_obj if base_obj.TypeId == "PartDesign::Body"
+                           else self.find_body_for_object(base_obj, doc))
+                if in_body is not None:
+                    return self._body_simple_hole(doc, in_body, object_name, hole_type,
+                                                  diameter, depth, x, y)
 
             if body:
                 hole_cut_types = {'simple': 'None', 'counterbore': 'Counterbore', 'countersink': 'Countersink'}
@@ -568,19 +610,20 @@ class PartDesignOpsHandler(BaseHandler):
                     f"on {face_ref} of {object_name} (PartDesign::Hole in {body.Name})"
                 )
 
-            # No Body (or no face_index given) — standalone CSG cylinder
-            # cut approach (unchanged).
-            # Create hole cylinder
+            # No Body — standalone CSG cylinder cut approach. Heights are
+            # anchored on the part's own bottom (was a fixed z=-2.5, which
+            # missed any part not sitting at z=0 -- MCP FREECAD v2 fix).
+            z0 = base_obj.Shape.BoundBox.ZMin if hasattr(base_obj, "Shape") else 0.0
             hole = doc.addObject("Part::Cylinder", "Hole")
             hole.Radius = diameter / 2
             hole.Height = depth + 5
-            hole.Placement.Base = FreeCAD.Vector(x, y, -2.5)
+            hole.Placement.Base = FreeCAD.Vector(x, y, z0 - 2.5)
 
             if hole_type == 'counterbore':
                 cb_hole = doc.addObject("Part::Cylinder", "CounterboreHole")
                 cb_hole.Radius = cb_diameter / 2
                 cb_hole.Height = cb_depth + 1
-                cb_hole.Placement.Base = FreeCAD.Vector(x, y, -0.5)
+                cb_hole.Placement.Base = FreeCAD.Vector(x, y, z0 - 0.5)
 
                 combined_hole = doc.addObject("Part::Fuse", "CombinedHole")
                 combined_hole.Base = hole
@@ -596,7 +639,7 @@ class PartDesignOpsHandler(BaseHandler):
                 cs_cone.Radius1 = cb_diameter / 2
                 cs_cone.Radius2 = diameter / 2
                 cs_cone.Height = cb_depth
-                cs_cone.Placement.Base = FreeCAD.Vector(x, y, -cb_depth)
+                cs_cone.Placement.Base = FreeCAD.Vector(x, y, z0 - cb_depth)
 
                 combined_hole = doc.addObject("Part::Fuse", "CombinedHole")
                 combined_hole.Base = hole

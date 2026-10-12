@@ -157,14 +157,36 @@ class SketchOpsHandler(BaseHandler):
             results.append(f"Geometry elements: {geo_count}")
             results.append(f"Constraints: {constraint_count}")
 
-            # Check if fully constrained
-            dof = sketch.solve()
-            if dof == 0:
+            # Check if fully constrained. MCP FREECAD v2 fix (2026-10-12):
+            # solve() returns a STATUS code (0 = solved, <0 = failure), not
+            # the degrees of freedom -- reading its 0 as "fully constrained"
+            # reported a free 4-DoF line as fully constrained. Use the
+            # sketch's own DoF and conflict/redundancy lists instead.
+            solve_code = sketch.solve()
+            dof = getattr(sketch, 'DoF', None)
+            problems = []
+            for label, ids in (
+                    ("conflicting", sketch.ConflictingConstraints
+                     if hasattr(sketch, 'ConflictingConstraints') else []),
+                    ("redundant", sketch.RedundantConstraints
+                     if hasattr(sketch, 'RedundantConstraints') else []),
+                    ("partially redundant", sketch.PartiallyRedundantConstraints
+                     if hasattr(sketch, 'PartiallyRedundantConstraints') else []),
+                    ("malformed", sketch.MalformedConstraints
+                     if hasattr(sketch, 'MalformedConstraints') else [])):
+                ids = list(ids or [])
+                if ids:
+                    problems.append(f"{label} constraints {ids}")
+            if solve_code < 0 or problems:
+                results.append("Over-constrained or conflicting constraints"
+                               + (f": {'; '.join(problems)}" if problems else
+                                  f" (solver code {solve_code})"))
+            elif dof == 0:
                 results.append("Fully constrained: Yes")
-            elif dof > 0:
+            elif dof is not None:
                 results.append(f"Under-constrained: {dof} degrees of freedom remaining")
             else:
-                results.append("Over-constrained or conflicting constraints")
+                results.append("Solved (degrees of freedom unknown on this FreeCAD build)")
 
             # Check for open wires.
             # closed_wires/open_wires must be bound before the verdict logic below,
@@ -217,7 +239,9 @@ class SketchOpsHandler(BaseHandler):
                 results.append(f"Construction geometry: {construction_count} (not used in extrusion)")
 
             # Overall verdict
-            if dof == 0 and closed_wires > 0 and open_wires == 0:
+            if solve_code < 0 or problems:
+                verdict = "INVALID - Conflicting/redundant constraints; fix them first"
+            elif dof == 0 and closed_wires > 0 and open_wires == 0:
                 verdict = "VALID - Ready for pad/pocket/extrusion"
             elif closed_wires > 0:
                 verdict = "USABLE - Has closed profile but may have issues"

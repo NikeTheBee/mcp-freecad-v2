@@ -150,6 +150,66 @@ class TestCloseSketch(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# verify_sketch constraint verdict (MCP FREECAD v2)
+# ---------------------------------------------------------------------------
+
+def _closed_profile_sketch(name="Prof", dof=0, solve_code=0, **problems):
+    """Sketch with one closed wire; DoF and conflict lists set explicitly."""
+    s = MagicMock()
+    s.Name = name
+    s.Label = name
+    s.TypeId = "Sketcher::SketchObject"
+    s.GeometryCount = 4
+    s.ConstraintCount = 4
+    s.solve = MagicMock(return_value=solve_code)
+    s.DoF = dof
+    for attr in ("ConflictingConstraints", "RedundantConstraints",
+                 "PartiallyRedundantConstraints", "MalformedConstraints"):
+        setattr(s, attr, problems.get(attr, []))
+    wire = MagicMock()
+    wire.isClosed = MagicMock(return_value=True)
+    s.Shape.Wires = [wire]
+    s.getConstruction = MagicMock(return_value=False)
+    return s
+
+
+class TestVerifySketchConstraintVerdict(unittest.TestCase):
+    """solve() returns a status code (0 = solved), not the DoF: a closed
+    but free sketch was reported "Fully constrained: Yes" / VALID."""
+
+    def setUp(self):
+        reset_mocks()
+        self.handler = make_handler(SketchOpsHandler)
+        mock_Part.Face.return_value.Area = 100.0
+
+    def _verify(self, sketch):
+        mock_FreeCAD.ActiveDocument = make_mock_doc([sketch])
+        return self.handler.verify_sketch({'sketch_name': sketch.Name})
+
+    def test_under_constrained_is_not_reported_fully_constrained(self):
+        result = self._verify(_closed_profile_sketch(dof=4))
+        self.assertIn("Under-constrained: 4 degrees of freedom", result)
+        self.assertNotIn("Fully constrained: Yes", result)
+        self.assertNotIn("VALID - Ready", result)
+        self.assertIn("USABLE", result)
+
+    def test_zero_dof_closed_profile_is_valid(self):
+        result = self._verify(_closed_profile_sketch(dof=0))
+        self.assertIn("Fully constrained: Yes", result)
+        self.assertIn("VALID - Ready for pad/pocket/extrusion", result)
+
+    def test_redundant_constraints_make_it_invalid(self):
+        result = self._verify(_closed_profile_sketch(dof=0, RedundantConstraints=[3]))
+        self.assertIn("redundant constraints [3]", result)
+        self.assertIn("INVALID - Conflicting/redundant", result)
+
+    def test_solver_failure_makes_it_invalid(self):
+        result = self._verify(_closed_profile_sketch(dof=0, solve_code=-3))
+        self.assertIn("solver code -3", result)
+        self.assertIn("INVALID", result)
+
+
+# ---------------------------------------------------------------------------
 # add_line / add_circle / add_rectangle / add_arc / add_polygon
 # ---------------------------------------------------------------------------
 

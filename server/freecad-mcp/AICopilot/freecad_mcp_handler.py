@@ -558,14 +558,22 @@ def send_message(sock: socket.socket, message_str: str) -> bool:
     """Send a length-prefixed message over the socket."""
     try:
         message_bytes = message_str.encode('utf-8')
-        # Refuse to put an oversized frame on the wire: the peer rejects the body
-        # after the length prefix, desyncing every subsequent frame.
+        # Never put an oversized frame on the wire (the peer rejects the body
+        # after the length prefix, desyncing every subsequent frame). MCP
+        # FREECAD v2 (2026-10-12): send a short explicit error instead of
+        # nothing -- before, the bridge waited ~120 s for a reply that never
+        # came, then reported a misleading timeout and the result was lost.
         if len(message_bytes) > MAX_MESSAGE_SIZE:
             FreeCAD.Console.PrintError(
-                f"Refusing to send oversized message: {len(message_bytes)} bytes "
-                f"(limit: {MAX_MESSAGE_SIZE}); would desync framing.\n"
+                f"Oversized reply: {len(message_bytes)} bytes (limit: {MAX_MESSAGE_SIZE}); "
+                "sending an error instead.\n"
             )
-            return False
+            message_bytes = json.dumps({
+                "error": (f"Result too large to return: {len(message_bytes)} bytes "
+                          f"(limit {MAX_MESSAGE_SIZE}). Ask for less (limit/offset, a "
+                          "summary, a filter) or write it to a file and read a part."),
+                "result_too_large": True,
+            }).encode('utf-8')
         length_prefix = struct.pack('>I', len(message_bytes))
         sock.sendall(length_prefix + message_bytes)
         return True
