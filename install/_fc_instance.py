@@ -26,7 +26,7 @@ VENV_PY = _VENV / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
 TEST_PORT = 23499
 
 sys.path.insert(0, str(BASE))
-from mcp_bridge_framing import receive_message, send_message  # noqa: E402
+from mcp_bridge_framing import receive_message, send_message, verify_listener  # noqa: E402
 
 
 def freecadcmd() -> str:
@@ -67,6 +67,10 @@ class Instance:
         s.settimeout(timeout)
         s.connect(("127.0.0.1", self.port))
         try:
+            if token == "auto":   # real clients check the listener before sending the token
+                refusal = verify_listener(s, payload["token"])
+                if refusal:
+                    return {"error": f"Not sent: {refusal}", "not_sent": True}
             send_message(s, json.dumps(payload))
             resp = receive_message(s, timeout=timeout)
             return json.loads(resp) if resp else None

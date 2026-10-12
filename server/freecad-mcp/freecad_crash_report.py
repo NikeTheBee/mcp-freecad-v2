@@ -53,12 +53,16 @@ import platform
 import re
 import subprocess
 import sys
+import tempfile
 import time
 import zipfile
 from collections import deque
 from pathlib import Path
 
-OPLOG_FILE   = "/tmp/freecad_mcp_oplog.json"
+# MCP FREECAD v2: "/tmp" does not exist on Windows (it meant <drive>:\tmp),
+# so crash/debug files were never written there. POSIX keeps "/tmp".
+_TMP_DIR = "/tmp" if os.name != "nt" else tempfile.gettempdir()
+OPLOG_FILE   = os.path.join(_TMP_DIR, "freecad_mcp_oplog.json")
 MAX_OPLOG    = 10
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -105,7 +109,9 @@ class OpLog:
 
     def _flush(self) -> None:
         try:
-            base_flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW
+            # getattr: O_NOFOLLOW does not exist on Windows (MCP FREECAD v2).
+            base_flags = (os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+                          | getattr(os, "O_NOFOLLOW", 0))
             try:
                 # Try exclusive creation first so a genuinely fresh file
                 # is still created at exactly the requested mode (allowing
@@ -120,7 +126,8 @@ class OpLog:
                 # otherwise keep its old, looser permissions forever.
                 # fchmod on the already-open fd closes that gap.
                 fd = os.open(OPLOG_FILE, base_flags, 0o600)
-                os.fchmod(fd, 0o600)
+                if hasattr(os, "fchmod"):
+                    os.fchmod(fd, 0o600)
             with os.fdopen(fd, "w") as f:
                 json.dump(list(self._ops), f, indent=2)
             self._last_write_failed = False
@@ -203,7 +210,7 @@ def _read_last_op(pid: int | None = None) -> dict | None:
     if pid is None:
         return None
     try:
-        with open(f"/tmp/freecad_mcp_last_op_{pid}.json") as f:
+        with open(os.path.join(_TMP_DIR, f"freecad_mcp_last_op_{pid}.json")) as f:
             return json.load(f)
     except Exception:
         return None

@@ -197,7 +197,8 @@ class TestReadLastOp:
     OTHER_PID = 999999902
 
     def _op_file(self, pid):
-        return f"/tmp/freecad_mcp_last_op_{pid}.json"
+        # cr._TMP_DIR: "/tmp" on POSIX, the real temp dir on Windows (MCP FREECAD v2)
+        return os.path.join(cr._TMP_DIR, f"freecad_mcp_last_op_{pid}.json")
 
     @pytest.fixture(autouse=True)
     def _cleanup(self):

@@ -6,17 +6,49 @@ Raw socket on an isolated instance (test port, private home; bridge venv Python)
 2. verify_sketch on a closed but free sketch reports its DoF, not
    "Fully constrained: Yes";
 3. an oversized reply comes back at once as an explicit error (was a ~120 s
-   silent wait, then a misleading timeout).
+   silent wait, then a misleading timeout);
+4. listener proof: FreeCAD proves it knows the token before a client sends it;
+   a listener that cannot (a port squatter) receives a nonce and nothing else.
 Sentinel: BASE_FIXES_OK
 """
 import json
 import math
+import socket
 import sys
+import threading
 import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _fc_instance import Instance  # noqa: E402
+from mcp_bridge_framing import receive_message, send_message, verify_listener  # noqa: E402
+
+
+def squatter_gets_nothing(token: str) -> bool:
+    """A fake listener that does not know the token: the client must refuse,
+    and the only thing the squatter ever receives is the challenge nonce."""
+    srv = socket.socket()
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(1)
+    got = []
+
+    def serve():
+        conn, _ = srv.accept()
+        with conn:
+            msg = receive_message(conn, timeout=5)
+            got.append(msg)
+            send_message(conn, json.dumps({"auth_proof": "0" * 64}))   # a guess
+            more = receive_message(conn, timeout=2)
+            if more:
+                got.append(more)
+
+    t = threading.Thread(target=serve)
+    t.start()
+    with socket.create_connection(srv.getsockname(), timeout=10) as c:
+        refusal = verify_listener(c, token)
+    t.join(10)
+    srv.close()
+    return bool(refusal) and len(got) == 1 and token not in got[0] and "auth_challenge" in got[0]
 
 BUILD = """
 import FreeCAD, Part, Sketcher
@@ -96,6 +128,14 @@ def main() -> int:
         assert dt < 15, dt
         r = inst.call("execute_python_sync", {"code": "1+1"})
         assert r and r.get("result") == "2", r  # the connection protocol is still in sync
+
+        # 4. listener proof: the real FreeCAD proves it knows the token...
+        with socket.create_connection(("127.0.0.1", inst.port), timeout=10) as s:
+            assert verify_listener(s, inst.token()) is None
+        # ...a listener without the token gets the nonce and nothing else
+        print("listener proof: real FreeCAD accepted:", "OK")
+        assert squatter_gets_nothing(inst.token())
+        print("listener proof: squatter refused, token never sent: OK")
     finally:
         inst.stop()
     print("BASE_FIXES_OK")

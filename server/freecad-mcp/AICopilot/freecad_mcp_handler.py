@@ -192,6 +192,8 @@
 #                   8.2.0+ never hit it.
 
 import contextlib
+import hashlib
+import hmac
 import json
 import os
 import platform
@@ -552,6 +554,39 @@ MAX_MESSAGE_SIZE = 50 * 1024  # 50KB — matches bridge-side limit
 # failed several layers deeper with a confusing "not found" instead of a
 # clear "malformed request" error.
 _KNOWN_REQUEST_KEYS = frozenset({"tool", "args", "token"})
+
+# Listener proof (MCP FREECAD v2, 2026-10-12). Any local process can take a
+# TCP port, so on Windows a client first sends {"auth_challenge": nonce} and
+# only sends its token and command once this listener answers with
+# server_proof(token, nonce). Same function as mcp_bridge_framing.server_proof
+# (this file runs inside FreeCAD and cannot import it): keep them equal --
+# tests/unit/test_listener_proof.py checks the parity.
+AUTH_PROOF_CONTEXT = b"freecad-mcp/listener-proof/v1|"
+
+
+def server_proof(token: str, nonce: str) -> str:
+    return hmac.new(token.encode("utf-8"), AUTH_PROOF_CONTEXT + nonce.encode("ascii"),
+                    hashlib.sha256).hexdigest()
+
+
+def auth_challenge_reply(message_str: str, token: str | None) -> str | None:
+    """The proof reply if `message_str` is a well-formed challenge, else None
+    (then it is an ordinary command)."""
+    if len(message_str) > 512 or "auth_challenge" not in message_str:
+        return None
+    try:
+        msg = json.loads(message_str)
+    except ValueError:
+        return None
+    if not isinstance(msg, dict) or set(msg) != {"auth_challenge"}:
+        return None
+    nonce = msg["auth_challenge"]
+    if (not isinstance(nonce, str) or not 16 <= len(nonce) <= 128
+            or any(c not in "0123456789abcdef" for c in nonce)):
+        return json.dumps({"error": "Malformed auth_challenge: expected 16-128 lowercase hex chars"})
+    if not token:
+        return json.dumps({"error": "This FreeCAD has no auth token yet; cannot prove itself"})
+    return json.dumps({"auth_proof": server_proof(token, nonce)})
 
 
 def send_message(sock: socket.socket, message_str: str) -> bool:
@@ -1540,6 +1575,13 @@ class FreeCADSocketServer:
             self._active_connections += 1
         try:
             message_str = receive_message(client_socket)
+            if message_str and IS_WINDOWS:
+                # Listener proof first (one per connection), then the command.
+                proof = auth_challenge_reply(message_str, self._windows_auth_token)
+                if proof is not None:
+                    if not send_message(client_socket, proof) or '"auth_proof"' not in proof:
+                        return
+                    message_str = receive_message(client_socket)
             if message_str:
                 response = self._process_command(message_str)
                 if not send_message(client_socket, response):

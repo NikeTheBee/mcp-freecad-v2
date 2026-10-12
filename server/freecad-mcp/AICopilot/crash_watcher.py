@@ -22,13 +22,18 @@ __version__ = "1.1.0"
 import json
 import os
 import re
+import tempfile
 import time
 
 import tmp_safety
 
+# MCP FREECAD v2: "/tmp" does not exist on Windows (it meant <drive>:\tmp),
+# so crash/debug files were never written there. POSIX keeps "/tmp".
+_TMP_DIR = "/tmp" if os.name != "nt" else tempfile.gettempdir()
+
 # Per-instance file: each FreeCAD process writes to its own path so that
 # multiple concurrent instances don't clobber one another's crash context.
-LAST_OP_FILE = f"/tmp/freecad_mcp_last_op_{os.getpid()}.json"
+LAST_OP_FILE = os.path.join(_TMP_DIR, f"freecad_mcp_last_op_{os.getpid()}.json")
 _MAX_ARG_BYTES = 1500   # truncate large args (e.g. long Python scripts)
 _TRUNCATION_SUFFIX = " … [truncated]"
 _TRUNCATION_SUFFIX_BYTES = len(_TRUNCATION_SUFFIX.encode("utf-8"))
@@ -118,7 +123,8 @@ def _open_owner_only(path: str, flags: int) -> int:
         return os.open(path, flags | os.O_EXCL, 0o600)
     except FileExistsError:
         fd = os.open(path, flags, 0o600)
-        os.fchmod(fd, 0o600)
+        if hasattr(os, "fchmod"):   # absent on Windows before Python 3.13
+            os.fchmod(fd, 0o600)
         return fd
 
 

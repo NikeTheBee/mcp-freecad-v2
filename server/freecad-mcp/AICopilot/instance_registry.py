@@ -95,12 +95,14 @@ def write_discovery(
     # requested mode. A pre-existing .tmp (e.g. left over from an
     # interrupted prior write, or from before this hardening shipped) falls
     # back to a plain open + fchmod, same as those two files.
-    base_flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW
+    # getattr: O_NOFOLLOW does not exist on Windows (MCP FREECAD v2).
+    base_flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
     try:
         fd = os.open(tmp, base_flags | os.O_EXCL, 0o600)
     except FileExistsError:
         fd = os.open(tmp, base_flags, 0o600)
-        os.fchmod(fd, 0o600)
+        if hasattr(os, "fchmod"):
+            os.fchmod(fd, 0o600)
     with os.fdopen(fd, "w") as f:  # takes ownership of fd; closes it on any exit path
         json.dump(data, f, indent=2)
     os.replace(tmp, path)

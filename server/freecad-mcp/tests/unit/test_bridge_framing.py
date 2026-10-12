@@ -450,3 +450,59 @@ class TestReceiveMalformedPayload:
         finally:
             client.close()
             peer.close()
+
+
+# ---------------------------------------------------------------------------
+# verify_listener (MCP FREECAD v2): nothing secret is sent to a listener that
+# cannot prove it knows the token.
+# ---------------------------------------------------------------------------
+
+class TestVerifyListener:
+
+    def _fake_listener(self, answer):
+        """socketpair whose peer answers the challenge with answer(nonce)
+        and records everything it received afterwards."""
+        from mcp_bridge_framing import verify_listener  # noqa: F401
+        client, peer = socket.socketpair()
+        got = []
+
+        def serve():
+            first = receive_message(peer, timeout=5.0)
+            got.append(first)
+            nonce = json.loads(first)["auth_challenge"]
+            send_message(peer, answer(nonce))
+            rest = receive_message(peer, timeout=1.0)
+            if rest is not None:
+                got.append(rest)
+
+        t = threading.Thread(target=serve)
+        t.start()
+        return client, peer, t, got
+
+    def test_real_listener_is_accepted(self):
+        from mcp_bridge_framing import server_proof, verify_listener
+        client, peer, t, got = self._fake_listener(
+            lambda n: json.dumps({"auth_proof": server_proof("tok-123", n)}))
+        try:
+            assert verify_listener(client, "tok-123") is None
+            send_message(client, json.dumps({"tool": "x", "token": "tok-123"}))
+            t.join(5)
+            assert "tok-123" in got[1]       # the command goes out only after the proof
+        finally:
+            client.close()
+            peer.close()
+
+    def test_squatter_without_the_token_gets_nothing(self):
+        from mcp_bridge_framing import server_proof, verify_listener
+        for answer in (lambda n: json.dumps({"auth_proof": server_proof("wrong", n)}),
+                       lambda n: json.dumps({"error": "Unrecognized request key(s)"}),
+                       lambda n: "not json"):
+            client, peer, t, got = self._fake_listener(answer)
+            try:
+                reason = verify_listener(client, "tok-123")
+                assert reason and "did not prove" in reason
+                t.join(5)
+                assert len(got) == 1 and "tok-123" not in got[0]   # only the nonce left
+            finally:
+                client.close()
+                peer.close()

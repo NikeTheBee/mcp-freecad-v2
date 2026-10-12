@@ -38,11 +38,16 @@ import signal
 import socket
 import struct
 import subprocess
+import tempfile
 import time
 from datetime import datetime
 from pathlib import Path
 
 import tmp_safety
+
+# MCP FREECAD v2: "/tmp" does not exist on Windows (it meant <drive>:\tmp),
+# so crash/debug files were never written there. POSIX keeps "/tmp".
+_TMP_DIR = "/tmp" if os.name != "nt" else tempfile.gettempdir()
 from freecad_debug import get_debugger
 
 # Lean logging mode - set to False for verbose health monitoring output
@@ -56,7 +61,7 @@ class FreeCADHealthMonitor:
         self,
         socket_path: str = "/tmp/freecad_mcp.sock",
         heartbeat_interval: float = 5.0,
-        crash_log_dir: str = "/tmp/freecad_mcp_crashes",
+        crash_log_dir: str = os.path.join(_TMP_DIR, "freecad_mcp_crashes"),
         max_restart_attempts: int = 3,
         restart_cooldown: float = 10.0,
         lean_logging: bool = True,

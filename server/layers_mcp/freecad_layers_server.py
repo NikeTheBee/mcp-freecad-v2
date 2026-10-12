@@ -31,7 +31,7 @@ BASE = Path(os.environ.get("MCP_FREECAD_BASE") or SERVER_DIR / "freecad-mcp")
 sys.path.insert(0, str(BASE))
 sys.path.insert(0, str(SERVER_DIR / "launcher"))
 import mcp_freecad_launch as launcher  # noqa: E402
-from mcp_bridge_framing import receive_message, send_message  # noqa: E402
+from mcp_bridge_framing import receive_message, send_message, verify_listener  # noqa: E402
 
 MAX_OUT = 8000
 TOKEN_PATH = Path.home() / ".freecad-mcp" / "windows_auth_token"
@@ -80,6 +80,9 @@ def _run(template: str, /, **args: Any) -> Any:
     token = TOKEN_PATH.read_text(encoding="ascii").strip()
     payload = {"tool": "execute_python_sync", "args": {"code": code}, "token": token}
     with socket.create_connection(("127.0.0.1", launcher.PORT), timeout=120) as s:
+        refusal = verify_listener(s, token)   # FreeCAD proves itself before the token leaves
+        if refusal:
+            raise FreeCADError(f"not sent: {refusal}")
         send_message(s, json.dumps(payload))
         raw = receive_message(s, timeout=120)
     resp = json.loads(raw) if raw else {"error": "no response from FreeCAD"}

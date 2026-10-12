@@ -22,6 +22,10 @@ tracked by the real test instead of restated here as a claim to keep
 manually in sync.
 """
 
+import hashlib
+import hmac
+import json
+import secrets
 import socket
 import struct
 import sys
@@ -178,3 +182,47 @@ def _recv_exact(sock: socket.socket, num_bytes: int) -> bytes | None:
 
     return bytes(buffer)
 
+
+
+# -----------------------------------------------------------------------------
+# Listener proof (MCP FREECAD v2, 2026-10-12)
+# -----------------------------------------------------------------------------
+# On Windows the FreeCAD listener is a TCP port that any local process can
+# take. The token only proved the CLIENT to FreeCAD, so a client handed the
+# token and its commands to whatever held the port. Now, on a fresh
+# connection, the client first sends {"auth_challenge": nonce}; the listener
+# answers {"auth_proof": server_proof(token, nonce)}. Only if the proof
+# matches does the client send the token and the command. The FreeCAD side
+# (AICopilot/freecad_mcp_handler.py) embeds the same function: keep them equal
+# (parity-tested in tests/unit/test_listener_proof.py).
+AUTH_PROOF_CONTEXT = b"freecad-mcp/listener-proof/v1|"
+
+
+def server_proof(token: str, nonce: str) -> str:
+    """HMAC-SHA256 of the nonce under the token: proves the token is known
+    without revealing it."""
+    return hmac.new(token.encode("utf-8"), AUTH_PROOF_CONTEXT + nonce.encode("ascii"),
+                    hashlib.sha256).hexdigest()
+
+
+def verify_listener(sock: socket.socket, token: str, timeout: float = 10.0,
+                    send=None, receive=None) -> str | None:
+    """Challenge the listener on a fresh connection, before anything secret is
+    sent. Returns None when it proved it knows `token`, else a short reason.
+    `send`/`receive` default to this module's framing; a caller passes its own
+    when it routes its socket I/O through them."""
+    send = send or send_message
+    receive = receive or receive_message
+    nonce = secrets.token_hex(16)
+    if not send(sock, json.dumps({"auth_challenge": nonce})):
+        return "could not send the auth challenge to FreeCAD"
+    reply = receive(sock, timeout=timeout)
+    try:
+        proof = json.loads(reply).get("auth_proof") if reply else None
+    except (ValueError, AttributeError):
+        proof = None
+    if not isinstance(proof, str) or not hmac.compare_digest(proof, server_proof(token, nonce)):
+        return ("the process listening on the FreeCAD port did not prove it is your "
+                "FreeCAD (no valid auth proof), so nothing was sent to it. If FreeCAD "
+                "was just updated, restart it; otherwise another program holds the port.")
+    return None

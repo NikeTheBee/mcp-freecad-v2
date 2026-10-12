@@ -20,6 +20,22 @@ import pytest
 _SANDBOX_HOME = tempfile.mkdtemp(prefix="freecad_mcp_unit_home_")
 for _var in ("HOME", "USERPROFILE"):
     os.environ[_var] = _SANDBOX_HOME
+# A fake token, as a running FreeCAD would leave: the bridge's Windows path
+# reads it, so those tests no longer depend on the user's real file.
+os.makedirs(os.path.join(_SANDBOX_HOME, ".freecad-mcp"), exist_ok=True)
+with open(os.path.join(_SANDBOX_HOME, ".freecad-mcp", "windows_auth_token"), "w") as _f:
+    _f.write("0" * 64)
+
+
+@pytest.fixture(autouse=True)
+def _bridge_trusts_mocked_freecad(monkeypatch):
+    """Protocol tests stand in for FreeCAD with mocked socket replies that do
+    not model the listener proof (MCP FREECAD v2) -- on Windows the bridge
+    would refuse to talk to them. The proof itself is tested directly in
+    test_bridge_framing.py and test_freecad_mcp_handler.py."""
+    bridge = sys.modules.get("freecad_mcp_server")
+    if bridge is not None and hasattr(bridge, "verify_listener"):
+        monkeypatch.setattr(bridge, "verify_listener", lambda *a, **k: None)
 
 
 @pytest.fixture(autouse=True)

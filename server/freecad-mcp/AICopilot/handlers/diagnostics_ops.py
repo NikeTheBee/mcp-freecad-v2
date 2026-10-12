@@ -82,7 +82,7 @@ class DiagnosticsOpsHandler(BaseHandler):
     def get_debug_logs(self, args: dict[str, Any]) -> str:
         """Retrieve recent debug logs for analysis."""
         try:
-            log_dir = "/tmp/freecad_mcp_debug"
+            from freecad_debug import DEFAULT_DEBUG_DIR as log_dir  # MCP FREECAD v2
             count = args.get("count", 20)
             try:
                 count = int(count)

@@ -35,7 +35,7 @@ Logs: `~/.freecad-mcp/logs/launcher.log`. The base's `spawn_freecad_instance` is
 ```
 User (natural language) → Claude Code → MCP `freecad` server (stdio)
    → launcher (supervision, anti-squatting) → base bridge (vendored, see CHANGES-NikeTheBee.md)
-   → FreeCAD headless on localhost:23456 (token auth from upstream)
+   → FreeCAD headless on localhost:23456 (token auth + listener proof: FreeCAD proves itself first)
    → AICopilot workbench executes the operation inside FreeCAD
 ```
 

@@ -27,6 +27,13 @@ from mcp_events import emit_event, event_context
 
 import usage_guidance
 
+# MCP FREECAD v2: a Windows console/pipe defaults to cp1252, and log lines with
+# characters like ✓/✗ raised "--- Logging error ---" tracebacks on stderr. Never
+# fail on an unencodable character there. stdout (the MCP channel) is untouched.
+if hasattr(sys.stderr, "reconfigure"):
+    with contextlib.suppress(Exception):
+        sys.stderr.reconfigure(errors="backslashreplace")
+
 # =============================================================================
 # Mutable bridge state — socket target + spawned instance registry
 # =============================================================================
@@ -978,7 +985,7 @@ sys.path.insert(0, os.path.join(_this_dir, "AICopilot"))
 
 # Import message framing for v2.1.1 protocol. Must stay below the
 # sys.path.insert() calls above: mcp_bridge_framing lives next to this file.
-from mcp_bridge_framing import receive_message, send_message  # noqa: E402
+from mcp_bridge_framing import receive_message, send_message, verify_listener  # noqa: E402
 
 # ── Crash diagnostics (always enabled — no optional flag) ──────────────────
 
@@ -1039,12 +1046,12 @@ def _diagnose_crash(error: Exception = None) -> str:
 try:
     import logging
 
-    from freecad_debug import debug_decorator, init_debugger
+    from freecad_debug import DEFAULT_DEBUG_DIR, debug_decorator, init_debugger
     from freecad_health import init_monitor
 
     # Initialize with file-only logging (no console output for MCP)
     debugger = init_debugger(
-        log_dir="/tmp/freecad_mcp_debug",
+        log_dir=DEFAULT_DEBUG_DIR,   # MCP FREECAD v2: %TEMP% on Windows, /tmp on POSIX
         level=logging.DEBUG,
         enable_console=False,  # CRITICAL: No console output for MCP!
         enable_file=True
@@ -2753,6 +2760,13 @@ async def main():
                                  f"{WINDOWS_AUTH_TOKEN_PATH}; is the FreeCAD "
                                  "AICopilot service running?"
                     })
+                # MCP FREECAD v2: the listener must prove it knows the token
+                # before the token or the command leaves this process (any
+                # local program can hold a TCP port).
+                refusal = verify_listener(sock, windows_token,
+                                          send=send_message, receive=receive_message)
+                if refusal:
+                    return json.dumps({"error": f"Not sent: {refusal}"})
             else:
                 current_path, err = _ctx.resolve_target()
                 if err:

@@ -3038,3 +3038,52 @@ class TestActiveConnectionsCounter:
 
         server._handle_client(MagicMock())
         assert server._active_connections == 0
+
+
+# ---------------------------------------------------------------------------
+# Listener proof (MCP FREECAD v2): FreeCAD proves it knows the token before a
+# client sends the token or a command.
+# ---------------------------------------------------------------------------
+
+class TestListenerProof:
+
+    def test_proof_matches_the_bridge_copy(self, ss_module):
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+        import mcp_bridge_framing as framing
+        assert ss_module.AUTH_PROOF_CONTEXT == framing.AUTH_PROOF_CONTEXT
+        for token, nonce in (("t" * 64, "0" * 32), ("abc123", "deadbeef" * 4)):
+            assert ss_module.server_proof(token, nonce) == framing.server_proof(token, nonce)
+
+    def test_challenge_gets_proof(self, ss_module):
+        reply = json.loads(ss_module.auth_challenge_reply(
+            json.dumps({"auth_challenge": "ab" * 16}), "secret-token"))
+        assert reply == {"auth_proof": ss_module.server_proof("secret-token", "ab" * 16)}
+
+    def test_ordinary_command_is_not_a_challenge(self, ss_module):
+        cmd = json.dumps({"tool": "test_echo", "args": {}, "token": "x"})
+        assert ss_module.auth_challenge_reply(cmd, "secret-token") is None
+        mixed = json.dumps({"auth_challenge": "ab" * 16, "tool": "test_echo"})
+        assert ss_module.auth_challenge_reply(mixed, "secret-token") is None
+
+    def test_malformed_nonce_and_missing_token_are_errors(self, ss_module):
+        bad = json.loads(ss_module.auth_challenge_reply(
+            json.dumps({"auth_challenge": "NOT-HEX!" * 4}), "secret-token"))
+        assert "error" in bad and "auth_proof" not in bad
+        none = json.loads(ss_module.auth_challenge_reply(
+            json.dumps({"auth_challenge": "ab" * 16}), None))
+        assert "error" in none and "auth_proof" not in none
+
+    def test_handle_client_answers_challenge_then_runs_the_command(self, server, monkeypatch):
+        import freecad_mcp_handler as ss_mod
+        monkeypatch.setattr(ss_mod, "IS_WINDOWS", True)
+        server._windows_auth_token = "secret-token"
+        cmd = json.dumps({"tool": "test_echo", "args": {}, "token": "secret-token"})
+        incoming = iter([json.dumps({"auth_challenge": "cd" * 16}), cmd])
+        sent = []
+        server._process_command = MagicMock(return_value='{"result":"ok"}')
+        with patch.object(ss_mod, "receive_message", side_effect=lambda *a, **k: next(incoming)), \
+             patch.object(ss_mod, "send_message", side_effect=lambda s, m: sent.append(m) or True):
+            server._handle_client(MagicMock())
+        assert json.loads(sent[0]) == {"auth_proof": ss_mod.server_proof("secret-token", "cd" * 16)}
+        server._process_command.assert_called_once_with(cmd)
+        assert sent[1] == '{"result":"ok"}'

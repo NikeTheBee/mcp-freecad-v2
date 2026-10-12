@@ -41,7 +41,9 @@ import functools
 import inspect
 import json
 import logging
+import os
 import sys
+import tempfile
 import time
 import traceback
 from collections.abc import Callable
@@ -50,6 +52,11 @@ from pathlib import Path
 from typing import Any
 
 import tmp_safety
+
+# MCP FREECAD v2: "/tmp" does not exist on Windows (it meant <drive>:\tmp),
+# so crash/debug files were never written there. POSIX keeps "/tmp".
+_TMP_DIR = "/tmp" if os.name != "nt" else tempfile.gettempdir()
+DEFAULT_DEBUG_DIR = os.path.join(_TMP_DIR, "freecad_mcp_debug")
 
 try:
     # crash_watcher's redaction is deliberately reused (not a general-
@@ -94,7 +101,7 @@ class FreeCADDebugger:
 
     def __init__(
         self,
-        log_dir: str = "/tmp/freecad_mcp_debug",
+        log_dir: str = DEFAULT_DEBUG_DIR,
         level: int = logging.DEBUG,
         max_log_size: int = 10 * 1024 * 1024,  # 10MB
         backup_count: int = 5,
@@ -157,7 +164,10 @@ class FreeCADDebugger:
             file_handler = RotatingFileHandler(
                 log_file,
                 maxBytes=max_log_size,
-                backupCount=backup_count
+                backupCount=backup_count,
+                # MCP FREECAD v2: the locale default is cp1252 on Windows, which
+                # cannot write the ✓/✗ health lines ("--- Logging error ---").
+                encoding="utf-8",
             )
             file_handler.setLevel(level)
             file_formatter = logging.Formatter(

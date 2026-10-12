@@ -16,7 +16,7 @@ grafts). That is powerful **by design** (it's how natural-language CAD works) an
 - The FreeCAD socket server binds **`localhost:23456` only** (Windows TCP) / a **filesystem Unix socket**
   (macOS/Linux). It is **not** reachable from the network. Verified: `WINDOWS_HOST = "localhost"` in
   `freecad_mcp_handler.py`; there is **no** `0.0.0.0` bind.
-- **Token authentication (from the pinned base, v8.2.3):** the FreeCAD side writes a fresh
+- **Token authentication (from the base, v8.2.3):** the FreeCAD side writes a fresh
   shared secret to `~/.freecad-mcp/windows_auth_token` at each launch (ACL restricted to the user
   with `icacls`, best effort); every command must carry it (constant-time comparison). The bridge
   reads and attaches it. Our former home-made token patch was removed: it no longer applied to the
@@ -29,9 +29,15 @@ grafts). That is powerful **by design** (it's how natural-language CAD works) an
   install, run by the current user; otherwise it refuses to start or stops the bridge (fail closed).
   Regression test: `install/launcher_test.py` (no/wrong token rejected, squatter refused with
   nothing sent, crash restart).
-  - Residual risk: a squatter that wins the race in the ~1 s between a FreeCAD crash and the
-    supervisor's check. The launcher restarts FreeCAD immediately to keep that window short.
-    True mutual authentication needs a change in the base (proposed upstream).
+- **Mutual authentication (v2, in the vendored base): the listener proves itself first.** On every
+  connection the client sends a random nonce (`{"auth_challenge": ...}`); FreeCAD answers with
+  HMAC-SHA256(token, nonce). Only if that proof matches does the client send the token and the
+  command. A port squatter that does not know the token receives the nonce and nothing else. Used by
+  the bridge, the `freecad-layers` server and the test helper (`mcp_bridge_framing.verify_listener`;
+  FreeCAD side `auth_challenge_reply` in `freecad_mcp_handler.py`). This closes the race the
+  launcher's check alone left open (a squatter grabbing the port in the ~1 s after a FreeCAD crash).
+  Regression tests: base unit tests `TestListenerProof` / `TestVerifyListener`, live
+  `install/base_fixes_test.py` (real FreeCAD accepted, fake listener refused, token never sent).
 - **Never** change the bind to `0.0.0.0` / a LAN IP without putting an **IP allowlist** (and ideally
   TLS) in front — NF5. The token protects against local callers, not network eavesdropping.
 - For remote/multi-machine use, tunnel over SSH rather than exposing the port.
