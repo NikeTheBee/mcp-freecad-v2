@@ -23,6 +23,7 @@ git subtree pull --prefix=server/freecad-mcp https://github.com/blwfish/freecad-
 | `tests/unit/test_partdesign_ops.py` | The test that asserted the old outside-the-Body hole was replaced by 3 tests of the new behaviour. | It encoded the bug. |
 | `tests/unit/test_sketch_ops.py` | New `TestVerifySketchConstraintVerdict` (4 tests). | Covers the DoF fix. |
 | `tests/unit/test_freecad_mcp_handler.py` | New `test_oversized_reply_becomes_explicit_error` (uses `socketpair`, so it also runs on Windows). | Covers the oversized-reply fix. |
+| `tests/unit/conftest.py` | The unit tests run with `HOME`/`USERPROFILE` pointed at a throwaway folder. | On Windows some tests ran `start_server`'s real Windows branch and overwrote `~/.freecad-mcp/windows_auth_token`, which locked every client out of the user's live FreeCAD. They also wrote logs and crash files into the real home. |
 | `CHANGES-NikeTheBee.md` | This file. | LGPL §2(a): modified files must carry a notice of the changes and their date. |
 
 These fixes are also checked live against a real FreeCAD by `install/base_fixes_test.py` in the

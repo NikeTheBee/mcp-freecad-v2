@@ -4,11 +4,22 @@ Shared fixtures and mocks for FreeCAD MCP unit tests.
 These tests run WITHOUT FreeCAD installed by mocking the FreeCAD modules.
 """
 
+import os
 import sys
+import tempfile
 import types
 from unittest.mock import MagicMock
 
 import pytest
+
+# MCP FREECAD v2 (2026-10-12): the handler computes its ~/.freecad-mcp paths
+# (auth token, logs, crashes) at import time, and on Windows some tests run
+# start_server's real Windows branch -- they overwrote the auth token of the
+# user's live FreeCAD, locking every client out of it. Point the home
+# directory at a throwaway folder before any project module is imported.
+_SANDBOX_HOME = tempfile.mkdtemp(prefix="freecad_mcp_unit_home_")
+for _var in ("HOME", "USERPROFILE"):
+    os.environ[_var] = _SANDBOX_HOME
 
 
 @pytest.fixture(autouse=True)
