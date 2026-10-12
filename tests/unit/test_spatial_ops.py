@@ -1,0 +1,749 @@
+"""Unit tests for SpatialOpsHandler.
+
+Tests all 6 spatial query operations with mocked FreeCAD modules.
+Run with: python3 -m pytest tests/unit/test_spatial_ops.py -v
+"""
+
+import os
+import sys
+import unittest
+from unittest.mock import MagicMock
+
+import pytest
+
+# ---------------------------------------------------------------------------
+# FakeVector — needed because the handler does real math on Vector fields
+# ---------------------------------------------------------------------------
+
+class FakeVector:
+    def __init__(self, x=0, y=0, z=0):
+        self.x = float(x)
+        self.y = float(y)
+        self.z = float(z)
+    def __repr__(self):
+        return f"Vector({self.x}, {self.y}, {self.z})"
+
+
+# ---------------------------------------------------------------------------
+# Setup: ensure FreeCAD mock has what we need before importing handler
+# ---------------------------------------------------------------------------
+
+# Ensure FreeCAD mock exists (conftest may have already installed one)
+if 'FreeCAD' not in sys.modules:
+    _fc_mod = MagicMock()
+    _fc_mod.GuiUp = False
+    _fc_mod.Console = MagicMock()
+    sys.modules['FreeCAD'] = _fc_mod
+    sys.modules['FreeCADGui'] = MagicMock()
+    sys.modules['Part'] = MagicMock()
+
+# Document only (conftest's types.ModuleType mock doesn't auto-create
+# attributes like MagicMock does) — NOT Vector. sys.modules['FreeCAD'] is
+# the same shared singleton object _freecad_mocks.py installs for every
+# other test file; unconditionally overwriting its .Vector here at
+# collection time (module-level code, runs once, before any test) used to
+# permanently replace the real _Vec (full arithmetic: __add__, .Length,
+# .add, .sub, .multiply, .distanceToPoint) with this file's bare FakeVector
+# for the rest of the pytest session — including files collected AFTER
+# this one. The autouse _patch_fc fixture below already scopes FakeVector
+# correctly (patches spatial_ops_module.FreeCAD per-test, restores after),
+# so this module-level mutation was redundant as well as unsafe.
+if not hasattr(sys.modules['FreeCAD'], 'Document'):
+    sys.modules['FreeCAD'].Document = type("Document", (), {})
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'AICopilot'))
+
+# Force reimport of handler submodules so they pick up our FakeVector.
+# Do NOT delete "handlers" (the package itself) — that breaks other test
+# files that reference handlers.view_ops etc. at module level.
+for mod_name in list(sys.modules):
+    if mod_name.startswith('handlers.'):
+        del sys.modules[mod_name]
+
+import handlers.spatial_ops as spatial_ops_module
+from handlers.spatial_ops import SpatialOpsHandler
+
+# Deliberately hardcoded, NOT read from spatial_ops_module — these tests
+# exist to PIN the constants' values. Reading the live value would make the
+# test track any change to the source (including an accidental one)
+# instead of failing on it, which defeats the purpose of a boundary-pinning
+# test. A real, intentional change to either tolerance must update these
+# two literals as a conscious, visible edit.
+_VOL_TOL = 1e-9    # mm³ — must match handlers/spatial_ops.py
+_OCCT_LIN_TOL = 1e-7  # mm — must match handlers/spatial_ops.py
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def make_handler():
+    server = MagicMock()
+    return SpatialOpsHandler(server, MagicMock(), MagicMock(return_value={}))
+
+
+def make_mock_doc(objects=None):
+    doc = MagicMock()
+    doc.Name = "TestDoc"
+    doc.Objects = objects or []
+
+    def get_object(name):
+        for o in doc.Objects:
+            if o.Name == name:
+                return o
+        return None
+
+    def get_objects_by_label(label):
+        return [o for o in doc.Objects if o.Label == label]
+
+    doc.getObject = get_object
+    doc.getObjectsByLabel = get_objects_by_label
+    return doc
+
+
+def make_box(name="Box", xmin=0, ymin=0, zmin=0, xlen=10, ylen=10, zlen=10):
+    """Create a mock Part object with Shape, BoundBox, and faces."""
+    obj = MagicMock()
+    obj.Name = name
+    obj.Label = name
+
+    shape = MagicMock()
+    bb = MagicMock()
+    bb.XMin = float(xmin)
+    bb.XMax = float(xmin + xlen)
+    bb.YMin = float(ymin)
+    bb.YMax = float(ymin + ylen)
+    bb.ZMin = float(zmin)
+    bb.ZMax = float(zmin + zlen)
+    bb.XLength = float(xlen)
+    bb.YLength = float(ylen)
+    bb.ZLength = float(zlen)
+    bb.intersect = MagicMock(return_value=False)  # default: no BB overlap
+    shape.BoundBox = bb
+    shape.Volume = float(xlen * ylen * zlen)
+    shape.CenterOfMass = FakeVector(xmin + xlen/2, ymin + ylen/2, zmin + zlen/2)
+
+    # Default: no intersection
+    common_shape = MagicMock()
+    common_shape.Volume = 0.0
+    common_shape.BoundBox = MagicMock(XMin=0.0, XMax=0.0, YMin=0.0, YMax=0.0,
+                                       ZMin=0.0, ZMax=0.0,
+                                       XLength=0.0, YLength=0.0, ZLength=0.0)
+    shape.common = MagicMock(return_value=common_shape)
+
+    # Default: some distance
+    shape.distToShape = MagicMock(return_value=(5.0, [(FakeVector(10, 5, 5), FakeVector(15, 5, 5))]))
+
+    # Faces: 6 faces for a box, with normals
+    faces = []
+    face_defs = [
+        (FakeVector(-1, 0, 0), FakeVector(xmin, ymin + ylen/2, zmin + zlen/2), float(xlen * zlen)),
+        (FakeVector(1, 0, 0), FakeVector(xmin + xlen, ymin + ylen/2, zmin + zlen/2), float(ylen * zlen)),
+        (FakeVector(0, -1, 0), FakeVector(xmin + xlen/2, ymin, zmin + zlen/2), float(xlen * zlen)),
+        (FakeVector(0, 1, 0), FakeVector(xmin + xlen/2, ymin + ylen, zmin + zlen/2), float(xlen * zlen)),
+        (FakeVector(0, 0, -1), FakeVector(xmin + xlen/2, ymin + ylen/2, zmin), float(xlen * ylen)),
+        (FakeVector(0, 0, 1), FakeVector(xmin + xlen/2, ymin + ylen/2, zmin + zlen), float(xlen * ylen)),
+    ]
+    for normal, center, area in face_defs:
+        face = MagicMock()
+        face.normalAt = MagicMock(return_value=normal)
+        face.CenterOfMass = center
+        face.Area = area
+        face.section = MagicMock(return_value=MagicMock(Edges=[], Wires=[]))
+        faces.append(face)
+    shape.Faces = faces
+    shape.Solids = [MagicMock()]   # solid by default
+    shape.ShapeType = "Solid"
+
+    obj.Shape = shape
+    return obj
+
+
+def make_shell(name="Shell", xmin=0, ymin=0, zmin=0, xlen=10, ylen=10, zlen=10):
+    """Like make_box but with no solids — simulates an open shell."""
+    obj = make_box(name, xmin, ymin, zmin, xlen, ylen, zlen)
+    obj.Shape.Solids = []
+    obj.Shape.ShapeType = "Shell"
+    return obj
+
+
+def _make_fc_mock():
+    """Create a fresh FreeCAD mock with Vector support."""
+    fc = MagicMock()
+    fc.GuiUp = False
+    fc.Console = MagicMock()
+    fc.Vector = FakeVector
+    fc.ActiveDocument = None
+    return fc
+
+
+@pytest.fixture(autouse=True)
+def _patch_fc():
+    """Patch the handler module's FreeCAD reference so our mocks take effect.
+
+    Other test files (e.g. test_document_ops) delete handlers.* from
+    sys.modules and reimport, creating new module objects.  But
+    SpatialOpsHandler's inherited BaseHandler methods still reference the
+    OLD handlers.base module via their __globals__ dict.  We must patch
+    FreeCAD on THAT module, not the current sys.modules entry.
+    """
+    fc = _make_fc_mock()
+
+    # Find the actual base module that SpatialOpsHandler's methods use
+    base_globals = SpatialOpsHandler.get_document.__globals__
+    # base_globals is the __dict__ of the handlers.base module object
+    # that was live when SpatialOpsHandler was first imported
+
+    old_fc = base_globals.get('FreeCAD')
+    old_spatial_fc = getattr(spatial_ops_module, 'FreeCAD', None)
+
+    base_globals['FreeCAD'] = fc
+    spatial_ops_module.FreeCAD = fc
+    try:
+        yield fc
+    finally:
+        base_globals['FreeCAD'] = old_fc
+        spatial_ops_module.FreeCAD = old_spatial_fc
+
+
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
+
+class TestInterferenceCheck(unittest.TestCase):
+
+    def setUp(self):
+        self.handler = make_handler()
+        self.fc = spatial_ops_module.FreeCAD
+
+    def test_missing_objects(self):
+        self.fc.ActiveDocument = make_mock_doc()
+        result = self.handler.interference_check({'object1': 'A'})
+        self.assertIn("required", result)
+
+    def test_object_not_found(self):
+        self.fc.ActiveDocument = make_mock_doc([])
+        result = self.handler.interference_check({'object1': 'A', 'object2': 'B'})
+        self.assertIn("not found", result)
+
+    def test_no_intersection(self):
+        box1 = make_box("A", 0, 0, 0)
+        box2 = make_box("B", 20, 0, 0)
+        self.fc.ActiveDocument = make_mock_doc([box1, box2])
+
+        result = self.handler.interference_check({'object1': 'A', 'object2': 'B'})
+        self.assertIn("Intersects: False", result)
+        self.assertIn("clearance", result.lower())
+
+    def test_with_intersection(self):
+        box1 = make_box("A", 0, 0, 0)
+        box2 = make_box("B", 5, 0, 0)
+
+        common = MagicMock()
+        common.Volume = 500.0
+        common.BoundBox = MagicMock(XMin=5.0, XMax=10.0, YMin=0.0, YMax=10.0,
+                                     ZMin=0.0, ZMax=10.0,
+                                     XLength=5.0, YLength=10.0, ZLength=10.0)
+        box1.Shape.common = MagicMock(return_value=common)
+
+        self.fc.ActiveDocument = make_mock_doc([box1, box2])
+        result = self.handler.interference_check({'object1': 'A', 'object2': 'B'})
+        self.assertIn("Intersects: True", result)
+        self.assertIn("500.0000", result)
+        self.assertIn("Intersection size", result)
+
+    def test_no_shape(self):
+        obj = MagicMock()
+        obj.Name = "NoShape"
+        obj.Label = "NoShape"
+        del obj.Shape
+        box = make_box("B")
+        self.fc.ActiveDocument = make_mock_doc([obj, box])
+        result = self.handler.interference_check({'object1': 'NoShape', 'object2': 'B'})
+        self.assertIn("no Shape", result)
+
+    def test_non_solid_warning(self):
+        shell = make_shell("A")
+        box = make_box("B")
+        self.fc.ActiveDocument = make_mock_doc([shell, box])
+        result = self.handler.interference_check({'object1': 'A', 'object2': 'B'})
+        self.assertIn("WARNING", result)
+        self.assertIn("Shell", result)
+
+    def test_solid_no_warning(self):
+        box1 = make_box("A")
+        box2 = make_box("B")
+        self.fc.ActiveDocument = make_mock_doc([box1, box2])
+        result = self.handler.interference_check({'object1': 'A', 'object2': 'B'})
+        self.assertNotIn("WARNING", result)
+
+    def test_sliver_detection(self):
+        # BB overlaps, common() returns zero, but distance is sub-tolerance
+        box1 = make_box("A", 0, 0, 0)
+        box2 = make_box("B", 0, 0, 0)
+        box1.Shape.BoundBox.intersect = MagicMock(return_value=True)
+        box1.Shape.distToShape = MagicMock(return_value=(0.0, []))
+        self.fc.ActiveDocument = make_mock_doc([box1, box2])
+        result = self.handler.interference_check({'object1': 'A', 'object2': 'B'})
+        self.assertIn("sub-tolerance sliver", result.lower())
+
+    def test_no_sliver_when_bb_clear(self):
+        # BB does NOT overlap — no sliver warning even if distance is zero
+        box1 = make_box("A", 0, 0, 0)
+        box2 = make_box("B", 20, 0, 0)
+        box1.Shape.BoundBox.intersect = MagicMock(return_value=False)
+        box1.Shape.distToShape = MagicMock(return_value=(0.0, []))
+        self.fc.ActiveDocument = make_mock_doc([box1, box2])
+        result = self.handler.interference_check({'object1': 'A', 'object2': 'B'})
+        self.assertNotIn("sliver", result.lower())
+
+    # -- _VOL_TOL boundary (1e-9 mm³): pins the constant's value, not just
+    # its comparison operator. A mutation to the constant (e.g. 1e-9 -> 1e-3)
+    # survived the pre-existing suite because no test used a volume anywhere
+    # near the actual threshold (500.0 mm³ is nowhere close).
+
+    def test_volume_exactly_at_vol_tol_does_not_intersect(self):
+        """The check is `vol > _VOL_TOL` (strict) — a volume exactly at the
+        threshold must NOT count as intersecting."""
+        box1 = make_box("A", 0, 0, 0)
+        box2 = make_box("B", 5, 0, 0)
+        common = MagicMock()
+        common.Volume = _VOL_TOL
+        box1.Shape.common = MagicMock(return_value=common)
+        box1.Shape.distToShape = MagicMock(return_value=(0.0, []))
+        self.fc.ActiveDocument = make_mock_doc([box1, box2])
+
+        result = self.handler.interference_check({'object1': 'A', 'object2': 'B'})
+        self.assertIn("Intersects: False", result)
+
+    def test_volume_just_above_vol_tol_intersects(self):
+        box1 = make_box("A", 0, 0, 0)
+        box2 = make_box("B", 5, 0, 0)
+        common = MagicMock()
+        common.Volume = _VOL_TOL * 1.5
+        common.BoundBox = MagicMock(XMin=5.0, XMax=10.0, YMin=0.0, YMax=10.0,
+                                     ZMin=0.0, ZMax=10.0,
+                                     XLength=5.0, YLength=10.0, ZLength=10.0)
+        box1.Shape.common = MagicMock(return_value=common)
+        self.fc.ActiveDocument = make_mock_doc([box1, box2])
+
+        result = self.handler.interference_check({'object1': 'A', 'object2': 'B'})
+        self.assertIn("Intersects: True", result)
+
+    def test_volume_just_below_vol_tol_does_not_intersect(self):
+        box1 = make_box("A", 0, 0, 0)
+        box2 = make_box("B", 5, 0, 0)
+        common = MagicMock()
+        common.Volume = _VOL_TOL * 0.5
+        box1.Shape.common = MagicMock(return_value=common)
+        box1.Shape.distToShape = MagicMock(return_value=(0.0, []))
+        self.fc.ActiveDocument = make_mock_doc([box1, box2])
+
+        result = self.handler.interference_check({'object1': 'A', 'object2': 'B'})
+        self.assertIn("Intersects: False", result)
+
+    # -- _OCCT_LIN_TOL boundary (1e-7 mm): sliver-detection distance check.
+
+    def test_sliver_distance_exactly_at_occt_lin_tol_no_warning(self):
+        """The check is `min_dist < _OCCT_LIN_TOL` (strict) — a distance
+        exactly at the threshold must NOT trigger the sliver warning."""
+        box1 = make_box("A", 0, 0, 0)
+        box2 = make_box("B", 0, 0, 0)
+        box1.Shape.BoundBox.intersect = MagicMock(return_value=True)
+        box1.Shape.distToShape = MagicMock(return_value=(_OCCT_LIN_TOL, []))
+        self.fc.ActiveDocument = make_mock_doc([box1, box2])
+        result = self.handler.interference_check({'object1': 'A', 'object2': 'B'})
+        self.assertNotIn("sliver", result.lower())
+
+    def test_sliver_distance_just_below_occt_lin_tol_warns(self):
+        box1 = make_box("A", 0, 0, 0)
+        box2 = make_box("B", 0, 0, 0)
+        box1.Shape.BoundBox.intersect = MagicMock(return_value=True)
+        box1.Shape.distToShape = MagicMock(return_value=(_OCCT_LIN_TOL * 0.5, []))
+        self.fc.ActiveDocument = make_mock_doc([box1, box2])
+        result = self.handler.interference_check({'object1': 'A', 'object2': 'B'})
+        self.assertIn("sub-tolerance sliver", result.lower())
+
+    def test_sliver_distance_just_above_occt_lin_tol_no_warning(self):
+        box1 = make_box("A", 0, 0, 0)
+        box2 = make_box("B", 0, 0, 0)
+        box1.Shape.BoundBox.intersect = MagicMock(return_value=True)
+        box1.Shape.distToShape = MagicMock(return_value=(_OCCT_LIN_TOL * 1.5, []))
+        self.fc.ActiveDocument = make_mock_doc([box1, box2])
+        result = self.handler.interference_check({'object1': 'A', 'object2': 'B'})
+        self.assertNotIn("sliver", result.lower())
+
+
+class TestClearance(unittest.TestCase):
+
+    def setUp(self):
+        self.handler = make_handler()
+        self.fc = spatial_ops_module.FreeCAD
+
+    def test_gap_reported(self):
+        box1 = make_box("A", 0, 0, 0)
+        box2 = make_box("B", 20, 0, 0)
+        box1.Shape.distToShape = MagicMock(return_value=(
+            10.0,
+            [(FakeVector(10, 5, 5), FakeVector(20, 5, 5))]
+        ))
+        self.fc.ActiveDocument = make_mock_doc([box1, box2])
+
+        result = self.handler.clearance({'object1': 'A', 'object2': 'B'})
+        self.assertIn("10.0000 mm", result)
+        self.assertIn("10.0000 mm gap", result)
+        self.assertIn("Dominant gap axis: X", result)
+
+    def test_touching(self):
+        box1 = make_box("A", 0, 0, 0)
+        box2 = make_box("B", 10, 0, 0)
+        box1.Shape.distToShape = MagicMock(return_value=(
+            0.0,
+            [(FakeVector(10, 5, 5), FakeVector(10, 5, 5))]
+        ))
+        self.fc.ActiveDocument = make_mock_doc([box1, box2])
+
+        result = self.handler.clearance({'object1': 'A', 'object2': 'B'})
+        self.assertIn("TOUCHING", result)
+
+    def test_sub_linear_tolerance_reports_touching(self):
+        """A gap below OCCT's linear tolerance is contact — must report TOUCHING.
+        The old threshold was _VOL_TOL (1e-9 mm³) used as a distance, far tighter
+        than OCCT's resolution, so it misreported sub-tolerance contact as a gap."""
+        box1 = make_box("A", 0, 0, 0)
+        box2 = make_box("B", 10, 0, 0)
+        box1.Shape.distToShape = MagicMock(return_value=(
+            1e-8,  # < _OCCT_LIN_TOL (~1e-7) but > _VOL_TOL (1e-9)
+            [(FakeVector(10, 5, 5), FakeVector(10, 5, 5))]
+        ))
+        self.fc.ActiveDocument = make_mock_doc([box1, box2])
+        result = self.handler.clearance({'object1': 'A', 'object2': 'B'})
+        self.assertIn("TOUCHING", result)
+
+    def test_multiple_point_pairs(self):
+        box1 = make_box("A")
+        box2 = make_box("B", 15, 0, 0)
+        box1.Shape.distToShape = MagicMock(return_value=(
+            5.0,
+            [
+                (FakeVector(10, 0, 0), FakeVector(15, 0, 0)),
+                (FakeVector(10, 0, 10), FakeVector(15, 0, 10)),
+                (FakeVector(10, 10, 0), FakeVector(15, 10, 0)),
+                (FakeVector(10, 10, 10), FakeVector(15, 10, 10)),
+                (FakeVector(10, 5, 5), FakeVector(15, 5, 5)),
+            ]
+        ))
+        self.fc.ActiveDocument = make_mock_doc([box1, box2])
+
+        result = self.handler.clearance({'object1': 'A', 'object2': 'B'})
+        self.assertIn("5 total", result)
+        self.assertIn("... and 1 more", result)
+
+
+class TestContainment(unittest.TestCase):
+
+    def setUp(self):
+        self.handler = make_handler()
+        self.fc = spatial_ops_module.FreeCAD
+
+    def test_fully_contained(self):
+        outer = make_box("Outer", 0, 0, 0, 50, 50, 50)
+        inner = make_box("Inner", 10, 10, 10, 10, 10, 10)
+
+        common = MagicMock()
+        common.Volume = 1000.0
+        inner.Shape.common = MagicMock(return_value=common)
+
+        self.fc.ActiveDocument = make_mock_doc([inner, outer])
+        result = self.handler.containment({'object1': 'Inner', 'object2': 'Outer'})
+        self.assertIn("Bounding box contained: True", result)
+        self.assertIn("Geometric containment: True", result)
+        self.assertIn("No bounding-box overhang", result)
+
+    def test_overhang(self):
+        outer = make_box("Outer", 0, 0, 0, 20, 20, 20)
+        inner = make_box("Inner", -5, 0, 0, 30, 10, 10)
+
+        self.fc.ActiveDocument = make_mock_doc([inner, outer])
+        result = self.handler.containment({'object1': 'Inner', 'object2': 'Outer'})
+        self.assertIn("Bounding box contained: False", result)
+        self.assertIn("X-: 5.0000", result)
+        self.assertIn("X+: 5.0000", result)
+
+    def test_sub_linear_tolerance_overhang_not_reported(self):
+        """M6: overhang values are linear mm distances and must be compared
+        against _OCCT_LIN_TOL (1e-7 mm), not _VOL_TOL (1e-9 mm^3) — using
+        the volume threshold made this check 100x too sensitive, flagging
+        ordinary floating-point roundoff (a value between the two
+        tolerances) as a real overhang."""
+        outer = make_box("Outer", 0, 0, 0, 20, 20, 20)
+        inner = make_box("Inner", -5e-8, 0, 0, 20, 20, 20)  # overhang 5e-8: above _VOL_TOL, below _OCCT_LIN_TOL
+
+        self.fc.ActiveDocument = make_mock_doc([inner, outer])
+        result = self.handler.containment({'object1': 'Inner', 'object2': 'Outer'})
+        self.assertIn("No bounding-box overhang", result)
+
+    def test_above_linear_tolerance_overhang_reported(self):
+        outer = make_box("Outer", 0, 0, 0, 20, 20, 20)
+        inner = make_box("Inner", -2e-7, 0, 0, 20, 20, 20)  # overhang 2e-7: above _OCCT_LIN_TOL
+
+        self.fc.ActiveDocument = make_mock_doc([inner, outer])
+        result = self.handler.containment({'object1': 'Inner', 'object2': 'Outer'})
+        self.assertIn("Overhangs:", result)
+        self.assertIn("X-:", result)
+
+    def test_bb_contained_but_geometry_protrudes(self):
+        outer = make_box("Outer", 0, 0, 0, 50, 50, 50)
+        inner = make_box("Inner", 10, 10, 10, 10, 10, 10)
+
+        common = MagicMock()
+        common.Volume = 800.0
+        inner.Shape.common = MagicMock(return_value=common)
+
+        self.fc.ActiveDocument = make_mock_doc([inner, outer])
+        result = self.handler.containment({'object1': 'Inner', 'object2': 'Outer'})
+        self.assertIn("Bounding box contained: True", result)
+        self.assertIn("Geometric containment: False", result)
+        self.assertIn("Protruding volume: 200.0000", result)
+
+
+class TestFaceRelationship(unittest.TestCase):
+
+    def setUp(self):
+        self.handler = make_handler()
+        self.fc = spatial_ops_module.FreeCAD
+
+    def test_missing_face_args(self):
+        box1 = make_box("A")
+        box2 = make_box("B", 15, 0, 0)
+        self.fc.ActiveDocument = make_mock_doc([box1, box2])
+        result = self.handler.face_relationship({'object1': 'A', 'object2': 'B'})
+        self.assertIn("face1 and face2 are required", result)
+
+    def test_malformed_face_id_rejected(self):
+        """'Face1Face2' must be rejected, not silently parsed to face 12 by the
+        old unanchored replace('Face','') logic."""
+        box1 = make_box("A", 0, 0, 0, 10, 10, 10)
+        box2 = make_box("B", 15, 0, 0, 10, 10, 10)
+        self.fc.ActiveDocument = make_mock_doc([box1, box2])
+        result = self.handler.face_relationship({
+            'object1': 'A', 'object2': 'B',
+            'face1': 'Face1Face2', 'face2': 'Face1'
+        })
+        self.assertIn("Invalid face id", result)
+
+    def test_parallel_faces(self):
+        box1 = make_box("A", 0, 0, 0, 10, 10, 10)
+        box2 = make_box("B", 15, 0, 0, 10, 10, 10)
+        self.fc.ActiveDocument = make_mock_doc([box1, box2])
+
+        result = self.handler.face_relationship({
+            'object1': 'A', 'object2': 'B',
+            'face1': 'Face2', 'face2': 'Face1'
+        })
+        self.assertIn("Parallel: True", result)
+        self.assertIn("Facing each other: True", result)
+
+    def test_perpendicular_faces(self):
+        box1 = make_box("A", 0, 0, 0, 10, 10, 10)
+        box2 = make_box("B", 15, 0, 0, 10, 10, 10)
+        self.fc.ActiveDocument = make_mock_doc([box1, box2])
+
+        result = self.handler.face_relationship({
+            'object1': 'A', 'object2': 'B',
+            'face1': 'Face2', 'face2': 'Face6'
+        })
+        self.assertIn("90.00", result)
+        self.assertIn("Parallel: False", result)
+
+    def test_invalid_face_index(self):
+        box1 = make_box("A")
+        box2 = make_box("B", 15, 0, 0)
+        self.fc.ActiveDocument = make_mock_doc([box1, box2])
+
+        result = self.handler.face_relationship({
+            'object1': 'A', 'object2': 'B',
+            'face1': 'Face99', 'face2': 'Face1'
+        })
+        self.assertIn("Invalid face reference", result)
+
+    def test_coplanar_faces(self):
+        box1 = make_box("A", 0, 0, 0, 10, 10, 10)
+        box2 = make_box("B", 15, 0, 0, 10, 10, 10)
+        self.fc.ActiveDocument = make_mock_doc([box1, box2])
+
+        result = self.handler.face_relationship({
+            'object1': 'A', 'object2': 'B',
+            'face1': 'Face6', 'face2': 'Face6'
+        })
+        self.assertIn("Parallel: True", result)
+        self.assertIn("Coplanar: True", result)
+
+
+class TestBatchInterference(unittest.TestCase):
+
+    def setUp(self):
+        self.handler = make_handler()
+        self.fc = spatial_ops_module.FreeCAD
+
+    def test_fewer_than_two_objects(self):
+        result = self.handler.batch_interference({'objects': ['A']})
+        self.assertIn("at least 2", result)
+
+    def test_object_not_found(self):
+        self.fc.ActiveDocument = make_mock_doc([])
+        result = self.handler.batch_interference({'objects': ['A', 'B']})
+        self.assertIn("not found", result)
+
+    def test_no_collisions(self):
+        box1 = make_box("A", 0, 0, 0)
+        box2 = make_box("B", 20, 0, 0)
+        box3 = make_box("C", 40, 0, 0)
+
+        box1.Shape.BoundBox.intersect = MagicMock(return_value=False)
+        box2.Shape.BoundBox.intersect = MagicMock(return_value=False)
+        box3.Shape.BoundBox.intersect = MagicMock(return_value=False)
+
+        self.fc.ActiveDocument = make_mock_doc([box1, box2, box3])
+        result = self.handler.batch_interference({'objects': ['A', 'B', 'C']})
+        self.assertIn("3 objects, 3 pairs", result)
+        self.assertIn("Collisions: 0", result)
+        self.assertIn("Clear: 3", result)
+
+    def test_some_collisions(self):
+        box1 = make_box("A", 0, 0, 0)
+        box2 = make_box("B", 5, 0, 0)
+        box3 = make_box("C", 30, 0, 0)
+
+        box1.Shape.BoundBox.intersect = MagicMock(side_effect=lambda bb: bb is box2.Shape.BoundBox)
+        box2.Shape.BoundBox.intersect = MagicMock(side_effect=lambda bb: bb is box1.Shape.BoundBox)
+        box3.Shape.BoundBox.intersect = MagicMock(return_value=False)
+
+        common_ab = MagicMock()
+        common_ab.Volume = 500.0
+        box1.Shape.common = MagicMock(return_value=common_ab)
+
+        self.fc.ActiveDocument = make_mock_doc([box1, box2, box3])
+        result = self.handler.batch_interference({'objects': ['A', 'B', 'C']})
+        self.assertIn("Collisions: 1", result)
+        self.assertIn("A ↔ B: 500.0000", result)
+
+    def test_non_solid_warning_in_batch(self):
+        shell = make_shell("A")
+        box = make_box("B")
+        self.fc.ActiveDocument = make_mock_doc([shell, box])
+        result = self.handler.batch_interference({'objects': ['A', 'B']})
+        self.assertIn("WARNING", result)
+        self.assertIn("Shell", result)
+
+    def test_all_solids_no_warning_in_batch(self):
+        box1 = make_box("A")
+        box2 = make_box("B")
+        self.fc.ActiveDocument = make_mock_doc([box1, box2])
+        result = self.handler.batch_interference({'objects': ['A', 'B']})
+        self.assertNotIn("WARNING", result)
+
+    def test_sliver_detected_in_batch(self):
+        # BB overlaps, common() returns zero, distToShape returns sub-tolerance distance
+        box1 = make_box("A", 0, 0, 0)
+        box2 = make_box("B", 0, 0, 0)
+        box1.Shape.BoundBox.intersect = MagicMock(return_value=True)
+        box1.Shape.distToShape = MagicMock(return_value=(0.0, []))
+        self.fc.ActiveDocument = make_mock_doc([box1, box2])
+        result = self.handler.batch_interference({'objects': ['A', 'B']})
+        self.assertIn("SUB-TOL", result)
+        self.assertIn("Collisions: 1", result)
+
+    def test_common_failure_counted_as_failed_not_clear(self):
+        """A common() failure on one pair must be reported as failed — not abort
+        the whole batch, and not be silently counted as a clear pair."""
+        box1 = make_box("A", 0, 0, 0)
+        box2 = make_box("B", 0, 0, 0)
+        box1.Shape.BoundBox.intersect = MagicMock(return_value=True)
+        box1.Shape.common = MagicMock(side_effect=RuntimeError("OCCT boom"))
+        self.fc.ActiveDocument = make_mock_doc([box1, box2])
+        result = self.handler.batch_interference({'objects': ['A', 'B']})
+        self.assertIn("Failed (geometry error): 1", result)
+        self.assertIn("Clear: 0", result)
+        self.assertIn("Collisions: 0", result)
+
+
+class TestAlignmentCheck(unittest.TestCase):
+
+    def setUp(self):
+        self.handler = make_handler()
+        self.fc = spatial_ops_module.FreeCAD
+
+    def test_aligned_z(self):
+        box1 = make_box("A", 0, 0, 0, 10, 10, 10)
+        box2 = make_box("B", 0, 0, 20, 10, 10, 10)
+        self.fc.ActiveDocument = make_mock_doc([box1, box2])
+
+        result = self.handler.alignment_check({'object1': 'A', 'object2': 'B', 'axis': 'Z'})
+        self.assertIn("ALIGNED", result)
+        self.assertIn("Lateral offset (XY): 0.0000", result)
+
+    def test_misaligned_z(self):
+        box1 = make_box("A", 0, 0, 0, 10, 10, 10)
+        box2 = make_box("B", 5, 3, 20, 10, 10, 10)
+        self.fc.ActiveDocument = make_mock_doc([box1, box2])
+
+        result = self.handler.alignment_check({'object1': 'A', 'object2': 'B', 'axis': 'Z'})
+        self.assertIn("MISALIGNED", result)
+        self.assertIn("5.83", result)
+
+    def test_default_axis_is_z(self):
+        box1 = make_box("A", 0, 0, 0)
+        box2 = make_box("B", 0, 0, 20)
+        self.fc.ActiveDocument = make_mock_doc([box1, box2])
+
+        result = self.handler.alignment_check({'object1': 'A', 'object2': 'B'})
+        self.assertIn("along Z axis", result)
+
+    def test_invalid_axis(self):
+        box1 = make_box("A")
+        box2 = make_box("B", 20, 0, 0)
+        self.fc.ActiveDocument = make_mock_doc([box1, box2])
+        result = self.handler.alignment_check({'object1': 'A', 'object2': 'B', 'axis': 'W'})
+        self.assertIn("must be", result)
+
+    def test_x_axis(self):
+        box1 = make_box("A", 0, 0, 0, 10, 10, 10)
+        box2 = make_box("B", 20, 0, 0, 10, 10, 10)
+        self.fc.ActiveDocument = make_mock_doc([box1, box2])
+
+        result = self.handler.alignment_check({'object1': 'A', 'object2': 'B', 'axis': 'X'})
+        self.assertIn("along X axis", result)
+        self.assertIn("Axial offset (X):", result)
+        self.assertIn("Lateral offset (YZ): 0.0000", result)
+
+
+class TestHelpers(unittest.TestCase):
+
+    def test_fmt_vec(self):
+        h = make_handler()
+        result = h._fmt_vec(FakeVector(1.234, 5.678, 9.012))
+        self.assertEqual(result, "(1.23, 5.68, 9.01)")
+
+    def test_fmt_vec_custom_decimals(self):
+        h = make_handler()
+        result = h._fmt_vec(FakeVector(1.2, 3.4, 5.6), decimals=1)
+        self.assertEqual(result, "(1.2, 3.4, 5.6)")
+
+    def test_get_two_shapes_missing_names(self):
+        h = make_handler()
+        spatial_ops_module.FreeCAD.ActiveDocument = make_mock_doc()
+        s1, s2, n1, err = h._get_two_shapes({})
+        self.assertIsNone(s1)
+        self.assertIn("required", err)
+
+    def test_get_two_shapes_no_doc(self):
+        h = make_handler()
+        spatial_ops_module.FreeCAD.ActiveDocument = None
+        s1, s2, n1, err = h._get_two_shapes({'object1': 'A', 'object2': 'B'})
+        self.assertIsNone(s1)
+        self.assertIn("No active document", err)
+
+
+if __name__ == '__main__':
+    unittest.main()

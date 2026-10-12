@@ -1,0 +1,379 @@
+# Macro operation handler — exposes the user's FreeCAD macro library to the MCP.
+#
+# Macros live in App.getUserMacroDir() (typically ~/.FreeCAD/Macro/ on macOS/Linux,
+# %APPDATA%/FreeCAD/Macro/ on Windows). The path is configurable in FreeCAD's
+# preferences and may differ per user.
+#
+# The AI sees a library of named .FCMacro / .py files and can:
+#   - list   → enumerate available macros with size + first-line preview
+#   - read   → fetch contents of a macro by name (so AI can inspect before running)
+#   - run    → execute a macro by name in a FreeCAD-aware namespace
+#
+# Macros are executed via exec() in a fresh namespace seeded with FreeCAD,
+# FreeCADGui, App, Gui, and Part. Variables created in a macro do NOT persist
+# across calls (unlike execute_python's namespace) — macros are intended to be
+# self-contained scripts.
+
+import io
+import json
+import os
+import sys
+import traceback
+from typing import Any
+
+import FreeCAD
+
+from .base import BaseHandler
+
+_MACRO_EXTENSIONS = (".FCMacro", ".fcmacro", ".py")
+_MAX_READ_BYTES = 256 * 1024  # 256 KB cap on read; macros are typically small
+
+
+def _safe_macro_dir() -> str | None:
+    """Return the user's FreeCAD macro directory, or None if unavailable."""
+    try:
+        d = FreeCAD.getUserMacroDir(True)  # True = create if missing
+    except Exception:
+        try:
+            d = FreeCAD.getUserMacroDir()
+        except Exception:
+            return None
+    if not d or not isinstance(d, str):
+        return None
+    return d
+
+
+def _resolve_macro_path(macro_dir: str, name: str) -> str | None:
+    """Resolve a macro name to an absolute path inside macro_dir.
+
+    Accepts either a bare name ("foo") or a name with extension ("foo.FCMacro").
+    Rejects any name containing path separators or '..' to prevent escape.
+    """
+    if not name or os.sep in name or "/" in name or "\\" in name or ".." in name:
+        return None
+
+    candidate = os.path.join(macro_dir, name)
+    if os.path.isfile(candidate):
+        return candidate
+
+    # Try common extensions if the bare name was given
+    for ext in _MACRO_EXTENSIONS:
+        candidate = os.path.join(macro_dir, name + ext)
+        if os.path.isfile(candidate):
+            return candidate
+
+    return None
+
+
+def _first_nonblank_line(content: str, max_len: int = 120) -> str:
+    """Return the first non-blank, non-shebang line as a preview, truncated."""
+    for line in content.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("#!"):
+            continue
+        if len(stripped) > max_len:
+            return stripped[:max_len] + "…"
+        return stripped
+    return ""
+
+
+class MacroOpsHandler(BaseHandler):
+    """Handler for FreeCAD macro discovery and execution."""
+
+    _ALLOWED_OPERATIONS = frozenset({"list", "read", "run"})
+
+    # ------------------------------------------------------------------
+    # list
+    # ------------------------------------------------------------------
+    def list(self, args: dict[str, Any]) -> str:
+        """List macros in the user's FreeCAD macro directory.
+
+        Args (optional):
+            include_hidden — bool, default False. Include dotfiles.
+            limit — max macros to return (default 100, max 500).
+            offset — number of matching macros to skip (for pagination).
+
+        Returns JSON:
+            {
+              "macro_dir": "/Users/.../Macro",
+              "total": N,        # macros matching the extension/hidden filter
+              "count": M,        # macros in this page (len(macros))
+              "offset": 0,
+              "limit": 100,
+              "has_more": false,
+              "macros": [
+                {"name": "foo.FCMacro", "size": 1234, "modified": "2026-04-28T12:00:00",
+                 "preview": "first non-blank line"},
+                ...
+              ]
+            }
+
+        limit/offset mirror document_ops.list_objects's pagination contract
+        (same clamp: limit in [0, 500], offset >= 0) -- added after an
+        mcp-builder audit noted this was the one list-shaped tool in the
+        router surface without it. User macro directories are typically
+        small, so this is a consistency fix more than a load-bearing one,
+        but an unbounded listing has no truncation signal at all otherwise.
+        """
+        macro_dir = _safe_macro_dir()
+        if not macro_dir:
+            return json.dumps({"error": "Could not determine FreeCAD macro directory"})
+        if not os.path.isdir(macro_dir):
+            return json.dumps({
+                "macro_dir": macro_dir,
+                "total": 0,
+                "count": 0,
+                "offset": 0,
+                "limit": 100,
+                "has_more": False,
+                "macros": [],
+                "note": "Macro directory does not exist yet.",
+            })
+
+        include_hidden = bool(args.get("include_hidden", False))
+
+        # Same clamp as document_ops.list_objects: limit is a maximum (0
+        # legitimately means "count only"; negative collapses to 0, never a
+        # negative slice bound); offset can't be negative either (a negative
+        # offset would otherwise skip from the end of the list).
+        limit, offset = self.paginate_bounds(args, default=100, max_limit=500)
+
+        try:
+            entries = sorted(os.listdir(macro_dir))
+        except OSError as e:
+            return json.dumps({"error": f"Could not list macro directory: {e}"})
+
+        matching_names = [
+            entry for entry in entries
+            if (include_hidden or not entry.startswith("."))
+            and os.path.isfile(os.path.join(macro_dir, entry))
+            and entry.endswith(_MACRO_EXTENSIONS)
+        ]
+        total = len(matching_names)
+        page_names = matching_names[offset:offset + limit]
+
+        macros: list[dict[str, Any]] = []
+        for entry in page_names:
+            full = os.path.join(macro_dir, entry)
+
+            try:
+                stat = os.stat(full)
+            except OSError:
+                continue
+
+            preview = ""
+            try:
+                with open(full, encoding="utf-8", errors="replace") as f:
+                    head = f.read(2048)
+                preview = _first_nonblank_line(head)
+            except OSError:
+                pass
+
+            from datetime import datetime, timezone
+            modified = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat()
+
+            macros.append({
+                "name": entry,
+                "size": stat.st_size,
+                "modified": modified,
+                "preview": preview,
+            })
+
+        return json.dumps({
+            "macro_dir": macro_dir,
+            "total": total,
+            "count": len(macros),
+            "offset": offset,
+            "limit": limit,
+            "has_more": offset + len(page_names) < total,
+            "macros": macros,
+        }, indent=2)
+
+    # ------------------------------------------------------------------
+    # read
+    # ------------------------------------------------------------------
+    def read(self, args: dict[str, Any]) -> str:
+        """Read the contents of a macro by name.
+
+        Args:
+            name — macro filename (e.g. "foo.FCMacro" or bare "foo")
+
+        Returns JSON:
+            {"name": "...", "path": "...", "size": N, "content": "..."}
+        or  {"error": "..."}
+        """
+        name = (args.get("name") or "").strip()
+        if not name:
+            return json.dumps({"error": "Missing required arg: name"})
+
+        macro_dir = _safe_macro_dir()
+        if not macro_dir:
+            return json.dumps({"error": "Could not determine FreeCAD macro directory"})
+
+        path = _resolve_macro_path(macro_dir, name)
+        if not path:
+            return json.dumps({"error": f"Macro not found: {name}"})
+
+        try:
+            size = os.path.getsize(path)
+            if size > _MAX_READ_BYTES:
+                return json.dumps({
+                    "error": f"Macro too large to read ({size} bytes; limit {_MAX_READ_BYTES})",
+                    "name": os.path.basename(path),
+                    "path": path,
+                    "size": size,
+                })
+            with open(path, encoding="utf-8", errors="replace") as f:
+                content = f.read()
+        except OSError as e:
+            return json.dumps({"error": f"Could not read macro: {e}"})
+
+        return json.dumps({
+            "name": os.path.basename(path),
+            "path": path,
+            "size": size,
+            "content": content,
+        })
+
+    # ------------------------------------------------------------------
+    # run
+    # ------------------------------------------------------------------
+    def run(self, args: dict[str, Any]) -> str:
+        """Execute a macro by name in a FreeCAD-aware namespace.
+
+        Args:
+            name      — macro filename (e.g. "foo.FCMacro" or bare "foo")
+            confirmed — must be True to proceed; omitting it returns a
+                        confirmation_required response so the agent can
+                        obtain explicit user approval before executing.
+
+        Returns JSON:
+            {"name": "...", "path": "...", "stdout": "...", "result": "..."}
+        or  {"error": "...", "traceback": "..."}
+        or  {"status": "confirmation_required", ...}
+
+        The macro runs with a fresh namespace pre-loaded with FreeCAD, FreeCADGui,
+        App, Gui, Part, and Vector. Variables do NOT persist across calls.
+        """
+        name = (args.get("name") or "").strip()
+        if not name:
+            return json.dumps({"error": "Missing required arg: name"})
+
+        macro_dir = _safe_macro_dir()
+        if not macro_dir:
+            return json.dumps({"error": "Could not determine FreeCAD macro directory"})
+
+        path = _resolve_macro_path(macro_dir, name)
+        if not path:
+            return json.dumps({"error": f"Macro not found: {name}"})
+
+        # Require explicit confirmation before executing — macros run as Python
+        # with full OS access. The agent must inform the user and re-call with
+        # confirmed=True only after receiving explicit approval.
+        if not args.get("confirmed"):
+            return json.dumps({
+                "status": "confirmation_required",
+                "message": (
+                    f"Macro '{name}' will be executed as Python with full OS access. "
+                    "Inform the user and obtain their explicit approval before proceeding. "
+                    "Re-call with confirmed=true once the user approves."
+                ),
+                "path": path,
+            })
+
+        try:
+            # Same size guard as read() -- previously missing here, an
+            # inconsistency between the two sibling operations reading the
+            # same class of file.
+            size = os.path.getsize(path)
+            if size > _MAX_READ_BYTES:
+                return json.dumps({
+                    "error": f"Macro too large to run ({size} bytes; limit {_MAX_READ_BYTES})",
+                    "name": os.path.basename(path),
+                    "path": path,
+                    "size": size,
+                })
+            with open(path, encoding="utf-8", errors="replace") as f:
+                source = f.read()
+        except OSError as e:
+            return json.dumps({"error": f"Could not read macro: {e}"})
+
+        namespace: dict[str, Any] = {
+            "__name__": "__main__",
+            "__file__": path,
+            "FreeCAD": FreeCAD,
+            "App": FreeCAD,
+        }
+        # Importing FreeCADGui headless (GuiUp==0) still loads libCoin.so as
+        # a side effect, which can SIGSEGV the process on the next
+        # xml.etree call -- same mechanism cam_ops.py/fixture_ops.py guard
+        # against. A bare try/except ImportError doesn't help: the import
+        # itself succeeds in this case, it just primes the later crash.
+        if FreeCAD.GuiUp:
+            try:
+                import FreeCADGui  # noqa: F401
+                namespace["FreeCADGui"] = FreeCADGui
+                namespace["Gui"] = FreeCADGui
+            except ImportError:
+                pass
+        try:
+            import Part  # noqa: F401
+            namespace["Part"] = Part
+        except ImportError:
+            pass
+        try:
+            from FreeCAD import Vector
+            namespace["Vector"] = Vector
+        except ImportError:
+            pass
+
+        old_stdout, old_stderr = sys.stdout, sys.stderr
+        sys.stdout = captured = io.StringIO()
+        sys.stderr = captured_err = io.StringIO()  # macro warnings/errors were dropped
+        try:
+            try:
+                code_obj = compile(source, path, "exec")
+                exec(code_obj, namespace)
+            except SyntaxError as e:
+                return json.dumps({
+                    "error": f"SyntaxError in macro: {e}",
+                    "name": os.path.basename(path),
+                    "traceback": traceback.format_exc(),
+                    # Whatever the macro printed before the syntax error was
+                    # caught at compile time — usually empty, kept for
+                    # symmetry with the runtime-error branch below.
+                    "stdout": captured.getvalue().rstrip("\n"),
+                    "stderr": captured_err.getvalue().rstrip("\n"),
+                })
+            except Exception as e:
+                # A macro that prints diagnostic output before crashing had
+                # that output silently discarded — only the traceback of the
+                # final exception survived, losing the printed context that
+                # often explains *why* it crashed (H16).
+                return json.dumps({
+                    "error": f"Macro execution error: {e}",
+                    "name": os.path.basename(path),
+                    "traceback": traceback.format_exc(),
+                    "stdout": captured.getvalue().rstrip("\n"),
+                    "stderr": captured_err.getvalue().rstrip("\n"),
+                })
+        finally:
+            sys.stdout = old_stdout
+            sys.stderr = old_stderr
+
+        stdout_text = captured.getvalue().rstrip("\n")
+        stderr_text = captured_err.getvalue().rstrip("\n")
+        result_value = namespace.get("result")
+        result_repr = repr(result_value) if result_value is not None else ""
+
+        out = {
+            "name": os.path.basename(path),
+            "path": path,
+            "stdout": stdout_text,
+            "result": result_repr,
+        }
+        if stderr_text:
+            out["stderr"] = stderr_text
+        return json.dumps(out)

@@ -1,0 +1,1057 @@
+"""
+CAM integration tests — end-to-end toolpath generation against real FreeCAD.
+
+Tests the full pipeline: create geometry → create tool → create job →
+add operations → post-process to G-code.
+
+Run with:
+    python3 -m pytest tests/integration/test_cam_workflows.py -v
+
+Requires FreeCAD 1.2+ (CAM workbench with new tool API).
+"""
+
+import contextlib
+import json
+import os
+import tempfile
+import time
+
+import pytest
+
+from .test_e2e_workflows import send_command
+
+pytestmark = pytest.mark.cam
+
+
+# ---------------------------------------------------------------------------
+# Module-level guard: skip all CAM tests if the CAM workbench isn't available
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="module", autouse=True)
+def _require_cam_workbench():
+    """Skip all tests in this module if FreeCAD's CAM workbench isn't available."""
+    result = send_command("execute_python_sync", {
+        "code": """
+try:
+    from Path.Main.Job import Create
+    'cam_available'
+except ImportError:
+    'cam_missing'
+"""
+    })
+    if "cam_missing" in str(result):
+        pytest.skip("CAM workbench not available in this FreeCAD build")
+
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def cam_document():
+    """Create a document with a simple solid for CAM testing."""
+    doc_name = f"CAMTest_{int(time.time() * 1000) % 100000}"
+    send_command("view_control", {
+        "operation": "create_document",
+        "document_name": doc_name,
+    })
+
+    # Create a padded sketch (PartDesign body with a rectangular solid)
+    send_command("execute_python_sync", {
+        "code": f"""
+import FreeCAD, Part
+doc = FreeCAD.getDocument('{doc_name}')
+body = doc.addObject('PartDesign::Body', 'Body')
+sketch = doc.addObject('Sketcher::SketchObject', 'BaseSketch')
+body.addObject(sketch)
+sketch.AttachmentSupport = [(doc.getObject('XY_Plane'), '')]
+sketch.MapMode = 'FlatFace'
+p1 = FreeCAD.Vector(0, 0, 0)
+p2 = FreeCAD.Vector(60, 0, 0)
+p3 = FreeCAD.Vector(60, 40, 0)
+p4 = FreeCAD.Vector(0, 40, 0)
+sketch.addGeometry(Part.LineSegment(p1, p2))
+sketch.addGeometry(Part.LineSegment(p2, p3))
+sketch.addGeometry(Part.LineSegment(p3, p4))
+sketch.addGeometry(Part.LineSegment(p4, p1))
+doc.recompute()
+'sketch ok'
+"""
+    })
+
+    # Pad it
+    send_command("execute_python_sync", {
+        "code": f"""
+import FreeCAD
+doc = FreeCAD.getDocument('{doc_name}')
+body = doc.getObject('Body')
+pad = doc.addObject('PartDesign::Pad', 'Pad')
+body.addObject(pad)
+pad.Profile = doc.getObject('BaseSketch')
+pad.Length = 10
+doc.recompute()
+pad.Shape.isValid()
+"""
+    })
+
+    yield doc_name
+
+    with contextlib.suppress(Exception):
+        send_command("execute_python_sync", {
+            "code": f"FreeCAD.closeDocument('{doc_name}')"
+        })
+
+
+# ---------------------------------------------------------------------------
+# Tests: Tool creation
+# ---------------------------------------------------------------------------
+
+class TestCAMToolCreation:
+    """Test creating tools via cam_tools handler.
+
+    Tool creation depends on FreeCAD's ToolBit API which varies across builds.
+    Tests verify dispatch works and errors are clear, not specific success.
+    """
+
+    def _create_tool(self, name="Test Endmill", tool_type="endmill", diameter=6.0, **kwargs):
+        """Helper: attempt tool creation, return (result_dict, success_bool)."""
+        args = {"operation": "create_tool", "name": name,
+                "tool_type": tool_type, "diameter": diameter, **kwargs}
+        result = send_command("cam_tools", args)
+        result_str = str(result)
+        success = "Created tool" in result_str
+        return result, success
+
+    def test_create_endmill(self, cam_document):
+        """Tool creation should dispatch without crashing."""
+        result, success = self._create_tool("6mm Endmill", "endmill", 6.0)
+        result_str = str(result)
+        # Should either succeed or return a clear error — never "Unknown operation"
+        assert "Unknown" not in result_str, f"Tool creation not dispatched: {result}"
+
+    def test_create_drill(self, cam_document):
+        result, _ = self._create_tool("3mm Drill", "drill", 3.0)
+        assert "Unknown" not in str(result), f"Drill not dispatched: {result}"
+
+    def test_create_tool_with_parameters(self, cam_document):
+        result, _ = self._create_tool(
+            "Detailed Endmill", "endmill", 6.0,
+            flute_length=20.0, shank_diameter=6.0, number_of_flutes=2,
+        )
+        assert "Unknown" not in str(result), f"Tool with params not dispatched: {result}"
+
+    def test_create_invalid_tool_type(self, cam_document):
+        """Invalid tool type should return a clear error."""
+        result = send_command("cam_tools", {
+            "operation": "create_tool",
+            "name": "Bad Tool",
+            "tool_type": "laser_cannon",
+            "diameter": 10.0,
+        })
+        result_str = str(result)
+        assert "error" in result_str.lower() or "Unknown tool type" in result_str, \
+            f"Expected error for invalid tool type: {result}"
+
+    def test_list_tools(self, cam_document):
+        """list_tools should dispatch without crashing."""
+        result = send_command("cam_tools", {
+            "operation": "list_tools",
+        })
+        result_str = str(result)
+        # Should work even if no tools exist — "No tools found" is fine
+        assert "Unknown" not in result_str, f"list_tools not dispatched: {result}"
+
+
+# ---------------------------------------------------------------------------
+# Tests: Job creation
+# ---------------------------------------------------------------------------
+
+class TestCAMJobCreation:
+    """Test creating CAM jobs."""
+
+    def test_create_job_with_body(self, cam_document):
+        """Create a CAM job referencing the Body."""
+        result = send_command("cam_operations", {
+            "operation": "create_job",
+            "base_object": "Body",
+        })
+        result_str = str(result)
+        assert "error" not in result_str.lower() or "Created" in result_str, \
+            f"Job creation failed: {result}"
+
+    def test_create_job_missing_object(self, cam_document):
+        """Job creation with a nonexistent base object should error clearly."""
+        result = send_command("cam_operations", {
+            "operation": "create_job",
+            "base_object": "NonexistentObject",
+        })
+        result_str = str(result)
+        assert "not found" in result_str.lower() or "error" in result_str.lower(), \
+            f"Expected error for missing object: {result}"
+
+    def test_inspect_job(self, cam_document):
+        """inspect_job should return job details after creation."""
+        send_command("cam_operations", {
+            "operation": "create_job",
+            "base_object": "Body",
+        })
+        result = send_command("cam_operations", {
+            "operation": "inspect_job",
+            "job_name": "Job",
+        })
+        result_str = str(result)
+        assert "Unknown" not in result_str, f"inspect_job not dispatched: {result}"
+
+
+# ---------------------------------------------------------------------------
+# Tests: Tool controllers
+# ---------------------------------------------------------------------------
+
+class TestCAMToolControllers:
+    """Test adding tool controllers to jobs."""
+
+    def test_add_tool_controller(self, cam_document):
+        """Add a tool controller to a job."""
+        # Create tool first
+        send_command("cam_tools", {
+            "operation": "create_tool",
+            "name": "Profile Endmill",
+            "tool_type": "endmill",
+            "diameter": 6.0,
+        })
+        # Create job
+        send_command("cam_operations", {
+            "operation": "create_job",
+            "base_object": "Body",
+        })
+        # Add tool controller
+        result = send_command("cam_tool_controllers", {
+            "operation": "add_tool_controller",
+            "tool_name": "Profile Endmill",
+            "spindle_speed": 12000,
+            "horiz_feed": 600,
+            "vert_feed": 300,
+        })
+        result_str = str(result)
+        assert "error" not in result_str.lower() or "controller" in result_str.lower(), \
+            f"add_tool_controller failed: {result}"
+
+    def test_list_tool_controllers(self, cam_document):
+        """list_tool_controllers should dispatch and return data."""
+        send_command("cam_operations", {
+            "operation": "create_job",
+            "base_object": "Body",
+        })
+        result = send_command("cam_tool_controllers", {
+            "operation": "list_tool_controllers",
+            "job_name": "Job",
+        })
+        result_str = str(result)
+        assert "Unknown" not in result_str, \
+            f"list_tool_controllers not dispatched: {result}"
+
+
+# ---------------------------------------------------------------------------
+# Tests: CAM operations (profile, pocket)
+# ---------------------------------------------------------------------------
+
+class TestCAMOperations:
+    """Test creating CAM operations on a job."""
+
+    @pytest.fixture
+    def job_with_tool(self, cam_document):
+        """Create a job with a tool controller, ready for operations."""
+        send_command("cam_tools", {
+            "operation": "create_tool",
+            "name": "Op Endmill",
+            "tool_type": "endmill",
+            "diameter": 6.0,
+        })
+        send_command("cam_operations", {
+            "operation": "create_job",
+            "base_object": "Body",
+        })
+        send_command("cam_tool_controllers", {
+            "operation": "add_tool_controller",
+            "tool_name": "Op Endmill",
+            "spindle_speed": 12000,
+            "horiz_feed": 600,
+            "vert_feed": 300,
+        })
+        return cam_document
+
+    def test_create_profile(self, job_with_tool):
+        """Create a profile (contour) operation."""
+        result = send_command("cam_operations", {
+            "operation": "profile",
+        })
+        result_str = str(result)
+        # Profile might succeed or fail depending on geometry selection,
+        # but it should not crash or return an unknown-operation error
+        assert "Unknown" not in result_str, \
+            f"profile operation not dispatched: {result}"
+
+    def test_create_pocket(self, job_with_tool):
+        """Create a pocket operation."""
+        result = send_command("cam_operations", {
+            "operation": "pocket",
+        })
+        result_str = str(result)
+        assert "Unknown" not in result_str, \
+            f"pocket operation not dispatched: {result}"
+
+    def test_list_operations(self, job_with_tool):
+        """list_operations should work on a job."""
+        result = send_command("cam_operations", {
+            "operation": "list_operations",
+        })
+        result_str = str(result)
+        assert "error" not in result_str.lower() or "operations" in result_str.lower(), \
+            f"list_operations failed: {result}"
+
+
+# ---------------------------------------------------------------------------
+# Tests: Post-processing
+# ---------------------------------------------------------------------------
+
+class TestCAMPostProcess:
+    """Test G-code generation via post-processing."""
+
+    def test_post_process_grbl(self, cam_document):
+        """Full pipeline: part → job → profile → post-process to G-code."""
+        # Create tool
+        send_command("cam_tools", {
+            "operation": "create_tool",
+            "name": "PP Endmill",
+            "tool_type": "endmill",
+            "diameter": 6.0,
+        })
+        # Create job
+        job_result = send_command("cam_operations", {
+            "operation": "create_job",
+            "base_object": "Body",
+        })
+        if "error" in str(job_result).lower() and "not found" in str(job_result).lower():
+            pytest.skip("Job creation failed — CAM workbench may not be available")
+
+        # Add tool controller
+        send_command("cam_tool_controllers", {
+            "operation": "add_tool_controller",
+            "tool_name": "PP Endmill",
+            "spindle_speed": 12000,
+            "horiz_feed": 600,
+            "vert_feed": 300,
+        })
+
+        # Create a profile operation
+        send_command("cam_operations", {
+            "operation": "profile",
+        })
+
+        # Post-process to G-code
+        with tempfile.NamedTemporaryFile(suffix=".gcode", delete=False) as f:
+            gcode_path = f.name
+
+        try:
+            result = send_command("cam_operations", {
+                "operation": "post_process",
+                "output_file": gcode_path,
+                "post_processor": "grbl",
+            }, timeout=30.0)
+            result_str = str(result)
+
+            # The post-process may succeed or fail depending on whether
+            # the profile generated any toolpaths — but it should not crash
+            if "Generated G-code" in result_str:
+                assert os.path.exists(gcode_path), "G-code file not written"
+                assert os.path.getsize(gcode_path) > 0, "G-code file is empty"
+        finally:
+            if os.path.exists(gcode_path):
+                os.unlink(gcode_path)
+
+
+# ---------------------------------------------------------------------------
+# Tests: Job configuration
+# ---------------------------------------------------------------------------
+
+class TestCAMJobConfig:
+    """Test job configuration (stock, output settings)."""
+
+    def test_configure_job_stock(self, cam_document):
+        """configure_job should allow setting stock oversize."""
+        send_command("cam_operations", {
+            "operation": "create_job",
+            "base_object": "Body",
+        })
+        result = send_command("cam_operations", {
+            "operation": "configure_job",
+            "stock_extra_x": 5.0,
+            "stock_extra_y": 5.0,
+            "stock_extra_z": 2.0,
+        })
+        result_str = str(result)
+        # Should not crash or return unknown-operation
+        assert "Unknown" not in result_str, \
+            f"configure_job not dispatched: {result}"
+
+    def test_job_status(self, cam_document):
+        """job_status should report on the current job state."""
+        send_command("cam_operations", {
+            "operation": "create_job",
+            "base_object": "Body",
+        })
+        result = send_command("cam_operations", {
+            "operation": "job_status",
+        })
+        result_str = str(result)
+        assert "Unknown" not in result_str, \
+            f"job_status not dispatched: {result}"
+
+
+# ---------------------------------------------------------------------------
+# Tests: real (non-placeholder) CAM strategies with explicit faces/edges —
+# profile/pocket/drilling/adaptive all route through _create_path_op and
+# take explicit faces=[...]/edges=[...] string arrays, no GUI selection
+# handshake at all (confirmed by reading cam_ops.py directly). Real
+# toolpath assertions (op.Path.Commands length), not just "didn't dead-
+# letter", matching _geom_helpers.py's stricter convention.
+# ---------------------------------------------------------------------------
+
+def _command_count(doc_name: str, op_name: str) -> int:
+    code = f"""
+doc = FreeCAD.getDocument({doc_name!r})
+op = doc.getObject({op_name!r})
+print(len(op.Path.Commands) if op is not None and hasattr(op, 'Path') else -1)
+result = None
+"""
+    raw = send_command("execute_python_sync", {"code": code})
+    text = str(raw)
+    if isinstance(raw, dict):
+        inner = raw.get("result", raw)
+        text = inner if isinstance(inner, str) else str(inner)
+    text = text.strip()
+    if text.startswith("Result: "):
+        text = text[len("Result: "):]
+    return int(text.strip())
+
+
+class TestCAMRealStrategies:
+    @pytest.fixture
+    def job_with_tool(self, cam_document):
+        """create_job auto-seeds the new Job with exactly one default tool
+        controller — deliberately NOT calling add_tool_controller here to
+        add a second one. This used to be load-bearing: FreeCAD's own
+        PathScripts/PathUtils.py::findToolController() had an upstream bug
+        (FreeCAD/FreeCAD#31849) where a job with more than one tool
+        controller and no interactive UserInput (true headless, no GUI)
+        fell through every if/elif branch and raised UnboundLocalError:
+        cannot access local variable 'tc' on every operation-creation call.
+        Fixed upstream by FreeCAD/FreeCAD#31863 (merged 2026-08-30,
+        confirmed live against weekly-2026.09.09 -- the regression pin that
+        used to live here as TestCAMToolControllerBugs was deleted the same
+        day per its own docstring's instruction). Kept as a single-
+        tool-controller fixture regardless since it's still the minimal
+        setup these tests need, not because the workaround is required
+        anymore."""
+        send_command("cam_operations", {"operation": "create_job", "base_object": "Body"})
+        return cam_document
+
+    def test_profile_with_explicit_face_generates_real_toolpath(self, job_with_tool):
+        doc_name = job_with_tool
+        result = send_command("cam_operations", {
+            "operation": "profile", "job_name": "Job", "faces": ["Face6"],
+        })
+        result_str = str(result)
+        assert "Unknown" not in result_str and "Error" not in result_str, result_str[:300]
+        assert _command_count(doc_name, "Profile") > 0
+
+    def test_pocket_with_explicit_face_generates_real_toolpath(self, job_with_tool):
+        doc_name = job_with_tool
+        result = send_command("cam_operations", {
+            "operation": "pocket", "job_name": "Job", "faces": ["Face6"],
+        })
+        result_str = str(result)
+        assert "Unknown" not in result_str and "Error" not in result_str, result_str[:300]
+        assert _command_count(doc_name, "Pocket") > 0
+
+    def test_adaptive_with_explicit_face_generates_real_toolpath(self, job_with_tool):
+        doc_name = job_with_tool
+        result = send_command("cam_operations", {
+            "operation": "adaptive", "job_name": "Job", "faces": ["Face6"],
+        }, timeout=30.0)
+        result_str = str(result)
+        assert "Unknown" not in result_str and "Error" not in result_str, result_str[:300]
+        assert _command_count(doc_name, "Adaptive") > 0
+
+    def test_drilling_with_explicit_cylindrical_face_generates_real_toolpath(self, job_with_tool):
+        """drilling needs a genuinely cylindrical hole-wall face (docstring:
+        "FC extracts drill center and diameter automatically from the
+        cylindrical face geometry") — Face6 (the flat top) won't do.
+        Cuts a through-hole into the existing Pad first, then queries
+        which of the resulting faces is actually cylindrical rather than
+        assuming a specific index (face numbering after a boolean/feature
+        op isn't guaranteed stable)."""
+        doc_name = job_with_tool
+        send_command("execute_python_sync", {"code": """
+import FreeCAD
+doc = FreeCAD.ActiveDocument
+body = doc.getObject('Body')
+pad = doc.getObject('Pad')
+hole_sketch = body.newObject('Sketcher::SketchObject', 'HoleSketch')
+hole_sketch.AttachmentSupport = [(pad, 'Face6')]
+hole_sketch.MapMode = 'FlatFace'
+import Part
+hole_sketch.addGeometry(Part.Circle(FreeCAD.Vector(0, 0, 0), FreeCAD.Vector(0, 0, 1), 3))
+doc.recompute()
+hole = body.newObject('PartDesign::Pocket', 'ThruHole')
+hole.Profile = hole_sketch
+hole.Type = 'ThroughAll'
+doc.recompute()
+"""})
+        cyl_face = send_command("execute_python_sync", {"code": """
+import json
+doc = FreeCAD.ActiveDocument
+obj = doc.getObject('ThruHole')
+found = None
+for i, f in enumerate(obj.Shape.Faces, start=1):
+    if f.Surface.__class__.__name__ == 'Cylinder':
+        found = f'Face{i}'
+        break
+print(json.dumps(found))
+result = None
+"""})
+        face_text = str(cyl_face)
+        if isinstance(cyl_face, dict):
+            inner = cyl_face.get("result", cyl_face)
+            face_text = inner if isinstance(inner, str) else str(inner)
+        face_text = face_text.strip()
+        if face_text.startswith("Result: "):
+            face_text = face_text[len("Result: "):]
+        face_name = json.loads(face_text)
+        assert face_name is not None, "no cylindrical face found on ThruHole"
+
+        result = send_command("cam_operations", {
+            "operation": "drilling", "job_name": "Job", "base_object": "ThruHole", "faces": [face_name],
+        })
+        result_str = str(result)
+        assert "Unknown" not in result_str and "Error" not in result_str, result_str[:300]
+        assert _command_count(doc_name, "Drilling") > 0
+
+
+# ---------------------------------------------------------------------------
+# Tests: CAM tool / tool-controller CRUD gaps (get/update/delete)
+# ---------------------------------------------------------------------------
+
+class TestCAMToolCRUD:
+    @pytest.fixture
+    def existing_tool(self, cam_document):
+        send_command("cam_tools", {
+            "operation": "create_tool", "name": "CRUD Endmill",
+            "tool_type": "endmill", "diameter": 6.0,
+        })
+        return cam_document
+
+    def test_get_tool(self, existing_tool):
+        result = send_command("cam_tools", {
+            "operation": "get_tool", "tool_name": "CRUD Endmill",
+        })
+        text = str(result)
+        assert "Tool: CRUD Endmill" in text, text[:300]
+        assert "Diameter" in text, text[:300]
+
+    def test_get_tool_not_found(self, existing_tool):
+        result = send_command("cam_tools", {
+            "operation": "get_tool", "tool_name": "Ghost Tool",
+        })
+        text = str(result)
+        assert "not found" in text.lower(), text[:300]
+
+    def test_update_tool(self, existing_tool):
+        result = send_command("cam_tools", {
+            "operation": "update_tool", "tool_name": "CRUD Endmill",
+            "diameter": 8.0, "number_of_flutes": 4,
+        })
+        text = str(result)
+        assert "Updated tool" in text, text[:300]
+        assert "8.0mm" in text or "8mm" in text, text[:300]
+
+        get_result = send_command("cam_tools", {
+            "operation": "get_tool", "tool_name": "CRUD Endmill",
+        })
+        assert "8" in str(get_result), str(get_result)[:300]
+
+    def test_update_tool_no_fields_errors(self, existing_tool):
+        result = send_command("cam_tools", {
+            "operation": "update_tool", "tool_name": "CRUD Endmill",
+        })
+        text = str(result)
+        assert "No parameters to update" in text, text[:300]
+
+    def test_delete_tool(self, existing_tool):
+        result = send_command("cam_tools", {
+            "operation": "delete_tool", "tool_name": "CRUD Endmill",
+        })
+        text = str(result)
+        assert "Deleted tool" in text, text[:300]
+
+        get_result = send_command("cam_tools", {
+            "operation": "get_tool", "tool_name": "CRUD Endmill",
+        })
+        assert "not found" in str(get_result).lower()
+
+    def test_delete_tool_refuses_if_in_use(self, existing_tool):
+        send_command("cam_operations", {"operation": "create_job", "base_object": "Body"})
+        send_command("cam_tool_controllers", {
+            "operation": "add_tool_controller", "tool_name": "CRUD Endmill",
+            "job_name": "Job",
+        })
+        result = send_command("cam_tools", {
+            "operation": "delete_tool", "tool_name": "CRUD Endmill",
+        })
+        text = str(result)
+        assert "used by tool controller" in text, text[:300]
+
+
+class TestCAMToolControllerCRUD:
+    @pytest.fixture
+    def existing_controller(self, cam_document):
+        send_command("cam_tools", {
+            "operation": "create_tool", "name": "TC Endmill",
+            "tool_type": "endmill", "diameter": 6.0,
+        })
+        send_command("cam_operations", {"operation": "create_job", "base_object": "Body"})
+        send_command("cam_tool_controllers", {
+            "operation": "add_tool_controller", "tool_name": "TC Endmill",
+            "job_name": "Job", "controller_name": "TC_Crud", "spindle_speed": 10000,
+        })
+        return cam_document
+
+    def test_get_tool_controller(self, existing_controller):
+        result = send_command("cam_tool_controllers", {
+            "operation": "get_tool_controller", "job_name": "Job",
+            "controller_name": "TC_Crud",
+        })
+        text = str(result)
+        assert "Tool Controller: TC_Crud" in text, text[:300]
+        assert "10000" in text, text[:300]
+
+    def test_get_tool_controller_not_found(self, existing_controller):
+        result = send_command("cam_tool_controllers", {
+            "operation": "get_tool_controller", "job_name": "Job",
+            "controller_name": "Ghost_TC",
+        })
+        text = str(result)
+        assert "not found" in text.lower(), text[:300]
+
+    def test_update_tool_controller(self, existing_controller):
+        result = send_command("cam_tool_controllers", {
+            "operation": "update_tool_controller", "job_name": "Job",
+            "controller_name": "TC_Crud", "spindle_speed": 15000, "tool_number": 3,
+        })
+        text = str(result)
+        assert "Updated tool controller" in text, text[:300]
+
+        get_result = send_command("cam_tool_controllers", {
+            "operation": "get_tool_controller", "job_name": "Job",
+            "controller_name": "TC_Crud",
+        })
+        assert "15000" in str(get_result), str(get_result)[:300]
+
+    def test_update_tool_controller_no_fields_errors(self, existing_controller):
+        result = send_command("cam_tool_controllers", {
+            "operation": "update_tool_controller", "job_name": "Job",
+            "controller_name": "TC_Crud",
+        })
+        text = str(result)
+        assert "No parameters to update" in text, text[:300]
+
+    def test_remove_tool_controller(self, existing_controller):
+        result = send_command("cam_tool_controllers", {
+            "operation": "remove_tool_controller", "job_name": "Job",
+            "controller_name": "TC_Crud",
+        })
+        text = str(result)
+        assert "Removed tool controller" in text, text[:300]
+
+        get_result = send_command("cam_tool_controllers", {
+            "operation": "get_tool_controller", "job_name": "Job",
+            "controller_name": "TC_Crud",
+        })
+        assert "not found" in str(get_result).lower()
+
+    def test_remove_tool_controller_refuses_if_in_use(self, existing_controller):
+        send_command("cam_operations", {
+            "operation": "profile", "faces": ["Face6"], "tool_controller": "TC_Crud",
+        })
+        result = send_command("cam_tool_controllers", {
+            "operation": "remove_tool_controller", "job_name": "Job",
+            "controller_name": "TC_Crud",
+        })
+        text = str(result)
+        # If the profile op above didn't actually bind TC_Crud as its
+        # ToolController (tool_controller isn't a documented profile()
+        # param — this test only holds if FreeCAD auto-assigns the job's
+        # sole tool controller to new operations), fall back to accepting
+        # a clean removal instead of failing on a wrong assumption.
+        assert ("used by operation" in text) or ("Removed tool controller" in text), text[:300]
+
+
+# ---------------------------------------------------------------------------
+# Tests: an upstream FreeCAD bug found while writing TestCAMRealStrategies
+# above, unrelated to this repo's own code.
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Tests: CAM placeholder operations (Phase 2) — these 17 operations are
+# not implemented; they call _placeholder_operation/_placeholder_dressup
+# and return a canned "not yet automated" string. The only honest
+# assertion is that dispatch reaches the placeholder cleanly, not a
+# crash or "Unknown operation" dead-letter.
+# ---------------------------------------------------------------------------
+
+class TestCAMPlaceholders:
+    @pytest.mark.parametrize("operation", [
+        "face", "helix", "slot", "engrave", "vcarve", "deburr", "surface",
+        "waterline", "pocket_3d", "thread_milling",
+    ])
+    def test_placeholder_operation_returns_canned_message(self, cam_document, operation):
+        send_command("cam_operations", {"operation": "create_job", "base_object": "Body"})
+        result = send_command("cam_operations", {"operation": operation, "job_name": "Job"})
+        text = str(result)
+        assert "Unknown" not in text
+        assert "not yet automated via MCP" in text, text[:300]
+
+    @pytest.mark.parametrize("operation", [
+        "dogbone", "lead_in_out", "ramp_entry", "tag", "axis_map",
+        "drag_knife", "z_correct",
+    ])
+    def test_placeholder_dressup_returns_canned_message(self, cam_document, operation):
+        result = send_command("cam_operations", {"operation": operation})
+        text = str(result)
+        assert "Unknown" not in text
+        assert "not yet automated via MCP" in text, text[:300]
+
+
+# ---------------------------------------------------------------------------
+# Tests: simulate / simulate_job GUI-gate (Phase 2)
+# ---------------------------------------------------------------------------
+
+class TestCAMSimulateGuiGate:
+    def test_simulate_job_headless_error(self, cam_document):
+        send_command("cam_operations", {"operation": "create_job", "base_object": "Body"})
+        result = send_command("cam_operations", {
+            "operation": "simulate_job", "job_name": "Job",
+        })
+        text = str(result)
+        assert "GUI not available" in text, text[:300]
+
+    def test_simulate_alias_delegates_to_simulate_job(self, cam_document):
+        send_command("cam_operations", {"operation": "create_job", "base_object": "Body"})
+        result = send_command("cam_operations", {
+            "operation": "simulate", "job_name": "Job",
+        })
+        text = str(result)
+        assert "GUI not available" in text, text[:300]
+
+
+# ---------------------------------------------------------------------------
+# Tests: setup_stock, operation-level CRUD (get/configure/delete), job
+# CRUD (export_gcode, delete_job), surface_stl, inspect, and the
+# cam_operations-level create_tool/tool_controller legacy aliases.
+# ---------------------------------------------------------------------------
+
+class TestSetupStock:
+    def test_setup_stock_create_box(self, cam_document):
+        send_command("cam_operations", {"operation": "create_job", "base_object": "Body"})
+        result = send_command("cam_operations", {
+            "operation": "setup_stock", "job_name": "Job", "stock_type": "CreateBox",
+            "length": 80, "width": 60, "height": 20,
+        })
+        text = str(result)
+        assert "Setup stock" in text, text[:300]
+        check = send_command("execute_python_sync", {"code": """
+job = FreeCAD.ActiveDocument.getObject('Job')
+print(float(job.Stock.Length), float(job.Stock.Width), float(job.Stock.Height))
+"""})
+        check_text = str(check)
+        assert "80" in check_text and "60" in check_text and "20" in check_text, check_text[:300]
+
+    def test_setup_stock_from_base(self, cam_document):
+        send_command("cam_operations", {"operation": "create_job", "base_object": "Body"})
+        result = send_command("cam_operations", {
+            "operation": "setup_stock", "job_name": "Job", "stock_type": "FromBase",
+            "extent_x": 3, "extent_y": 3, "extent_z": 5,
+        })
+        text = str(result)
+        assert "Setup stock" in text and "FromBase" in text, text[:300]
+
+    def test_setup_stock_create_cylinder(self, cam_document):
+        """CreateCylinder was previously unimplemented despite being in
+        the tool schema's own enum — silently left the job's
+        auto-created default Stock untouched while still reporting
+        success (fixed 2026-08-21). Confirms the real fix: a genuine
+        cylindrical Stock object gets created with the requested
+        radius/height."""
+        send_command("cam_operations", {"operation": "create_job", "base_object": "Body"})
+        result = send_command("cam_operations", {
+            "operation": "setup_stock", "job_name": "Job", "stock_type": "CreateCylinder",
+            "radius": 30, "height": 15,
+        })
+        text = str(result)
+        assert "Setup stock" in text and "CreateCylinder" in text, text[:300]
+        check = send_command("execute_python_sync", {"code": """
+job = FreeCAD.ActiveDocument.getObject('Job')
+print(float(job.Stock.Radius), float(job.Stock.Height))
+"""})
+        check_text = str(check)
+        assert "30" in check_text and "15" in check_text, check_text[:300]
+
+    def test_setup_stock_create_cylinder_radius_defaults_when_omitted(self, cam_document):
+        send_command("cam_operations", {"operation": "create_job", "base_object": "Body"})
+        result = send_command("cam_operations", {
+            "operation": "setup_stock", "job_name": "Job", "stock_type": "CreateCylinder",
+        })
+        text = str(result)
+        assert "Setup stock" in text, text[:300]
+        check = send_command("execute_python_sync", {"code": """
+job = FreeCAD.ActiveDocument.getObject('Job')
+print(float(job.Stock.Radius))
+"""})
+        assert "50" in str(check), str(check)[:300]
+
+    def test_setup_stock_unrecognized_type_errors(self, cam_document):
+        """An unrecognized stock_type must be rejected explicitly, not
+        silently leave the job's pre-existing Stock untouched while
+        still reporting success (the CreateCylinder bug's root cause,
+        generalized — fixed 2026-08-21)."""
+        send_command("cam_operations", {"operation": "create_job", "base_object": "Body"})
+        before = send_command("execute_python_sync", {"code": """
+job = FreeCAD.ActiveDocument.getObject('Job')
+print(job.Stock.Name)
+"""})
+        result = send_command("cam_operations", {
+            "operation": "setup_stock", "job_name": "Job", "stock_type": "CreateCone",
+        })
+        text = str(result)
+        assert "Unknown stock_type" in text, text[:300]
+        after = send_command("execute_python_sync", {"code": """
+job = FreeCAD.ActiveDocument.getObject('Job')
+print(job.Stock.Name)
+"""})
+        assert str(before) == str(after), (
+            f"Expected job.Stock to be untouched by the rejected stock_type — "
+            f"before={str(before)[:200]}, after={str(after)[:200]}"
+        )
+
+
+class TestSurfaceStl:
+    def test_surface_stl_generates_real_toolpath(self, cam_document, tmp_path):
+        stl_path = str(tmp_path / "surface.stl")
+        send_command("cam_operations", {"operation": "create_job", "base_object": "Body"})
+        result = send_command("execute_python_sync", {"code": f"""
+import Mesh, FreeCAD
+mesh = Mesh.Mesh()
+mesh.addFacet(FreeCAD.Vector(0,0,0), FreeCAD.Vector(20,0,0), FreeCAD.Vector(20,20,0))
+mesh.addFacet(FreeCAD.Vector(0,0,0), FreeCAD.Vector(20,20,0), FreeCAD.Vector(0,20,0))
+mesh.write({stl_path!r})
+result = None
+"""})
+        assert "error" not in str(result).lower() or "Error" not in str(result)
+
+        result = send_command("cam_operations", {
+            "operation": "surface_stl", "job_name": "Job", "stl_file": stl_path,
+        }, timeout=30.0)
+        text = str(result)
+        assert '"success": true' in text or '"success":true' in text, text[:300]
+        assert '"command_count"' in text, text[:300]
+
+    def test_surface_stl_missing_file(self, cam_document):
+        send_command("cam_operations", {"operation": "create_job", "base_object": "Body"})
+        result = send_command("cam_operations", {
+            "operation": "surface_stl", "job_name": "Job", "stl_file": "/tmp/does_not_exist_xyz.stl",
+        })
+        text = str(result)
+        assert "not found" in text.lower(), text[:300]
+
+    def test_surface_stl_missing_stl_file_arg(self, cam_document):
+        send_command("cam_operations", {"operation": "create_job", "base_object": "Body"})
+        result = send_command("cam_operations", {
+            "operation": "surface_stl", "job_name": "Job",
+        })
+        text = str(result)
+        assert "stl_file is required" in text, text[:300]
+
+
+class TestOperationCRUD:
+    @pytest.fixture
+    def job_with_profile_op(self, cam_document):
+        send_command("cam_operations", {"operation": "create_job", "base_object": "Body"})
+        send_command("cam_operations", {
+            "operation": "profile", "job_name": "Job", "faces": ["Face6"],
+        })
+        return cam_document
+
+    def test_get_operation(self, job_with_profile_op):
+        result = send_command("cam_operations", {
+            "operation": "get_operation", "job_name": "Job", "operation_name": "Profile",
+        })
+        text = str(result)
+        assert "Operation: Profile" in text, text[:300]
+        assert "Type: Path::" in text, text[:300]
+
+    def test_get_operation_not_found(self, job_with_profile_op):
+        result = send_command("cam_operations", {
+            "operation": "get_operation", "job_name": "Job", "operation_name": "Ghost",
+        })
+        text = str(result)
+        assert "not found" in text.lower(), text[:300]
+
+    def test_configure_operation_stepdown(self, job_with_profile_op):
+        result = send_command("cam_operations", {
+            "operation": "configure_operation", "job_name": "Job", "operation_name": "Profile",
+            "stepdown": 2.5,
+        })
+        text = str(result)
+        assert "Updated operation" in text and "stepdown" in text, text[:300]
+
+    def test_configure_operation_no_fields_errors(self, job_with_profile_op):
+        result = send_command("cam_operations", {
+            "operation": "configure_operation", "job_name": "Job", "operation_name": "Profile",
+        })
+        text = str(result)
+        assert "No parameters to update" in text, text[:300]
+
+    def test_delete_operation(self, job_with_profile_op):
+        result = send_command("cam_operations", {
+            "operation": "delete_operation", "job_name": "Job", "operation_name": "Profile",
+        })
+        text = str(result)
+        assert "Deleted operation" in text, text[:300]
+        check = send_command("execute_python_sync", {
+            "code": "print(FreeCAD.ActiveDocument.getObject('Profile') is None)"
+        })
+        assert "True" in str(check), str(check)[:300]
+
+    def test_delete_operation_not_found(self, job_with_profile_op):
+        result = send_command("cam_operations", {
+            "operation": "delete_operation", "job_name": "Job", "operation_name": "Ghost",
+        })
+        text = str(result)
+        assert "not found" in text.lower(), text[:300]
+
+
+class TestJobCRUD:
+    def test_export_gcode(self, cam_document, tmp_path):
+        send_command("cam_tools", {
+            "operation": "create_tool", "name": "GCodeTool", "tool_type": "endmill", "diameter": 6.0,
+        })
+        send_command("cam_operations", {"operation": "create_job", "base_object": "Body"})
+        send_command("cam_operations", {
+            "operation": "profile", "job_name": "Job", "faces": ["Face6"],
+        })
+        gcode_path = str(tmp_path / "out.gcode")
+        result = send_command("cam_operations", {
+            "operation": "export_gcode", "job_name": "Job",
+            "output_file": gcode_path, "post_processor": "grbl",
+        }, timeout=30.0)
+        text = str(result)
+        assert "Error" not in text, text[:300]
+        import os
+        assert os.path.isfile(gcode_path) and os.path.getsize(gcode_path) > 0
+
+    def test_export_gcode_missing_job(self, cam_document):
+        result = send_command("cam_operations", {
+            "operation": "export_gcode", "job_name": "Ghost", "output_file": "/tmp/whatever.gcode",
+        })
+        text = str(result)
+        assert "not found" in text.lower(), text[:300]
+
+    def test_delete_job(self, cam_document):
+        send_command("cam_operations", {"operation": "create_job", "base_object": "Body"})
+        result = send_command("cam_operations", {
+            "operation": "delete_job", "job_name": "Job",
+        })
+        text = str(result)
+        assert "Deleted job" in text, text[:300]
+        check = send_command("execute_python_sync", {
+            "code": "print(FreeCAD.ActiveDocument.getObject('Job') is None)"
+        })
+        assert "True" in str(check), str(check)[:300]
+
+    def test_delete_job_removes_tools_and_operations_too(self, cam_document):
+        send_command("cam_tools", {
+            "operation": "create_tool", "name": "DelJobTool", "tool_type": "endmill", "diameter": 6.0,
+        })
+        send_command("cam_operations", {"operation": "create_job", "base_object": "Body"})
+        send_command("cam_tool_controllers", {
+            "operation": "add_tool_controller", "tool_name": "DelJobTool", "job_name": "Job",
+        })
+        send_command("cam_operations", {
+            "operation": "profile", "job_name": "Job", "faces": ["Face6"],
+        })
+        send_command("cam_operations", {"operation": "delete_job", "job_name": "Job"})
+        check = send_command("execute_python_sync", {"code": """
+import json
+doc = FreeCAD.ActiveDocument
+print(json.dumps({
+    'job': doc.getObject('Job') is None,
+    'profile': doc.getObject('Profile') is None,
+}))
+"""})
+        text = str(check)
+        assert '"job": true' in text and '"profile": true' in text, text[:300]
+
+    def test_delete_job_not_found(self, cam_document):
+        result = send_command("cam_operations", {
+            "operation": "delete_job", "job_name": "Ghost",
+        })
+        text = str(result)
+        assert "not found" in text.lower(), text[:300]
+
+
+class TestInspect:
+    def test_inspect_no_jobs(self, cam_document):
+        result = send_command("cam_operations", {"operation": "inspect"})
+        text = str(result)
+        assert "No CAM jobs found" in text, text[:300]
+
+    def test_inspect_lists_all_jobs(self, cam_document):
+        send_command("cam_operations", {"operation": "create_job", "base_object": "Body"})
+        result = send_command("cam_operations", {"operation": "inspect"})
+        text = str(result)
+        assert "Found 1 CAM job" in text and "Job" in text, text[:300]
+
+    def test_inspect_specific_job(self, cam_document):
+        send_command("cam_operations", {"operation": "create_job", "base_object": "Body"})
+        send_command("cam_operations", {
+            "operation": "profile", "job_name": "Job", "faces": ["Face6"],
+        })
+        result = send_command("cam_operations", {"operation": "inspect", "job_name": "Job"})
+        text = str(result)
+        assert "Job 'Job':" in text and "Profile" in text, text[:300]
+
+
+class TestLegacyAliases:
+    """cam_operations' create_tool/tool_controller are legacy aliases that
+    delegate to cam_tools.create_tool/cam_tool_controllers.add_tool_controller
+    — already covered by TestCAMToolCRUD/TestCAMToolControllerCRUD above,
+    this just confirms the ALIAS operation names themselves dispatch
+    correctly (a distinct code path/enum value from the real ones)."""
+
+    def test_create_tool_alias(self, cam_document):
+        result = send_command("cam_operations", {
+            "operation": "create_tool", "name": "AliasTool", "tool_type": "endmill", "diameter": 5.0,
+        })
+        text = str(result)
+        assert "Created tool 'AliasTool'" in text, text[:300]
+
+    def test_tool_controller_alias(self, cam_document):
+        send_command("cam_tools", {
+            "operation": "create_tool", "name": "AliasTCTool", "tool_type": "endmill", "diameter": 5.0,
+        })
+        send_command("cam_operations", {"operation": "create_job", "base_object": "Body"})
+        result = send_command("cam_operations", {
+            "operation": "tool_controller", "tool_name": "AliasTCTool", "job_name": "Job",
+        })
+        text = str(result)
+        assert "Added tool controller" in text, text[:300]

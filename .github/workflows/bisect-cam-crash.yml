@@ -1,0 +1,57 @@
+name: Bisect CAM Crash
+
+# One-off diagnostic workflow, not part of normal CI (workflow_dispatch
+# only). Downloads a single specified FreeCAD weekly AppImage and runs just
+# the CAM tool-creation tests against it, to binary-search which weekly
+# build between weekly-2026.04.01 (known good) and weekly-2026.07.15
+# (known broken) introduced the create_tool SIGSEGV documented in
+# KNOWN_ISSUES.md. See that file for the crash's own background.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "FreeCAD weekly release tag to test (e.g. weekly-2026.06.03)"
+        required: true
+        type: string
+
+jobs:
+  bisect:
+    runs-on: ubuntu-latest
+    name: "Bisect ${{ inputs.tag }}"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install test dependencies
+        run: pip install pytest pytest-timeout
+
+      - name: Set up FreeCAD AppImage
+        uses: ./.github/actions/setup-freecad-appimage
+        with:
+          tag: ${{ inputs.tag }}
+
+      # Cheap, no live crash-test needed (KNOWN_ISSUES.md's expat symbol
+      # collision root cause): does this build's libCoin.so.80 export a
+      # colliding XML_ParseBuffer symbol at all? If a build crashes but
+      # this comes back empty, the regression is in FreeCAD's own code
+      # newly calling xml.etree.ElementTree somewhere, not in Coin's build.
+      - name: Check libCoin.so.80 for a colliding XML_ParseBuffer export
+        run: |
+          LIBCOIN=$(find "$HOME/freecad-appimage/squashfs-root" -maxdepth 4 -name 'libCoin.so*' | head -1)
+          echo "libCoin: ${LIBCOIN:-<not found>}"
+          if [ -n "$LIBCOIN" ]; then
+            nm -D "$LIBCOIN" 2>/dev/null | grep -i XML_Parse || echo "No XML_Parse* symbols exported by this libCoin."
+          fi
+
+      - name: Run CAM tool-creation tests
+        shell: bash
+        run: |
+          set -o pipefail
+          python -m pytest tests/integration/test_cam_workflows.py::TestCAMToolCreation -v --timeout=60 2>&1 | tee pytest-output.log
+        timeout-minutes: 5

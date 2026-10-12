@@ -1,0 +1,332 @@
+# Primitive shape creation handlers for FreeCAD MCP
+#
+# ───────────────────────────────────────────────────────────────────────────
+# primitives-validation — status
+#
+# (b) DONE: zero/negative dimensions are now rejected with the parameter name
+#     in the error (see _validate_positive and the per-handler checks). A null
+#     Part::Box/::Cylinder no longer silently lands in the document to crash a
+#     downstream OCCT Boolean. The Test*DegenerateDimensions classes in
+#     tests/unit/test_primitives.py assert the rejection.
+#
+# (a) DONE: unknown/misspelled arg keys ('lenght' → was silent 10mm default)
+#     are now rejected via _check_unknown_keys. The injected-key envelope is:
+#     `operation` (always), `_continue_selection` + `_operation_id` (continuation
+#     path only). These are tolerated by _INJECTED_KEYS; everything else unknown
+#     returns an explicit error naming the offending keys.
+# ───────────────────────────────────────────────────────────────────────────
+
+from typing import Any
+
+import FreeCAD
+
+from .base import NO_ACTIVE_DOCUMENT_ERROR, BaseHandler
+
+_INJECTED_KEYS = frozenset({"operation", "_continue_selection", "_operation_id"})
+
+# Schema default of every `part_operations` param that carries one
+# (freecad_mcp_server.py). The schema is shared by all 23 operations and gives
+# operation-specific params a `default`, so an MCP client that materializes
+# defaults (Claude Code does) sends all of them on every call -- a `box` call
+# arrives carrying `radius=5`, `spacing_x=10`, `tracking=0`, ... (issue #98).
+# A sibling-operation key is tolerated ONLY when its value equals that default
+# (i.e. it is materialization noise); a non-default value ('size=20' on a box),
+# a sibling key with no schema default, or a key absent from the schema
+# ('lenght') is still rejected, so a genuine mistake can't fall through to the
+# handler's own silent 10mm default.
+# Mirrors the bridge schema by hand because the handler runs inside FreeCAD
+# and can't import the bridge (the two deploy separately);
+# tests/unit/test_primitives.py asserts parity, defaults included.
+_PART_OPERATIONS_SCHEMA_DEFAULTS = {
+    'length': 10, 'width': 10, 'height': 10,
+    'radius': 5, 'radius1': 10, 'radius2': 3,
+    'x': 0, 'y': 0, 'z': 0,
+    'axis': 'z', 'angle': 90, 'scale_factor': 1.5, 'count': 3,
+    'spacing_x': 10, 'spacing_y': 0, 'spacing_z': 0,
+    'size': 10, 'tracking': 0,
+}
+
+
+def _check_unknown_keys(primitive: str, args: dict, allowed: frozenset) -> str | None:
+    unknown = {
+        key for key, value in args.items()
+        if key not in allowed
+        and key not in _INJECTED_KEYS
+        and not (key in _PART_OPERATIONS_SCHEMA_DEFAULTS
+                 and value == _PART_OPERATIONS_SCHEMA_DEFAULTS[key])
+    }
+    if unknown:
+        return f"Error creating {primitive}: unknown argument(s) {sorted(unknown)} — check for typos"
+    return None
+
+
+def _validate_positive(prim: str, **dims) -> str | None:
+    """Return an 'Error creating <prim>: ...' string if any named dimension is
+    not a number > 0; otherwise None. Names the offending parameter so the MCP
+    caller (often an LLM) can correct it."""
+    for name, val in dims.items():
+        try:
+            if float(val) <= 0:
+                return f"Error creating {prim}: {name} must be > 0 (got {val})"
+        except (TypeError, ValueError):
+            return f"Error creating {prim}: {name} must be a number (got {val!r})"
+    return None
+
+
+def _validate_wedge_bounds(xmin, xmax, ymin, ymax, zmin, zmax, x2min, x2max) -> str | None:
+    """Return an 'Error creating wedge: ...' string if any min/max pair is
+    inverted or degenerate; otherwise None.
+
+    Part::Wedge is defined by min/max coordinate PAIRS, not positive
+    magnitudes, so _validate_positive doesn't apply (xmin can legitimately
+    be negative). Each max must strictly exceed its min, or OCCT gets an
+    inverted/zero-volume solid that can crash a downstream Boolean —
+    create_wedge was the one primitive in this file not hardened against
+    that (see the module header).
+    """
+    for lo_name, lo, hi_name, hi in (
+        ("xmin", xmin, "xmax", xmax),
+        ("ymin", ymin, "ymax", ymax),
+        ("zmin", zmin, "zmax", zmax),
+        ("x2min", x2min, "x2max", x2max),
+    ):
+        try:
+            lo_f, hi_f = float(lo), float(hi)
+        except (TypeError, ValueError):
+            return f"Error creating wedge: {lo_name}/{hi_name} must be numbers (got {lo!r}, {hi!r})"
+        if hi_f <= lo_f:
+            return f"Error creating wedge: {hi_name} ({hi}) must be > {lo_name} ({lo})"
+    return None
+
+
+class PrimitivesHandler(BaseHandler):
+    """Handler for creating primitive shapes (Part workbench)."""
+
+    def create_box(self, args: dict[str, Any]) -> str:
+        """Create a box with specified dimensions."""
+        try:
+            err = _check_unknown_keys('box', args, frozenset({'length', 'width', 'height', 'x', 'y', 'z', 'name'}))
+            if err:
+                return err
+            length = args.get('length', 10)
+            width = args.get('width', 10)
+            height = args.get('height', 10)
+            x = args.get('x', 0)
+            y = args.get('y', 0)
+            z = args.get('z', 0)
+            name = args.get('name', 'Box')
+
+            err = _validate_positive('box', length=length, width=width, height=height)
+            if err:
+                return err
+
+            doc = self.get_document()
+            if not doc:
+                return f"Error creating box: {NO_ACTIVE_DOCUMENT_ERROR}"
+
+            box = doc.addObject("Part::Box", name)
+            box.Label = name
+            box.Length = length
+            box.Width = width
+            box.Height = height
+            box.Placement.Base = FreeCAD.Vector(x, y, z)
+
+            self.recompute(doc)
+
+            return f"Created box: {box.Name} ({length}x{width}x{height}mm) at ({x},{y},{z})"
+
+        except Exception as e:
+            return f"Error creating box: {e}"
+
+    def create_cylinder(self, args: dict[str, Any]) -> str:
+        """Create a cylinder with specified dimensions."""
+        try:
+            err = _check_unknown_keys('cylinder', args, frozenset({'radius', 'height', 'x', 'y', 'z', 'name'}))
+            if err:
+                return err
+            radius = args.get('radius', 5)
+            height = args.get('height', 10)
+            x = args.get('x', 0)
+            y = args.get('y', 0)
+            z = args.get('z', 0)
+            name = args.get('name', 'Cylinder')
+
+            err = _validate_positive('cylinder', radius=radius, height=height)
+            if err:
+                return err
+
+            doc = self.get_document()
+            if not doc:
+                return f"Error creating cylinder: {NO_ACTIVE_DOCUMENT_ERROR}"
+
+            cylinder = doc.addObject("Part::Cylinder", name)
+            cylinder.Label = name
+            cylinder.Radius = radius
+            cylinder.Height = height
+            cylinder.Placement.Base = FreeCAD.Vector(x, y, z)
+
+            self.recompute(doc)
+
+            return f"Created cylinder: {cylinder.Name} (R{radius}, H{height}) at ({x},{y},{z})"
+
+        except Exception as e:
+            return f"Error creating cylinder: {e}"
+
+    def create_sphere(self, args: dict[str, Any]) -> str:
+        """Create a sphere with specified radius."""
+        try:
+            err = _check_unknown_keys('sphere', args, frozenset({'radius', 'x', 'y', 'z', 'name'}))
+            if err:
+                return err
+            radius = args.get('radius', 5)
+            x = args.get('x', 0)
+            y = args.get('y', 0)
+            z = args.get('z', 0)
+            name = args.get('name', 'Sphere')
+
+            err = _validate_positive('sphere', radius=radius)
+            if err:
+                return err
+
+            doc = self.get_document()
+            if not doc:
+                return f"Error creating sphere: {NO_ACTIVE_DOCUMENT_ERROR}"
+
+            sphere = doc.addObject("Part::Sphere", name)
+            sphere.Label = name
+            sphere.Radius = radius
+            sphere.Placement.Base = FreeCAD.Vector(x, y, z)
+
+            self.recompute(doc)
+
+            return f"Created sphere: {sphere.Name} (R{radius}) at ({x},{y},{z})"
+
+        except Exception as e:
+            return f"Error creating sphere: {e}"
+
+    def create_cone(self, args: dict[str, Any]) -> str:
+        """Create a cone with specified radii and height."""
+        try:
+            err = _check_unknown_keys('cone', args, frozenset({'radius1', 'radius2', 'height', 'x', 'y', 'z', 'name'}))
+            if err:
+                return err
+            radius1 = args.get('radius1', 5)  # Bottom radius
+            radius2 = args.get('radius2', 0)  # Top radius
+            height = args.get('height', 10)
+            x = args.get('x', 0)
+            y = args.get('y', 0)
+            z = args.get('z', 0)
+            name = args.get('name', 'Cone')
+
+            # height must be positive; radii non-negative and not both zero —
+            # radius2=0 is a valid pointed cone, radius1==radius2 a valid cylinder.
+            err = _validate_positive('cone', height=height)
+            if err:
+                return err
+            try:
+                if float(radius1) < 0 or float(radius2) < 0:
+                    return f"Error creating cone: radii must be >= 0 (got R1={radius1}, R2={radius2})"
+                if float(radius1) == 0 and float(radius2) == 0:
+                    return "Error creating cone: at least one of radius1/radius2 must be > 0"
+            except (TypeError, ValueError):
+                return f"Error creating cone: radii must be numbers (got R1={radius1!r}, R2={radius2!r})"
+
+            doc = self.get_document()
+            if not doc:
+                return f"Error creating cone: {NO_ACTIVE_DOCUMENT_ERROR}"
+
+            cone = doc.addObject("Part::Cone", name)
+            cone.Label = name
+            cone.Radius1 = radius1
+            cone.Radius2 = radius2
+            cone.Height = height
+            cone.Placement.Base = FreeCAD.Vector(x, y, z)
+
+            self.recompute(doc)
+
+            return f"Created cone: {cone.Name} (R1{radius1}, R2{radius2}, H{height}) at ({x},{y},{z})"
+
+        except Exception as e:
+            return f"Error creating cone: {e}"
+
+    def create_torus(self, args: dict[str, Any]) -> str:
+        """Create a torus (donut shape) with specified radii."""
+        try:
+            err = _check_unknown_keys('torus', args, frozenset({'radius1', 'radius2', 'x', 'y', 'z', 'name'}))
+            if err:
+                return err
+            radius1 = args.get('radius1', 10)  # Major radius
+            radius2 = args.get('radius2', 3)   # Minor radius
+            x = args.get('x', 0)
+            y = args.get('y', 0)
+            z = args.get('z', 0)
+            name = args.get('name', 'Torus')
+
+            err = _validate_positive('torus', radius1=radius1, radius2=radius2)
+            if err:
+                return err
+            if float(radius2) >= float(radius1):
+                return (
+                    f"Error creating torus: radius2 ({radius2}) must be less than "
+                    f"radius1 ({radius1}) -- radius2 >= radius1 produces a "
+                    "self-intersecting spindle torus, a known OCCT Boolean risk."
+                )
+
+            doc = self.get_document()
+            if not doc:
+                return f"Error creating torus: {NO_ACTIVE_DOCUMENT_ERROR}"
+
+            torus = doc.addObject("Part::Torus", name)
+            torus.Label = name
+            torus.Radius1 = radius1
+            torus.Radius2 = radius2
+            torus.Placement.Base = FreeCAD.Vector(x, y, z)
+
+            self.recompute(doc)
+
+            return f"Created torus: {torus.Name} (R1{radius1}, R2{radius2}) at ({x},{y},{z})"
+
+        except Exception as e:
+            return f"Error creating torus: {e}"
+
+    def create_wedge(self, args: dict[str, Any]) -> str:
+        """Create a wedge (triangular prism) with specified dimensions."""
+        try:
+            err = _check_unknown_keys('wedge', args, frozenset({'xmin', 'ymin', 'zmin', 'x2min', 'x2max', 'xmax', 'ymax', 'zmax', 'name'}))
+            if err:
+                return err
+            xmin = args.get('xmin', 0)
+            ymin = args.get('ymin', 0)
+            zmin = args.get('zmin', 0)
+            x2min = args.get('x2min', 2)
+            x2max = args.get('x2max', 8)
+            xmax = args.get('xmax', 10)
+            ymax = args.get('ymax', 10)
+            zmax = args.get('zmax', 10)
+            name = args.get('name', 'Wedge')
+
+            err = _validate_wedge_bounds(xmin, xmax, ymin, ymax, zmin, zmax, x2min, x2max)
+            if err:
+                return err
+
+            doc = self.get_document()
+            if not doc:
+                return f"Error creating wedge: {NO_ACTIVE_DOCUMENT_ERROR}"
+
+            wedge = doc.addObject("Part::Wedge", name)
+            wedge.Label = name
+            wedge.Xmin = xmin
+            wedge.Ymin = ymin
+            wedge.Zmin = zmin
+            wedge.X2min = x2min
+            wedge.X2max = x2max
+            wedge.Xmax = xmax
+            wedge.Ymax = ymax
+            wedge.Zmax = zmax
+
+            self.recompute(doc)
+
+            return f"Created wedge: {wedge.Name} ({xmax}x{ymax}x{zmax}) at origin"
+
+        except Exception as e:
+            return f"Error creating wedge: {e}"

@@ -1,0 +1,506 @@
+# Spreadsheet workbench operation handlers for FreeCAD MCP
+
+import json
+import re
+from typing import Any
+
+from .base import NO_ACTIVE_DOCUMENT_ERROR, BaseHandler
+
+
+def _col_to_num(col):
+    """Spreadsheet column letters ('A', 'Z', 'AA', ...) -> 1-based number.
+
+    Single source of truth for this conversion — previously hand-written
+    identically at 4 call sites in this file (set_cell_range, get_cell_range,
+    import_csv, export_csv), including one instance inlined without even a
+    local function wrapper.
+    """
+    num = 0
+    for c in col:
+        num = num * 26 + (ord(c) - ord('A') + 1)
+    return num
+
+
+def _num_to_col(num):
+    """1-based column number -> spreadsheet column letters. Inverse of
+    _col_to_num; same consolidation rationale."""
+    col = ''
+    while num > 0:
+        num -= 1
+        col = chr(num % 26 + ord('A')) + col
+        num //= 26
+    return col
+
+
+_CELL_REF_RE = re.compile(r'([A-Z]+)(\d+)')
+
+
+def _parse_cell_ref(cell: str) -> tuple[str, int] | None:
+    """Parse a spreadsheet cell reference like "A1" into (col_letters, row).
+
+    Single source of truth for this pattern -- previously re-declared
+    identically as an inline `re.match(r'([A-Z]+)(\\d+)', ...)` at 7 call
+    sites in this file. Uses fullmatch (not match), so trailing junk after
+    a valid reference -- "A1extra" -- is rejected rather than silently
+    accepted as "A1"; `re.match` only anchors the start of the string.
+    Returns None on no match.
+    """
+    m = _CELL_REF_RE.fullmatch(cell.upper())
+    if not m:
+        return None
+    return m.group(1), int(m.group(2))
+
+
+class SpreadsheetOpsHandler(BaseHandler):
+    """Handler for Spreadsheet workbench operations."""
+
+    _ALLOWED_OPERATIONS = frozenset({
+        "create_spreadsheet", "set_cell", "get_cell", "set_alias", "get_alias",
+        "clear_cell", "set_cell_range", "get_cell_range", "bind_property",
+        "list_aliases", "import_csv", "export_csv",
+    })
+
+    def create_spreadsheet(self, args: dict[str, Any]) -> str:
+        """Create a new spreadsheet in the active document."""
+        try:
+            # Accept both 'name' and 'spreadsheet_name' parameters
+            name = args.get('spreadsheet_name', args.get('name', 'Spreadsheet'))
+
+            # Don't auto-create document to avoid GUI threading issues
+            doc = self.get_document()
+            if not doc:
+                return NO_ACTIVE_DOCUMENT_ERROR
+
+            spreadsheet = doc.addObject('Spreadsheet::Sheet', name)
+            self.recompute(doc)
+
+            return f"Created spreadsheet: {spreadsheet.Name}"
+
+        except Exception as e:
+            return f"Error creating spreadsheet: {e}"
+
+    def set_cell(self, args: dict[str, Any]) -> str:
+        """Set a cell value in a spreadsheet."""
+        try:
+            spreadsheet_name = args.get('spreadsheet_name', '')
+            cell = args.get('cell', 'A1')
+            value = args.get('value', '')
+
+            doc, spreadsheet, err = self.resolve_object(spreadsheet_name, noun='Spreadsheet', type_id='Spreadsheet::Sheet')
+            if err:
+                return err
+
+            # A null value clears the cell rather than writing the literal "None".
+            spreadsheet.set(cell, '' if value is None else str(value))
+            self.recompute(doc)
+
+            return f"Set {spreadsheet_name}.{cell} = {value}"
+
+        except Exception as e:
+            return f"Error setting cell: {e}"
+
+    def get_cell(self, args: dict[str, Any]) -> str:
+        """Get a cell value from a spreadsheet."""
+        try:
+            spreadsheet_name = args.get('spreadsheet_name', '')
+            cell = args.get('cell', 'A1')
+
+            doc, spreadsheet, err = self.resolve_object(spreadsheet_name, noun='Spreadsheet', type_id='Spreadsheet::Sheet')
+            if err:
+                return err
+
+            value = spreadsheet.get(cell)
+            # getContents returns the stored expression/formula (e.g. "=A1+B1");
+            # spreadsheet.get() evaluates it away. Surface both so a read→write
+            # round-trip doesn't silently replace a live formula with a literal,
+            # and emit JSON null (not the string "None") for an empty cell.
+            try:
+                formula = spreadsheet.getContents(cell)
+            except Exception:
+                formula = None
+
+            return json.dumps({
+                "cell": cell,
+                "value": None if value is None else str(value),
+                "type": type(value).__name__ if value is not None else None,
+                "formula": formula,
+            })
+
+        except Exception as e:
+            return f"Error getting cell: {e}"
+
+    def set_alias(self, args: dict[str, Any]) -> str:
+        """Set an alias for a cell (allows referencing cell by name in expressions)."""
+        try:
+            spreadsheet_name = args.get('spreadsheet_name', '')
+            cell = args.get('cell', 'A1')
+            alias = args.get('alias', '')
+
+            doc, spreadsheet, err = self.resolve_object(spreadsheet_name, noun='Spreadsheet', type_id='Spreadsheet::Sheet')
+            if err:
+                return err
+
+            if not alias:
+                return "Alias name is required"
+
+            spreadsheet.setAlias(cell, alias)
+            self.recompute(doc)
+
+            return f"Set alias '{alias}' for {spreadsheet_name}.{cell}"
+
+        except Exception as e:
+            return f"Error setting alias: {e}"
+
+    def get_alias(self, args: dict[str, Any]) -> str:
+        """Get the alias for a cell."""
+        try:
+            spreadsheet_name = args.get('spreadsheet_name', '')
+            cell = args.get('cell', 'A1')
+
+            doc, spreadsheet, err = self.resolve_object(spreadsheet_name, noun='Spreadsheet', type_id='Spreadsheet::Sheet')
+            if err:
+                return err
+
+            alias = spreadsheet.getAlias(cell)
+
+            if alias:
+                return json.dumps({"cell": cell, "alias": alias})
+            else:
+                return json.dumps({"cell": cell, "alias": None})
+
+        except Exception as e:
+            return f"Error getting alias: {e}"
+
+    def clear_cell(self, args: dict[str, Any]) -> str:
+        """Clear a cell in a spreadsheet."""
+        try:
+            spreadsheet_name = args.get('spreadsheet_name', '')
+            cell = args.get('cell', 'A1')
+
+            doc, spreadsheet, err = self.resolve_object(spreadsheet_name, noun='Spreadsheet', type_id='Spreadsheet::Sheet')
+            if err:
+                return err
+
+            spreadsheet.clear(cell)
+            self.recompute(doc)
+
+            return f"Cleared {spreadsheet_name}.{cell}"
+
+        except Exception as e:
+            return f"Error clearing cell: {e}"
+
+    def set_cell_range(self, args: dict[str, Any]) -> str:
+        """Set values for a range of cells."""
+        try:
+            spreadsheet_name = args.get('spreadsheet_name', '')
+            start_cell = args.get('start_cell', 'A1')
+            values = args.get('values', [])  # 2D array of values
+
+            doc, spreadsheet, err = self.resolve_object(spreadsheet_name, noun='Spreadsheet', type_id='Spreadsheet::Sheet')
+            if err:
+                return err
+
+            if not values:
+                return "No values provided"
+
+            # Parse start cell (e.g., "A1" -> col='A', row=1)
+            parsed = _parse_cell_ref(start_cell)
+            if parsed is None:
+                return f"Invalid cell reference: {start_cell}"
+            start_col, start_row = parsed
+
+            cells_set = 0
+            for row_idx, row_values in enumerate(values):
+                if not isinstance(row_values, list):
+                    row_values = [row_values]
+                for col_idx, value in enumerate(row_values):
+                    col_num = _col_to_num(start_col) + col_idx
+                    col_letter = _num_to_col(col_num)
+                    cell = f"{col_letter}{start_row + row_idx}"
+                    spreadsheet.set(cell, str(value))
+                    cells_set += 1
+
+            self.recompute(doc)
+
+            return f"Set {cells_set} cells in {spreadsheet_name} starting at {start_cell}"
+
+        except Exception as e:
+            return f"Error setting cell range: {e}"
+
+    def get_cell_range(self, args: dict[str, Any]) -> str:
+        """Get values from a range of cells."""
+        try:
+            spreadsheet_name = args.get('spreadsheet_name', '')
+            start_cell = args.get('start_cell', 'A1')
+            end_cell = args.get('end_cell', 'A1')
+
+            doc, spreadsheet, err = self.resolve_object(spreadsheet_name, noun='Spreadsheet', type_id='Spreadsheet::Sheet')
+            if err:
+                return err
+
+            # Parse start/end cells
+            parsed_start = _parse_cell_ref(start_cell)
+            parsed_end = _parse_cell_ref(end_cell)
+            if parsed_start is None or parsed_end is None:
+                return f"Invalid cell reference: {start_cell} or {end_cell}"
+
+            start_col_num = _col_to_num(parsed_start[0])
+            end_col_num = _col_to_num(parsed_end[0])
+            start_row = parsed_start[1]
+            end_row = parsed_end[1]
+
+            values = []
+            for row in range(start_row, end_row + 1):
+                row_values = []
+                for col_num in range(start_col_num, end_col_num + 1):
+                    cell = f"{_num_to_col(col_num)}{row}"
+                    try:
+                        value = spreadsheet.get(cell)
+                        row_values.append(str(value) if value is not None else "")
+                    except Exception:
+                        row_values.append("")
+                values.append(row_values)
+
+            return json.dumps({
+                "range": f"{start_cell}:{end_cell}",
+                "values": values
+            })
+
+        except Exception as e:
+            return f"Error getting cell range: {e}"
+
+    def bind_property(self, args: dict[str, Any]) -> str:
+        """Bind an object property to a spreadsheet cell using expressions."""
+        try:
+            object_name = args.get('object_name', '')
+            property_name = args.get('property_name', '')
+            spreadsheet_name = args.get('spreadsheet_name', '')
+            cell_or_alias = args.get('cell', '')
+
+            # varset_ops.bind_property supplies a validate_target callback
+            # (TypeId + property-existence check); this sibling supplied
+            # none -- it would setExpression against any resolvable object
+            # of any type with no upfront check. Cell/alias existence
+            # itself isn't re-checked here: FreeCAD's own expression engine
+            # already validates that at setExpression time (unlike a
+            # VarSet property name, which setExpression + recompute
+            # wouldn't catch until later -- the actual reason varset needed
+            # its own existence check).
+            def _validate_spreadsheet(doc, spreadsheet):
+                if spreadsheet.TypeId != 'Spreadsheet::Sheet':
+                    return f"Object {spreadsheet_name} is not a spreadsheet"
+                return None
+
+            return self.bind_expression(
+                object_name, property_name, spreadsheet_name, cell_or_alias,
+                target_noun='Spreadsheet', validate_target=_validate_spreadsheet,
+            )
+
+        except Exception as e:
+            return f"Error binding property: {e}"
+
+    def list_aliases(self, args: dict[str, Any]) -> str:
+        """List all aliases in a spreadsheet."""
+        try:
+            spreadsheet_name = args.get('spreadsheet_name', '')
+
+            doc, spreadsheet, err = self.resolve_object(spreadsheet_name, noun='Spreadsheet', type_id='Spreadsheet::Sheet')
+            if err:
+                return err
+
+            # Get all cells with aliases
+            aliases = {}
+            if hasattr(spreadsheet, 'cells'):
+                cells_content = spreadsheet.cells.Content
+                # Parse the content to find aliases
+                # FreeCAD stores this in XML format
+                import xml.etree.ElementTree as ET
+                try:
+                    root = ET.fromstring(cells_content)
+                    for cell in root.findall('.//Cell'):
+                        alias = cell.get('alias')
+                        address = cell.get('address')
+                        if alias and address:
+                            aliases[address] = alias
+                except Exception:
+                    pass
+
+            # Fallback if XML parsing yielded nothing: ask the sheet for its
+            # non-empty cells and check each for an alias. getUsedCells() covers
+            # the exact populated extent regardless of column — far better than
+            # scanning a guessed A-Z grid (which silently missed columns past Z).
+            if not aliases and callable(getattr(spreadsheet, 'getUsedCells', None)):
+                try:
+                    used_cells = list(spreadsheet.getUsedCells())
+                except Exception:
+                    used_cells = []
+                for cell in used_cells:
+                    try:
+                        alias = spreadsheet.getAlias(cell)
+                        if alias:
+                            aliases[cell] = alias
+                    except Exception:
+                        pass
+
+            return json.dumps({
+                "spreadsheet": spreadsheet_name,
+                "aliases": aliases
+            })
+
+        except Exception as e:
+            return f"Error listing aliases: {e}"
+
+    def import_csv(self, args: dict[str, Any]) -> str:
+        """Import CSV data into a spreadsheet."""
+        try:
+            spreadsheet_name = args.get('spreadsheet_name', '')
+            csv_data = args.get('csv_data', '')
+            start_cell = args.get('start_cell', 'A1')
+            delimiter = args.get('delimiter', ',')
+
+            doc, spreadsheet, err = self.resolve_object(spreadsheet_name, noun='Spreadsheet', type_id='Spreadsheet::Sheet')
+            if err:
+                return err
+
+            if not csv_data:
+                return "No CSV data provided"
+
+            # Excel's CSV export prepends a UTF-8 BOM (U+FEFF) to signal
+            # encoding; left in place it silently glues onto the first
+            # header/cell value -- a BOM'd first column header/cell gains an
+            # invisible leading character that breaks equality comparisons
+            # and (if the first field happens to be the start cell's own
+            # reference) parsing.
+            if csv_data.startswith('\ufeff'):
+                csv_data = csv_data[1:]
+
+            parsed = _parse_cell_ref(start_cell)
+            if parsed is None:
+                return f"Invalid cell reference: {start_cell}"
+            start_col, start_row = parsed
+
+            start_col_num = _col_to_num(start_col)
+
+            # csv.reader handles quoted fields, embedded delimiters and embedded
+            # newlines correctly; naive line.split(delimiter) silently breaks cell
+            # boundaries whenever a field contains the delimiter or a newline.
+            import csv as _csv
+            import io as _io
+            cells_set = 0
+            reader = _csv.reader(_io.StringIO(csv_data), delimiter=delimiter)
+            for row_idx, values in enumerate(reader):
+                for col_idx, value in enumerate(values):
+                    col_letter = _num_to_col(start_col_num + col_idx)
+                    cell = f"{col_letter}{start_row + row_idx}"
+                    spreadsheet.set(cell, value)
+                    cells_set += 1
+
+            self.recompute(doc)
+
+            return f"Imported {cells_set} cells from CSV into {spreadsheet_name}"
+
+        except Exception as e:
+            return f"Error importing CSV: {e}"
+
+    def export_csv(self, args: dict[str, Any]) -> str:
+        """Export spreadsheet data as CSV."""
+        try:
+            spreadsheet_name = args.get('spreadsheet_name', '')
+            start_cell = args.get('start_cell', 'A1')
+            end_cell = args.get('end_cell')   # None => auto-detect the used range
+            delimiter = args.get('delimiter', ',')
+
+            doc, spreadsheet, err = self.resolve_object(spreadsheet_name, noun='Spreadsheet', type_id='Spreadsheet::Sheet')
+            if err:
+                return err
+
+            # Default to the sheet's actual used range, not a hardcoded J100 box
+            # that silently drops any data beyond column J / row 100.
+            range_detection_error = None
+            end_cell_was_auto_detected = not end_cell
+            if end_cell_was_auto_detected:
+                end_cell = 'J100'
+                try:
+                    if callable(getattr(spreadsheet, 'getUsedRange', None)):
+                        ur = spreadsheet.getUsedRange()
+                        if ur and len(ur) == 2 and ur[1]:
+                            end_cell = ur[1]
+                except Exception as e:
+                    # Falls back to the hardcoded J100 window -- record why,
+                    # so a caller can tell "no getUsedRange on this FreeCAD
+                    # version" from "confirmed nothing past J100" instead of
+                    # both silently producing the same end_cell.
+                    range_detection_error = str(e)
+
+            parsed_start = _parse_cell_ref(start_cell)
+            parsed_end = _parse_cell_ref(end_cell)
+            if parsed_start is None or parsed_end is None:
+                return "Invalid cell reference"
+
+            start_col_num = _col_to_num(parsed_start[0])
+            end_col_num = _col_to_num(parsed_end[0])
+            start_row = parsed_start[1]
+            end_row = parsed_end[1]
+
+            # csv.writer quotes/escapes fields containing the delimiter, quotes or
+            # newlines; the old delimiter.join produced structurally broken CSV.
+            import csv as _csv
+            import io as _io
+            buf = _io.StringIO()
+            writer = _csv.writer(buf, delimiter=delimiter)
+            errors = []
+            for row in range(start_row, end_row + 1):
+                row_values = []
+                for col_num in range(start_col_num, end_col_num + 1):
+                    cell = f"{_num_to_col(col_num)}{row}"
+                    try:
+                        value = spreadsheet.get(cell)
+                        row_values.append("" if value is None else str(value))
+                    except Exception as e:
+                        row_values.append("")
+                        errors.append(f"{cell}: {e}")
+                writer.writerow(row_values)
+            csv_data = buf.getvalue()
+
+            # Flag if the sheet has populated cells beyond the exported range.
+            # A bare `except: pass` here made truncated silently stay False
+            # whenever the CHECK itself failed — indistinguishable from
+            # "verified: nothing was truncated". truncation_check_error is
+            # only present when the check couldn't run, so a caller can
+            # tell "confirmed complete" from "unknown, couldn't confirm".
+            truncated = False
+            truncation_check_error = None
+            # When end_cell was auto-detected from getUsedRange() above,
+            # the exported range already equals the sheet's used range by
+            # construction -- truncated can never be True in that case, so
+            # re-querying getUsedRange() a second time here was pure
+            # double-work. Only re-check when the caller supplied an
+            # explicit end_cell (the only case where the exported range
+            # could actually be narrower than the sheet's real content).
+            if not end_cell_was_auto_detected:
+                try:
+                    if callable(getattr(spreadsheet, 'getUsedRange', None)):
+                        ur = spreadsheet.getUsedRange()
+                        if ur and len(ur) == 2 and ur[1]:
+                            parsed_ur = _parse_cell_ref(ur[1])
+                            if parsed_ur and (_col_to_num(parsed_ur[0]) > end_col_num
+                                              or parsed_ur[1] > end_row):
+                                truncated = True
+                except Exception as e:
+                    truncation_check_error = str(e)
+
+            result = {
+                "spreadsheet": spreadsheet_name,
+                "range": f"{start_cell}:{end_cell}",
+                "truncated": truncated,
+                "errors": errors,
+                "csv": csv_data
+            }
+            if truncation_check_error:
+                result["truncation_check_error"] = truncation_check_error
+            if range_detection_error:
+                result["range_detection_error"] = range_detection_error
+            return json.dumps(result)
+
+        except Exception as e:
+            return f"Error exporting CSV: {e}"

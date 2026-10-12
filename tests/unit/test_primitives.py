@@ -1,0 +1,563 @@
+"""Unit tests for PrimitivesHandler.
+
+Covers create_box, create_cylinder, create_sphere, create_cone,
+create_torus, create_wedge. Validates parameter routing, Label
+assignment (e62ebc5 fix), and document creation behavior.
+"""
+
+import unittest
+from unittest.mock import MagicMock
+
+from handlers.primitives import PrimitivesHandler
+
+from tests.unit._freecad_mocks import (
+    assert_error_contains,
+    assert_success_contains,
+    make_handler,
+    make_mock_doc,
+    mock_FreeCAD,
+    reset_mocks,
+)
+
+
+class TestCreateBox(unittest.TestCase):
+    def setUp(self):
+        reset_mocks()
+        self.handler = make_handler(PrimitivesHandler)
+
+    def test_creates_box_with_correct_typeid_and_dimensions(self):
+        doc = make_mock_doc()
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.create_box({
+            'length': 25, 'width': 15, 'height': 10,
+            'name': 'MyBox',
+        })
+
+        assert_success_contains(self, result, "MyBox", "25", "15", "10")
+        doc.addObject.assert_called_once_with("Part::Box", "MyBox")
+        # The added object's parametric properties were set
+        box = doc.Objects[-1]
+        self.assertEqual(box.Length, 25)
+        self.assertEqual(box.Width, 15)
+        self.assertEqual(box.Height, 10)
+
+    def test_label_set_for_label_fallback_lookup(self):
+        """Label = name so base.get_object()'s label fallback resolves."""
+        doc = make_mock_doc()
+        mock_FreeCAD.ActiveDocument = doc
+
+        self.handler.create_box({
+            'length': 10, 'width': 10, 'height': 10,
+            'name': 'LeftTab',
+        })
+
+        box = doc.Objects[-1]
+        self.assertEqual(box.Label, 'LeftTab')
+
+    def test_default_name_is_Box(self):
+        doc = make_mock_doc()
+        mock_FreeCAD.ActiveDocument = doc
+
+        self.handler.create_box({'length': 5, 'width': 5, 'height': 5})
+
+        doc.addObject.assert_called_once_with("Part::Box", "Box")
+
+    def test_placement_set_to_xyz_origin(self):
+        doc = make_mock_doc()
+        mock_FreeCAD.ActiveDocument = doc
+
+        self.handler.create_box({
+            'length': 1, 'width': 1, 'height': 1,
+            'x': 50, 'y': -10, 'z': 25,
+        })
+
+        box = doc.Objects[-1]
+        self.assertEqual(box.Placement.Base.x, 50.0)
+        self.assertEqual(box.Placement.Base.y, -10.0)
+        self.assertEqual(box.Placement.Base.z, 25.0)
+
+
+class TestCreateCylinder(unittest.TestCase):
+    def setUp(self):
+        reset_mocks()
+        self.handler = make_handler(PrimitivesHandler)
+
+    def test_creates_cylinder_with_radius_and_height(self):
+        doc = make_mock_doc()
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.create_cylinder({
+            'radius': 5, 'height': 20, 'name': 'Pin',
+        })
+
+        assert_success_contains(self, result, "Pin", "R5", "H20")
+        doc.addObject.assert_called_once_with("Part::Cylinder", "Pin")
+        cyl = doc.Objects[-1]
+        self.assertEqual(cyl.Radius, 5)
+        self.assertEqual(cyl.Height, 20)
+
+
+class TestCreateSphere(unittest.TestCase):
+    def setUp(self):
+        reset_mocks()
+        self.handler = make_handler(PrimitivesHandler)
+
+    def test_creates_sphere_with_radius(self):
+        doc = make_mock_doc()
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.create_sphere({
+            'radius': 10, 'name': 'Ball',
+        })
+
+        assert_success_contains(self, result, "Ball", "R10")
+        doc.addObject.assert_called_once_with("Part::Sphere", "Ball")
+        sphere = doc.Objects[-1]
+        self.assertEqual(sphere.Radius, 10)
+
+
+class TestCreateCone(unittest.TestCase):
+    def setUp(self):
+        reset_mocks()
+        self.handler = make_handler(PrimitivesHandler)
+
+    def test_creates_cone_with_two_radii(self):
+        doc = make_mock_doc()
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.create_cone({
+            'radius1': 5, 'radius2': 2, 'height': 10,
+        })
+
+        assert_success_contains(self, result, "R1", "R2", "H10")
+        doc.addObject.assert_called_once_with("Part::Cone", "Cone")
+        cone = doc.Objects[-1]
+        self.assertEqual(cone.Radius1, 5)
+        self.assertEqual(cone.Radius2, 2)
+        self.assertEqual(cone.Height, 10)
+
+
+class TestCreateTorus(unittest.TestCase):
+    def setUp(self):
+        reset_mocks()
+        self.handler = make_handler(PrimitivesHandler)
+
+    def test_creates_torus_with_major_minor_radii(self):
+        doc = make_mock_doc()
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.create_torus({
+            'radius1': 20, 'radius2': 4,
+        })
+
+        assert_success_contains(self, result, "R1", "R2")
+        doc.addObject.assert_called_once_with("Part::Torus", "Torus")
+
+
+# ---------------------------------------------------------------------------
+# Degenerate-dimension tests
+#
+# Zero/negative dimensions are now REJECTED (primitives-validation part (b)):
+#   - create_box(length=0, ...) errors naming the offending param instead of
+#     dropping a null Part::Box that crashes downstream OCCT Booleans.
+#   - create_cylinder(radius<=0 / height<=0) errors likewise.
+#   - Cone keeps its valid degenerate cases (radius2=0 pointed cone,
+#     radius1==radius2 cylinder) — see TestCreateConeDegenerateDimensions.
+#   - An OMITTED key still takes its default (length absent → 10mm); only the
+#     value validation is enforced. A *misspelled* key ('lenght') is NOT yet
+#     caught — that's part (a), still open (see primitives.py module header).
+# ---------------------------------------------------------------------------
+
+class TestCreateBoxDegenerateDimensions(unittest.TestCase):
+    def setUp(self):
+        reset_mocks()
+        self.handler = make_handler(PrimitivesHandler)
+
+    def test_zero_dimensions_rejected(self):
+        """length=0/width=0/height=0 is rejected — a zero-volume Part::Box is a
+        null shape that crashes downstream OCCT Booleans, so the handler must
+        error (naming the offending param), not report success."""
+        doc = make_mock_doc()
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.create_box({
+            'length': 0, 'width': 0, 'height': 0,
+        })
+
+        self.assertIn("Error", result)
+        self.assertIn("length", result)   # names the offending parameter
+        # No degenerate object was created.
+        doc.addObject.assert_not_called()
+
+    def test_negative_dimension_rejected(self):
+        """Negative length is rejected rather than propagated into a degenerate
+        Part::Box."""
+        doc = make_mock_doc()
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.create_box({
+            'length': -10, 'width': 5, 'height': 5,
+        })
+
+        self.assertIn("Error", result)
+        self.assertIn("length", result)
+        doc.addObject.assert_not_called()
+
+    def test_missing_dimension_uses_default(self):
+        """Missing 'length' defaults to 10mm.  An LLM that omits a key
+        (or mis-spells it as 'lenght') silently gets a default — the
+        response string is the only place this is observable."""
+        doc = make_mock_doc()
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.create_box({'width': 5, 'height': 5})
+
+        # Default length=10 from the handler
+        self.assertEqual(doc.Objects[-1].Length, 10)
+        # The response must echo the default value so the caller can
+        # see what was actually used.
+        self.assertIn("10x5x5", result)
+
+
+class TestCreateCylinderDegenerateDimensions(unittest.TestCase):
+    def setUp(self):
+        reset_mocks()
+        self.handler = make_handler(PrimitivesHandler)
+
+    def test_zero_radius_rejected(self):
+        """radius=0 is a degenerate cylinder — rejected with the param named."""
+        doc = make_mock_doc()
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.create_cylinder({'radius': 0, 'height': 10})
+
+        self.assertIn("Error", result)
+        self.assertIn("radius", result)
+        doc.addObject.assert_not_called()
+
+    def test_zero_height_rejected(self):
+        """height=0 (flat disk / null shape) is rejected with the param named."""
+        doc = make_mock_doc()
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.create_cylinder({'radius': 5, 'height': 0})
+
+        self.assertIn("Error", result)
+        self.assertIn("height", result)
+        doc.addObject.assert_not_called()
+
+
+class TestCreateConeDegenerateDimensions(unittest.TestCase):
+    def setUp(self):
+        reset_mocks()
+        self.handler = make_handler(PrimitivesHandler)
+
+    def test_equal_radii_makes_a_cylinder(self):
+        """radius1 == radius2 is a valid degenerate case (it's a
+        cylinder, not a cone).  Handler accepts it without complaint."""
+        doc = make_mock_doc()
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.create_cone({
+            'radius1': 5, 'radius2': 5, 'height': 10,
+        })
+
+        self.assertIn("Created cone", result)
+        cone = doc.Objects[-1]
+        self.assertEqual(cone.Radius1, 5)
+        self.assertEqual(cone.Radius2, 5)
+
+    def test_radius2_default_is_zero(self):
+        """The default radius2 is 0 — a pointed cone.  Catches the
+        case where a refactor changes the default to something else
+        and silently shifts the geometry of every cone call that
+        relied on the default."""
+        doc = make_mock_doc()
+        mock_FreeCAD.ActiveDocument = doc
+
+        self.handler.create_cone({'radius1': 5, 'height': 10})
+
+        self.assertEqual(doc.Objects[-1].Radius2, 0)
+
+    def test_negative_radius1_rejected(self):
+        """Confirmed as a surviving mutant during the full review: no test
+        exercised a negative radius, so relaxing `< 0` to effectively never
+        reject (`< -999`) left every existing test passing."""
+        doc = make_mock_doc()
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.create_cone({'radius1': -5, 'radius2': 0, 'height': 10})
+
+        assert_error_contains(self, result, "radii must be")
+        self.assertEqual(len(doc.Objects), 0)
+
+    def test_negative_radius2_rejected(self):
+        doc = make_mock_doc()
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.create_cone({'radius1': 5, 'radius2': -1, 'height': 10})
+
+        assert_error_contains(self, result, "radii must be")
+        self.assertEqual(len(doc.Objects), 0)
+
+    def test_radius_exactly_zero_is_accepted(self):
+        """The floor is `< 0` (strict), so exactly 0 must be accepted —
+        it's the documented pointed-cone case, not a rejection boundary."""
+        doc = make_mock_doc()
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.create_cone({'radius1': 5, 'radius2': 0, 'height': 10})
+
+        self.assertIn("Created cone", result)
+
+    def test_both_radii_zero_rejected(self):
+        doc = make_mock_doc()
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.create_cone({'radius1': 0, 'radius2': 0, 'height': 10})
+
+        assert_error_contains(self, result, "at least one")
+        self.assertEqual(len(doc.Objects), 0)
+
+
+class TestCreateWedgeDegenerateDimensions(unittest.TestCase):
+    """create_wedge was the one primitive in this file with no dimensional
+    validation at all — every sibling calls _validate_positive; wedge
+    skipped it because its bounds are min/max coordinate pairs rather than
+    positive magnitudes (xmin can legitimately be negative), so it needs
+    its own ordering check instead."""
+
+    def setUp(self):
+        reset_mocks()
+        self.handler = make_handler(PrimitivesHandler)
+
+    def test_inverted_xmax_xmin_rejected(self):
+        doc = make_mock_doc()
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.create_wedge({'xmin': 10, 'xmax': 0})
+
+        assert_error_contains(self, result, "xmax", "xmin")
+        self.assertEqual(len(doc.Objects), 0)
+
+    def test_zero_volume_all_equal_bounds_rejected(self):
+        doc = make_mock_doc()
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.create_wedge({
+            'xmin': 0, 'xmax': 0, 'ymin': 0, 'ymax': 0, 'zmin': 0, 'zmax': 0,
+        })
+
+        assert_error_contains(self, result, "must be >")
+        self.assertEqual(len(doc.Objects), 0)
+
+    def test_inverted_x2min_x2max_rejected(self):
+        """The x2min/x2max top-face bounds get the same check as the base
+        xmin/xmax/ymin/ymax/zmin/zmax pairs."""
+        doc = make_mock_doc()
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.create_wedge({'x2min': 8, 'x2max': 2})
+
+        assert_error_contains(self, result, "x2max", "x2min")
+        self.assertEqual(len(doc.Objects), 0)
+
+    def test_valid_bounds_still_create_a_wedge(self):
+        """Regression guard: the new validation must not reject the
+        ordinary case."""
+        doc = make_mock_doc()
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.create_wedge({
+            'xmin': 0, 'xmax': 10, 'ymin': 0, 'ymax': 10, 'zmin': 0, 'zmax': 10,
+            'x2min': 2, 'x2max': 8,
+        })
+
+        assert_success_contains(self, result, "Created wedge")
+        self.assertEqual(len(doc.Objects), 1)
+
+    def test_non_numeric_bound_rejected(self):
+        doc = make_mock_doc()
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.create_wedge({'xmin': 'not_a_number', 'xmax': 10})
+
+        assert_error_contains(self, result, "must be", "numbers")
+        self.assertEqual(len(doc.Objects), 0)
+
+
+class TestPrimitivesNoDocument(unittest.TestCase):
+    """Primitives called with no active document must return an error string,
+    not crash (issue #16: FreeCAD.newDocument() on wrong thread kills FreeCAD).
+    """
+
+    def setUp(self):
+        reset_mocks()
+        self.handler = make_handler(PrimitivesHandler)
+        mock_FreeCAD.ActiveDocument = None
+
+    def test_box_no_document_returns_error(self):
+        result = self.handler.create_box({'length': 10, 'width': 10, 'height': 10})
+        self.assertIn("Error", result)
+        self.assertIn("create_document", result)
+
+    def test_cylinder_no_document_returns_error(self):
+        result = self.handler.create_cylinder({'radius': 5, 'height': 10})
+        self.assertIn("Error", result)
+        self.assertIn("create_document", result)
+
+    def test_sphere_no_document_returns_error(self):
+        result = self.handler.create_sphere({'radius': 5})
+        self.assertIn("Error", result)
+        self.assertIn("create_document", result)
+
+    def test_cone_no_document_returns_error(self):
+        result = self.handler.create_cone({'radius1': 5, 'height': 10})
+        self.assertIn("Error", result)
+        self.assertIn("create_document", result)
+
+    def test_torus_no_document_returns_error(self):
+        result = self.handler.create_torus({'radius1': 10, 'radius2': 3})
+        self.assertIn("Error", result)
+        self.assertIn("create_document", result)
+
+    def test_wedge_no_document_returns_error(self):
+        result = self.handler.create_wedge({})
+        self.assertIn("Error", result)
+        self.assertIn("create_document", result)
+
+    def test_no_document_does_not_call_newDocument(self):
+        """newDocument() must never be called from a primitive handler."""
+        self.handler.create_box({'length': 10, 'width': 10, 'height': 10})
+        mock_FreeCAD.newDocument.assert_not_called()
+
+
+class TestUnknownArgKeys(unittest.TestCase):
+    """Misspelled/unknown keys must be rejected immediately, not silently defaulted."""
+
+    def setUp(self):
+        self.handler = PrimitivesHandler()
+        self.handler.get_document = MagicMock(return_value=None)
+
+    def _assert_unknown_key_error(self, result, key):
+        self.assertIn("Error", result)
+        self.assertIn("unknown argument", result)
+        self.assertIn(key, result)
+
+    def test_box_misspelled_length_rejected(self):
+        result = self.handler.create_box({'lenght': 50, 'width': 10, 'height': 10})
+        self._assert_unknown_key_error(result, 'lenght')
+
+    def test_cylinder_misspelled_radius_rejected(self):
+        result = self.handler.create_cylinder({'raduis': 5, 'height': 10})
+        self._assert_unknown_key_error(result, 'raduis')
+
+    def test_sphere_unknown_key_rejected(self):
+        result = self.handler.create_sphere({'radius': 5, 'depth': 10})
+        self._assert_unknown_key_error(result, 'depth')
+
+    def test_cone_unknown_key_rejected(self):
+        result = self.handler.create_cone({'radius1': 5, 'radius2': 0, 'height': 10, 'typo': 1})
+        self._assert_unknown_key_error(result, 'typo')
+
+    def test_torus_unknown_key_rejected(self):
+        result = self.handler.create_torus({'radius1': 10, 'radius2': 3, 'extra': 1})
+        self._assert_unknown_key_error(result, 'extra')
+
+    def test_wedge_unknown_key_rejected(self):
+        result = self.handler.create_wedge({'xmin': 0, 'bogus': 5})
+        self._assert_unknown_key_error(result, 'bogus')
+
+    def test_injected_operation_key_tolerated(self):
+        # dispatcher always forwards `operation` — must not trigger the unknown-key check
+        result = self.handler.create_box({'length': 10, 'width': 10, 'height': 10, 'operation': 'box'})
+        self.assertNotIn("unknown argument", result)
+
+    def test_injected_continuation_keys_tolerated(self):
+        result = self.handler.create_box({
+            'length': 10, 'width': 10, 'height': 10,
+            'operation': 'box', '_continue_selection': True, '_operation_id': 'abc123',
+        })
+        self.assertNotIn("unknown argument", result)
+
+
+class TestSchemaDefaultMaterialization(unittest.TestCase):
+    """Issue #98: clients that materialize JSON-Schema defaults send every
+    sibling operation's params on each call. Those keys are in the dispatcher
+    schema, so they must be tolerated; keys outside the schema stay typos."""
+
+    # Per-primitive call args, deliberately excluding the keys the primitive
+    # itself doesn't own.
+    CALLS = {
+        'create_box': {'length': 20, 'width': 20, 'height': 10},
+        'create_cylinder': {'radius': 5, 'height': 10},
+        'create_sphere': {'radius': 5},
+        'create_cone': {'radius1': 5, 'radius2': 0, 'height': 10},
+        'create_torus': {'radius1': 10, 'radius2': 3},
+        'create_wedge': {'xmin': 0},
+    }
+
+    def setUp(self):
+        reset_mocks()
+        mock_FreeCAD.ActiveDocument = make_mock_doc()
+        self.handler = make_handler(PrimitivesHandler)
+
+    @staticmethod
+    def _schema_properties():
+        from tests.unit.test_mcp_protocol import _list_tools
+        tool = next(t for t in _list_tools() if t.name == 'part_operations')
+        return tool.input_schema['properties']
+
+    def test_schema_defaults_match_bridge_schema(self):
+        from handlers.primitives import _PART_OPERATIONS_SCHEMA_DEFAULTS
+        bridge = {k: v['default'] for k, v in self._schema_properties().items() if 'default' in v}
+        self.assertEqual(_PART_OPERATIONS_SCHEMA_DEFAULTS, bridge)
+
+    def test_every_primitive_tolerates_all_schema_defaults(self):
+        defaults = {k: v['default'] for k, v in self._schema_properties().items() if 'default' in v}
+        self.assertTrue(defaults, "schema carries no defaults -- test no longer exercises #98")
+        for method, own in self.CALLS.items():
+            with self.subTest(method=method):
+                args = {**defaults, **own, 'operation': method[len('create_'):]}
+                result = getattr(self.handler, method)(args)
+                self.assertNotIn("unknown argument", result)
+
+    def test_typo_still_rejected_alongside_schema_defaults(self):
+        defaults = {k: v['default'] for k, v in self._schema_properties().items() if 'default' in v}
+        result = self.handler.create_box({**defaults, 'lenght': 50, 'width': 10, 'height': 10})
+        self.assertIn("unknown argument", result)
+        self.assertIn("lenght", result)
+        # only the typo is named -- none of the schema keys leak into the error
+        self.assertNotIn("radius", result)
+
+    def test_sibling_key_with_non_default_value_rejected(self):
+        """box(size=20) must not silently fall through to the default 10mm box."""
+        for method, own, key, value in [
+            ('create_box', {'length': 20, 'width': 20, 'height': 10}, 'size', 20),
+            ('create_box', {'length': 20, 'width': 20, 'height': 10}, 'radius', 7),
+            ('create_cylinder', {'radius': 5, 'height': 10}, 'length', 30),
+            ('create_sphere', {'radius': 5}, 'width', 12),
+        ]:
+            with self.subTest(method=method, key=key):
+                result = getattr(self.handler, method)({**own, key: value})
+                self.assertIn("unknown argument", result)
+                self.assertIn(key, result)
+
+    def test_sibling_key_without_schema_default_rejected(self):
+        # `string`/`tools`/`base` are schema keys but carry no default, so a
+        # default-materializing client never sends them -- present means a mistake.
+        result = self.handler.create_box({'length': 10, 'width': 10, 'height': 10, 'string': 'x'})
+        self.assertIn("unknown argument", result)
+        self.assertIn("string", result)
+
+    def test_sibling_key_at_exact_default_tolerated_boundary(self):
+        # at the default: tolerated; one step off it: rejected (== is the contract)
+        ok = self.handler.create_box({'length': 10, 'width': 10, 'height': 10, 'radius': 5})
+        self.assertNotIn("unknown argument", ok)
+        bad = self.handler.create_box({'length': 10, 'width': 10, 'height': 10, 'radius': 5.0001})
+        self.assertIn("unknown argument", bad)
+
+
+if __name__ == '__main__':
+    unittest.main()

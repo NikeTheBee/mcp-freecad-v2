@@ -1,0 +1,500 @@
+"""ocl_surface_op.py — OCL PathDropCutter surface operation for FreeCAD CAM
+
+A proper Path::FeaturePython operation that uses OpenCAMLib PathDropCutter
+to generate 3D surface toolpaths directly from STL files.
+
+Why this exists instead of using FreeCAD's built-in Surface operation:
+  - FreeCAD's Surface op requires tessellating a BREP solid via BRepMesh.
+    For mesh-derived BREP shells (makeShapeFromMesh), BRepMesh throws a
+    C++ exception (GH #27752) causing a crash or timeout.
+  - This op bypasses that entirely: reads STL directly into ocl.STLSurf,
+    runs PathDropCutter, converts CL points to Path.Command objects.
+  - Active=True always → normal job consolidation → normal post-processing.
+  - No workarounds, no Active=False, no manual G-code generation.
+
+Usage (via MCP):
+    cam_operations(operation="surface_stl",
+                   job_name="Job",
+                   stl_file="/path/to/mesh.stl",
+                   tool_diameter=1.0,
+                   stepover=0.75,
+                   sample_interval=0.5,
+                   safe_height=8.0,
+                   cut_feed=400.0,
+                   plunge_feed=150.0)
+
+Document persistence:
+    FreeCAD serializes Path::FeaturePython proxies by module/class name.
+    This module must remain importable in FreeCAD's Python environment
+    at the same path for saved documents to reload correctly.
+"""
+
+import math
+import os
+import struct
+
+import FreeCAD
+import Path
+from handlers.base import BaseHandler, mm_min_to_mm_s
+
+# Sanity cap on a binary STL's declared triangle count. The file-size
+# cross-check in _load_stl is the real backstop (this many triangles
+# requires a file this large to actually exist on disk) -- this exists to
+# fail fast with a clear message rather than attempt to parse a many-GB
+# file and build tens of millions of OCL triangle objects from one call.
+_MAX_STL_TRIANGLES = 10_000_000
+
+
+# ---------------------------------------------------------------------------
+# Module-level helpers (no OCL dependency at import time)
+# ---------------------------------------------------------------------------
+
+def _load_stl(stl_file, ocl):
+    """Read a binary STL file into an ocl.STLSurf.
+
+    Returns (stl_surf, x_min, x_max, y_min, y_max).
+    Raises ValueError on a non-binary-STL file (ASCII STL, wrong format
+    entirely, or truncated/corrupt) — this parser only understands the
+    binary layout and previously reinterpreted anything else as raw
+    triangle bytes with no format check first, either raising a confusing
+    "Truncated triangle data" partway through or, worse, silently building
+    a garbage mesh that becomes a real CNC toolpath via PathDropCutter.
+    """
+    stl_surf = ocl.STLSurf()
+    x_min = y_min = math.inf
+    x_max = y_max = -math.inf
+
+    file_size = os.path.getsize(stl_file)
+    if file_size < 84:
+        raise ValueError(f"Not a binary STL file (too small, {file_size} bytes): {stl_file}")
+
+    with open(stl_file, "rb") as f:
+        header = f.read(80)
+        raw = f.read(4)
+        if len(raw) < 4:
+            raise ValueError(f"Truncated STL file: {stl_file}")
+        n_tris = struct.unpack("<I", raw)[0]
+        if n_tris == 0:
+            raise ValueError(f"STL file has no triangles: {stl_file}")
+
+        # A binary STL is exactly 84 + 50*n_tris bytes (80-byte header +
+        # 4-byte count + n_tris * (12-byte normal + 36-byte vertices +
+        # 2-byte attribute byte count)). If the declared count doesn't
+        # match the actual file size, this isn't a binary STL we can
+        # trust — most commonly an ASCII STL (whose "solid ..." header
+        # text gets reinterpreted as a garbage triangle count above), but
+        # this also catches plain truncation/corruption and any trailing
+        # bytes past the declared triangle count, up front rather than
+        # partway through the triangle loop below.
+        expected_size = 84 + 50 * n_tris
+        if file_size != expected_size:
+            looks_ascii = header.lstrip()[:5].lower() == b"solid"
+            reason = "appears to be ASCII STL, not binary" if looks_ascii \
+                else "size does not match declared triangle count"
+            raise ValueError(
+                f"Not a valid binary STL file ({reason}): {stl_file} "
+                f"(file is {file_size} bytes, expected {expected_size} "
+                f"for {n_tris} triangles)"
+            )
+        # The file-size cross-check just above is the real backstop --
+        # n_tris this large requires a file this large to actually exist
+        # on disk, and file_size == expected_size has already been
+        # confirmed by this point. This cap exists purely to fail fast
+        # with a clear message instead of attempting to parse a many-GB
+        # file and build tens of millions of OCL triangle objects from one
+        # call, for the rare case such a file genuinely exists.
+        if n_tris > _MAX_STL_TRIANGLES:
+            raise ValueError(
+                f"STL file declares {n_tris} triangles, exceeding the "
+                f"{_MAX_STL_TRIANGLES} sanity limit: {stl_file}"
+            )
+
+        for _ in range(n_tris):
+            f.read(12)  # normal vector (ignored — OCL recomputes)
+            raw = f.read(36)
+            if len(raw) < 36:
+                raise ValueError(f"Truncated triangle data in: {stl_file}")
+            v = struct.unpack("<9f", raw)
+            f.read(2)  # attribute byte count
+
+            if not all(math.isfinite(c) for c in v):
+                # A NaN vertex coordinate silently no-ops every bounds
+                # comparison below (`x < x_min` is always False when x is
+                # NaN), leaving x_min/x_max/y_min/y_max wrong or infinite
+                # with no error -- and an Inf coordinate that survives into
+                # y_max can make _build_zigzag_scan's scan-line loop
+                # (`while y <= y_max + 1e-9`) never terminate.
+                raise ValueError(
+                    f"Non-finite vertex coordinate (NaN/Inf) in triangle "
+                    f"data: {stl_file}"
+                )
+
+            stl_surf.addTriangle(ocl.Triangle(
+                ocl.Point(v[0], v[1], v[2]),
+                ocl.Point(v[3], v[4], v[5]),
+                ocl.Point(v[6], v[7], v[8]),
+            ))
+
+            for i in range(3):
+                x, y = v[i * 3], v[i * 3 + 1]
+                if x < x_min:
+                    x_min = x
+                if x > x_max:
+                    x_max = x
+                if y < y_min:
+                    y_min = y
+                if y > y_max:
+                    y_max = y
+
+    return stl_surf, x_min, x_max, y_min, y_max
+
+
+def _build_zigzag_scan(ocl, x_min, x_max, y_min, y_max, stepover):
+    """Build an ocl.Path of alternating-direction scan lines (zigzag).
+
+    Returns (ocl_path, n_lines).
+    """
+    scan_path = ocl.Path()
+    n_lines = 0
+    y = y_min
+    forward = True
+
+    while y <= y_max + 1e-9:
+        if forward:
+            scan_path.append(ocl.Line(
+                ocl.Point(x_min, y, 0.0),
+                ocl.Point(x_max, y, 0.0),
+            ))
+        else:
+            scan_path.append(ocl.Line(
+                ocl.Point(x_max, y, 0.0),
+                ocl.Point(x_min, y, 0.0),
+            ))
+        y += stepover
+        forward = not forward
+        n_lines += 1
+
+    return scan_path, n_lines
+
+
+def _cl_points_to_commands(pts, safe_z, cut_feed, plunge_feed):
+    """Convert a list of ocl CL points to Path.Command objects.
+
+    Scan line transitions: retract to safe_z, rapid to XY start, plunge.
+    Within a scan line: G1 feed moves with cut_feed.
+
+    Feed rates: Path.Command F values must be in FreeCAD's internal
+    velocity unit (mm/s). The GRBL post-processor multiplies by 60 to
+    produce mm/min in the G-code output. Callers pass mm/min; we ÷60.
+    """
+    cut_feed_mms    = mm_min_to_mm_s(cut_feed)
+    plunge_feed_mms = mm_min_to_mm_s(plunge_feed)
+
+    cmds = [Path.Command("G0", {"Z": safe_z})]
+    current_y = None
+
+    for pt in pts:
+        x, y, z = pt.x, pt.y, pt.z
+
+        if current_y is None or abs(y - current_y) > 1e-6:
+            # New scan line: retract → rapid position → plunge
+            cmds.append(Path.Command("G0", {"Z": safe_z}))
+            cmds.append(Path.Command("G0", {"X": x, "Y": y}))
+            cmds.append(Path.Command("G1", {"Z": z, "F": plunge_feed_mms}))
+            current_y = y
+        else:
+            cmds.append(Path.Command("G1", {"X": x, "Y": y, "Z": z, "F": cut_feed_mms}))
+
+    cmds.append(Path.Command("G0", {"Z": safe_z}))
+    return cmds
+
+
+def _estimate_cycle_time(pts, cut_feed, plunge_feed, safe_z, n_lines):
+    """Rough cycle time estimate in minutes."""
+    cut_dist = 0.0
+    prev = None
+    for pt in pts:
+        if prev is not None and abs(pt.y - prev.y) < 1e-6:
+            dx = pt.x - prev.x
+            dy = pt.y - prev.y
+            dz = pt.z - prev.z
+            cut_dist += math.sqrt(dx * dx + dy * dy + dz * dz)
+        prev = pt
+
+    cut_min = cut_dist / cut_feed if cut_feed > 0 else 0.0
+    # Rough retract overhead: each scan line retracts safe_z at ~3000 mm/min
+    retract_min = n_lines * (safe_z * 2) / 3000.0
+    return cut_min + retract_min
+
+
+# ---------------------------------------------------------------------------
+# FreeCAD proxy class
+# ---------------------------------------------------------------------------
+
+class OCLSurfaceProxy:
+    """Proxy for a Path::FeaturePython OCL surface machining operation.
+
+    FreeCAD identifies this class by module + class name when saving/loading
+    documents.  Do not rename without updating existing saved documents.
+    """
+
+    def __init__(self, obj):
+        """Set up properties and bind proxy to obj."""
+        self._add_properties(obj)
+        obj.Proxy = self
+
+    # ------------------------------------------------------------------
+    # Property setup
+    # ------------------------------------------------------------------
+
+    def _add_properties(self, obj):
+        """Add custom properties (idempotent — safe to call on reload)."""
+
+        def _add(prop_type, name, group, doc, default=None):
+            if not hasattr(obj, name):
+                obj.addProperty(prop_type, name, group, doc)
+                if default is not None:
+                    setattr(obj, name, default)
+
+        _add("App::PropertyFile",   "StlFile",        "OCL Surface",
+             "Path to the STL mesh file to machine")
+        _add("App::PropertyFloat",  "ToolDiameter",   "OCL Surface",
+             "Ball end mill diameter (mm)",            1.0)
+        _add("App::PropertyFloat",  "StepOver",       "OCL Surface",
+             "Step between Y scan lines (mm)",         0.75)
+        _add("App::PropertyFloat",  "SampleInterval", "OCL Surface",
+             "X sampling interval along scan line (mm)", 0.5)
+        _add("App::PropertyFloat",  "SafeHeight",     "OCL Surface",
+             "Safe Z height for rapid moves (mm)",     8.0)
+        _add("App::PropertyFloat",  "CutFeed",        "OCL Surface",
+             "Horizontal feed rate (mm/min)",          400.0)
+        _add("App::PropertyFloat",  "PlungeFeed",     "OCL Surface",
+             "Plunge feed rate (mm/min)",              150.0)
+        _add("App::PropertyBool",   "Active",         "Base",
+             "Include this operation in the job path", True)
+        _add("App::PropertyString", "CycleTime",      "Base",
+             "Estimated cycle time (informational)",   "N/A")
+
+    # ------------------------------------------------------------------
+    # FreeCAD lifecycle
+    # ------------------------------------------------------------------
+
+    def execute(self, obj):
+        """Called by FreeCAD when the object needs recomputing."""
+        try:
+            self._do_execute(obj)
+        except Exception as e:
+            import traceback
+            FreeCAD.Console.PrintError(
+                f"[OCLSurface] execute() failed: {e}\n"
+                f"{traceback.format_exc()}\n"
+            )
+            # A swallowed failure used to leave the previous/empty Path in place,
+            # so the recompute "succeeded" and the MCP caller saw 'done' with a
+            # stale toolpath. Clear the Path and record the error so failure is
+            # detectable. Each step is guarded so the handler itself never throws.
+            try:
+                import Path
+                obj.Path = Path.Path()
+            except Exception:
+                pass
+            try:
+                if not hasattr(obj, "ExecuteError"):
+                    obj.addProperty("App::PropertyString", "ExecuteError",
+                                    "OCL", "Last execute() error (empty = OK)")
+                obj.ExecuteError = str(e)
+            except Exception:
+                pass
+
+    def _do_execute(self, obj):
+        """Inner execute — raises on error so the outer handler can log it."""
+        import time
+
+        # Lazy OCL import — only fails at execution time, not module load
+        try:
+            from opencamlib import ocl
+        except ImportError as e:
+            raise ImportError(
+                "opencamlib is not installed in FreeCAD's Python environment. "
+                f"Original error: {e}"
+            ) from e
+
+        stl_file = getattr(obj, "StlFile", "")
+        if not stl_file:
+            FreeCAD.Console.PrintWarning("[OCLSurface] StlFile not set — skipping\n")
+            return
+        # StlFile is a persisted document property re-read on every recompute
+        # (including after a document reload from a different machine/context,
+        # or a direct property edit) -- re-validate against the same
+        # home/tmp/Volumes allowlist enforced at creation time in
+        # cam_ops.surface_stl, rather than trusting the stored path.
+        path_err = BaseHandler._validate_file_path(stl_file)
+        if path_err:
+            raise ValueError(f"StlFile rejected: {path_err}")
+        if not os.path.exists(stl_file):
+            raise FileNotFoundError(f"STL file not found: {stl_file!r}")
+
+        tool_dia    = float(obj.ToolDiameter)
+        stepover    = float(obj.StepOver)
+        sampling    = float(obj.SampleInterval)
+        safe_z      = float(obj.SafeHeight)
+        cut_feed    = float(obj.CutFeed)
+        plunge_feed = float(obj.PlungeFeed)
+
+        # Guard the native-OCL inputs: zero/negative values either hang or crash
+        # the underlying C++. StepOver <= 0 makes the scan-line loop never advance
+        # (infinite loop on the GUI thread); setSampling(0) divides by zero;
+        # BallCutter(0, ...) is undefined.
+        if tool_dia <= 0:
+            raise ValueError(f"ToolDiameter must be > 0 (got {tool_dia})")
+        if stepover <= 0:
+            raise ValueError(f"StepOver must be > 0 (got {stepover})")
+        if stepover >= tool_dia:
+            # Unlike Pocket/Adaptive's StepOver (a percentage of tool
+            # diameter), this StepOver is an absolute mm value — the scan
+            # loop advances by it directly (_build_zigzag_scan: y +=
+            # stepover). At or above the tool diameter, consecutive scan
+            # lines don't overlap, leaving uncut ridges — the same
+            # silent-wrong-geometry failure as Pocket/Adaptive's percentage
+            # check, just expressed in absolute mm here.
+            raise ValueError(
+                f"StepOver ({stepover} mm) must be < ToolDiameter ({tool_dia} mm) — "
+                f"at or above the tool diameter, scan lines don't overlap, "
+                f"leaving uncut ridges/material"
+            )
+        if sampling <= 0:
+            raise ValueError(f"SampleInterval must be > 0 (got {sampling})")
+        # safe_z/cut_feed/plunge_feed aren't fed into OCL itself (no C++
+        # hang/crash risk), but a non-positive value here still produces
+        # unsafe or degenerate G-code: zero/negative safe_z gives the rapid
+        # retract move no actual clearance above the work, and a
+        # zero/negative feed rate is meaningless motion.
+        if safe_z <= 0:
+            raise ValueError(f"SafeHeight must be > 0 (got {safe_z})")
+        if cut_feed <= 0:
+            raise ValueError(f"CutFeed must be > 0 (got {cut_feed})")
+        if plunge_feed <= 0:
+            raise ValueError(f"PlungeFeed must be > 0 (got {plunge_feed})")
+
+        t0 = time.time()
+
+        # 1. Load STL
+        stl_surf, x_min, x_max, y_min, y_max = _load_stl(stl_file, ocl)
+        FreeCAD.Console.PrintMessage(
+            f"[OCLSurface] STL loaded in {time.time()-t0:.2f}s  "
+            f"X[{x_min:.3f},{x_max:.3f}] Y[{y_min:.3f},{y_max:.3f}]\n"
+        )
+
+        # 2. Cutter: ball end mill (diameter, length = 30× diameter)
+        cutter = ocl.BallCutter(tool_dia, tool_dia * 30.0)
+
+        # 3. Zigzag scan path
+        scan_path, n_lines = _build_zigzag_scan(
+            ocl, x_min, x_max, y_min, y_max, stepover
+        )
+
+        # 4. PathDropCutter
+        t1 = time.time()
+        pdc = ocl.PathDropCutter()
+        pdc.setSTL(stl_surf)
+        pdc.setCutter(cutter)
+        pdc.setPath(scan_path)
+        pdc.setSampling(sampling)
+        pdc.run()
+        pts = pdc.getCLPoints()
+        FreeCAD.Console.PrintMessage(
+            f"[OCLSurface] PathDropCutter: {len(pts)} CL points in "
+            f"{time.time()-t1:.3f}s\n"
+        )
+
+        # 5. Convert to Path.Commands
+        cmds = _cl_points_to_commands(pts, safe_z, cut_feed, plunge_feed)
+
+        # 6. Attach path (Active=True → job consolidation sees it)
+        obj.Path = Path.Path(cmds)
+
+        # 7. Cycle time estimate
+        cycle_min = _estimate_cycle_time(pts, cut_feed, plunge_feed, safe_z, n_lines)
+        obj.CycleTime = f"~{cycle_min:.1f} min"
+
+        FreeCAD.Console.PrintMessage(
+            f"[OCLSurface] Done: {len(cmds)} commands, "
+            f"cycle {obj.CycleTime}, total {time.time()-t0:.2f}s\n"
+        )
+
+    def onChanged(self, obj, prop):
+        """React to property changes (currently a no-op)."""
+        pass
+
+    # ------------------------------------------------------------------
+    # Serialization — called by FreeCAD on save/load
+    # ------------------------------------------------------------------
+
+    def dumps(self):
+        """State to persist alongside the document object (none needed)."""
+        return None
+
+    def loads(self, state):
+        """Restore proxy state on document load."""
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Factory function (used by the MCP handler)
+# ---------------------------------------------------------------------------
+
+def create_ocl_surface_op(doc, job, op_name, **kwargs):
+    """Create, configure, and add an OCLSurface op to a job.
+
+    Args:
+        doc:      FreeCAD document
+        job:      CAM Job object
+        op_name:  Name for the new operation object
+        **kwargs: stl_file, tool_diameter, stepover, sample_interval,
+                  safe_height, cut_feed, plunge_feed
+
+    Returns:
+        The new Path::FeaturePython document object (proxy already attached,
+        not yet recomputed).
+    """
+    op_obj = doc.addObject("Path::FeaturePython", op_name)
+    OCLSurfaceProxy(op_obj)  # sets op_obj.Proxy and adds properties
+
+    # Apply kwargs. Plain {kwarg_key: prop_name} -- previously each value
+    # was a (prop_name, None) tuple whose second element was always None
+    # and unpacked-and-discarded on every use; the name "_float_props" was
+    # also misleading since the stl_file entry is a string, not a float.
+    _prop_names = {
+        "stl_file":        "StlFile",   # string, not float
+        "tool_diameter":   "ToolDiameter",
+        "stepover":        "StepOver",
+        "sample_interval": "SampleInterval",
+        "safe_height":     "SafeHeight",
+        "cut_feed":        "CutFeed",
+        "plunge_feed":     "PlungeFeed",
+    }
+    for kwarg_key, prop_name in _prop_names.items():
+        if kwarg_key in kwargs and kwargs[kwarg_key] is not None:
+            val = kwargs[kwarg_key]
+            if kwarg_key == "stl_file":
+                op_obj.StlFile = str(val)
+            else:
+                setattr(op_obj, prop_name, float(val))
+
+    # Add to job's operations group
+    # Try job.Proxy.addOperation first (cleaner, manages group internally);
+    # fall back to direct Group manipulation for older FreeCAD versions.
+    added = False
+    if hasattr(job, "Proxy") and hasattr(job.Proxy, "addOperation"):
+        try:
+            job.Proxy.addOperation(op_obj)
+            added = True
+        except Exception:
+            pass
+
+    if not added:
+        children = list(job.Operations.Group)
+        children.append(op_obj)
+        job.Operations.Group = children
+
+    return op_obj

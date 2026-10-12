@@ -1,0 +1,263 @@
+"""
+Tests for ViewOpsHandler.take_screenshot()
+
+Covers the saveImage() code path (non-macOS) and this handler's Darwin
+guards/tripwire. The actual macOS capture lives entirely in
+freecad_mcp_server.py (the bridge process) -- its view_control screenshot
+shortcut is instance-aware (steps aside for headless targets) and crops to
+FreeCAD's window; that logic is not covered by this file. This handler's
+own Darwin branch only handles the headless/no-document guards (reached
+when the bridge steps aside) and a loud failure if a GUI instance ever
+reaches this code path directly, meaning the bridge-side shortcut was
+bypassed.
+"""
+
+import base64
+import json
+import os
+import sys
+from unittest.mock import MagicMock, patch
+
+# ---------------------------------------------------------------------------
+# Mock FreeCAD modules at module level (before any handler imports)
+# ---------------------------------------------------------------------------
+
+sys.modules.setdefault("FreeCAD", MagicMock(GuiUp=False, Console=MagicMock()))
+sys.modules.setdefault("FreeCADGui", MagicMock())
+sys.modules.setdefault("Part", MagicMock())
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "AICopilot"))
+from handlers.view_ops import ViewOpsHandler  # noqa: E402
+
+# Patch targets inside the handler module
+_GUI_PATH = "handlers.view_ops.FreeCADGui"
+_PLATFORM_PATH = "handlers.view_ops.platform"
+_FREECAD_PATH = "handlers.view_ops.FreeCAD"
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+# 1×1 transparent PNG
+PNG_1x1 = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+)
+
+
+def make_handler():
+    return ViewOpsHandler(server=None, log_operation=None, capture_state=None)
+
+
+def make_mock_view(png_bytes=PNG_1x1):
+    """View whose saveImage() writes png_bytes to the given path."""
+    mock_view = MagicMock()
+
+    def _save_image(path, w, h):
+        with open(path, "wb") as f:
+            f.write(png_bytes)
+
+    mock_view.saveImage.side_effect = _save_image
+    return mock_view
+
+
+def make_mock_doc(view):
+    doc = MagicMock()
+    doc.activeView.return_value = view
+    return doc
+
+
+# ---------------------------------------------------------------------------
+# Success path (Linux/saveImage — GuiUp=True)
+# ---------------------------------------------------------------------------
+
+class TestTakeScreenshotSuccess:
+    def test_returns_success_true(self):
+        with patch(_FREECAD_PATH) as fc, patch(_GUI_PATH) as gui, patch(_PLATFORM_PATH) as plat:
+            fc.GuiUp = True
+            plat.system.return_value = "Linux"
+            gui.activeDocument.return_value = make_mock_doc(make_mock_view())
+            result = json.loads(make_handler().take_screenshot({}))
+        assert result["success"] is True
+
+    def test_returns_valid_base64_png(self):
+        with patch(_FREECAD_PATH) as fc, patch(_GUI_PATH) as gui, patch(_PLATFORM_PATH) as plat:
+            fc.GuiUp = True
+            plat.system.return_value = "Linux"
+            gui.activeDocument.return_value = make_mock_doc(make_mock_view())
+            result = json.loads(make_handler().take_screenshot({}))
+        assert base64.b64decode(result["image_data"]) == PNG_1x1
+
+    def test_mime_type_is_png(self):
+        with patch(_FREECAD_PATH) as fc, patch(_GUI_PATH) as gui, patch(_PLATFORM_PATH) as plat:
+            fc.GuiUp = True
+            plat.system.return_value = "Linux"
+            gui.activeDocument.return_value = make_mock_doc(make_mock_view())
+            result = json.loads(make_handler().take_screenshot({}))
+        assert result["mime_type"] == "image/png"
+
+    def test_default_dimensions(self):
+        captured = {}
+        mock_view = MagicMock()
+
+        def _save(path, w, h):
+            captured["w"] = w
+            captured["h"] = h
+            with open(path, "wb") as f:
+                f.write(PNG_1x1)
+
+        mock_view.saveImage.side_effect = _save
+        with patch(_FREECAD_PATH) as fc, patch(_GUI_PATH) as gui, patch(_PLATFORM_PATH) as plat:
+            fc.GuiUp = True
+            plat.system.return_value = "Linux"
+            gui.activeDocument.return_value = make_mock_doc(mock_view)
+            make_handler().take_screenshot({})
+
+        assert captured == {"w": 800, "h": 600}
+
+    def test_custom_dimensions(self):
+        captured = {}
+        mock_view = MagicMock()
+
+        def _save(path, w, h):
+            captured["w"] = w
+            captured["h"] = h
+            with open(path, "wb") as f:
+                f.write(PNG_1x1)
+
+        mock_view.saveImage.side_effect = _save
+        with patch(_FREECAD_PATH) as fc, patch(_GUI_PATH) as gui, patch(_PLATFORM_PATH) as plat:
+            fc.GuiUp = True
+            plat.system.return_value = "Linux"
+            gui.activeDocument.return_value = make_mock_doc(mock_view)
+            make_handler().take_screenshot({"width": 1920, "height": 1080})
+
+        assert captured == {"w": 1920, "h": 1080}
+
+    def test_temp_file_is_cleaned_up(self):
+        created = []
+        mock_view = MagicMock()
+
+        def _save(path, w, h):
+            created.append(path)
+            with open(path, "wb") as f:
+                f.write(PNG_1x1)
+
+        mock_view.saveImage.side_effect = _save
+        with patch(_FREECAD_PATH) as fc, patch(_GUI_PATH) as gui, patch(_PLATFORM_PATH) as plat:
+            fc.GuiUp = True
+            plat.system.return_value = "Linux"
+            gui.activeDocument.return_value = make_mock_doc(mock_view)
+            make_handler().take_screenshot({})
+
+        assert created, "saveImage was never called"
+        assert not os.path.exists(created[0]), "Temp file was not deleted"
+
+
+# ---------------------------------------------------------------------------
+# Error paths (Linux/saveImage — GuiUp=True)
+# ---------------------------------------------------------------------------
+
+class TestTakeScreenshotErrors:
+    def test_no_active_document(self):
+        with patch(_FREECAD_PATH) as fc, patch(_GUI_PATH) as gui, patch(_PLATFORM_PATH) as plat:
+            fc.GuiUp = True
+            plat.system.return_value = "Linux"
+            gui.activeDocument.return_value = None
+            result = json.loads(make_handler().take_screenshot({}))
+        assert result["success"] is False
+        assert "No active document" in result["error"]
+
+    def test_no_active_view(self):
+        with patch(_FREECAD_PATH) as fc, patch(_GUI_PATH) as gui, patch(_PLATFORM_PATH) as plat:
+            fc.GuiUp = True
+            plat.system.return_value = "Linux"
+            gui.activeDocument.return_value = make_mock_doc(view=None)
+            result = json.loads(make_handler().take_screenshot({}))
+        assert result["success"] is False
+        assert "No active view" in result["error"]
+
+    def test_save_image_raises(self):
+        mock_view = MagicMock()
+        mock_view.saveImage.side_effect = RuntimeError("GPU error")
+        with patch(_FREECAD_PATH) as fc, patch(_GUI_PATH) as gui, patch(_PLATFORM_PATH) as plat:
+            fc.GuiUp = True
+            plat.system.return_value = "Linux"
+            gui.activeDocument.return_value = make_mock_doc(mock_view)
+            result = json.loads(make_handler().take_screenshot({}))
+        assert result["success"] is False
+        assert "GPU error" in result["error"]
+
+    def test_get_screenshot_is_alias_for_take_screenshot(self):
+        """get_screenshot() should return the same result as take_screenshot()."""
+        with patch(_FREECAD_PATH) as fc, patch(_GUI_PATH) as gui, patch(_PLATFORM_PATH) as plat:
+            fc.GuiUp = True
+            plat.system.return_value = "Linux"
+            gui.activeDocument.return_value = None
+            h = make_handler()
+            assert h.get_screenshot({}) == h.take_screenshot({})
+
+
+# ---------------------------------------------------------------------------
+# Headless guard (GuiUp=False, non-macOS)
+# ---------------------------------------------------------------------------
+
+class TestHeadlessScreenshot:
+    def test_returns_error_in_headless_mode(self):
+        with patch(_FREECAD_PATH) as fc, patch(_PLATFORM_PATH) as plat:
+            fc.GuiUp = False
+            plat.system.return_value = "Linux"
+            result = json.loads(make_handler().take_screenshot({}))
+        assert result["success"] is False
+        assert "headless" in result["error"].lower()
+
+
+# ---------------------------------------------------------------------------
+# Darwin path (M7, M8, and the bridge-side consolidation that followed)
+# ---------------------------------------------------------------------------
+
+class TestDarwinScreenshot:
+    """Actual macOS capture now happens in the bridge process
+    (freecad_mcp_server.py's view_control screenshot shortcut), not here —
+    it crops to FreeCAD's window instead of the whole screen and never
+    touches this thread. This handler still owns the headless/no-document
+    guards (needed when the bridge steps aside for a headless target), and
+    fails loudly rather than silently falling back to saveImage() -- which
+    deadlocks the GUI thread on macOS -- if a GUI instance ever reaches it
+    directly, meaning the bridge-side shortcut was bypassed."""
+
+    def test_headless_darwin_screenshot_refused(self):
+        """M8: a headless macOS instance (GuiUp=False) must refuse before
+        reaching the Darwin tripwire below — previously it would photograph
+        whatever's on the physical screen, unrelated to FreeCAD, and
+        report success."""
+        with patch(_FREECAD_PATH) as fc, patch(_PLATFORM_PATH) as plat:
+            fc.GuiUp = False
+            fc.ActiveDocument = MagicMock()  # a document can exist without a GUI
+            plat.system.return_value = "Darwin"
+            result = json.loads(make_handler().take_screenshot({}))
+        assert result["success"] is False
+        assert "headless" in result["error"].lower()
+
+    def test_darwin_no_active_document_refused(self):
+        with patch(_FREECAD_PATH) as fc, patch(_PLATFORM_PATH) as plat:
+            fc.GuiUp = True
+            fc.ActiveDocument = None
+            plat.system.return_value = "Darwin"
+            result = json.loads(make_handler().take_screenshot({}))
+        assert result["success"] is False
+        assert "No active document" in result["error"]
+
+    def test_gui_instance_hitting_handler_directly_fails_loudly(self):
+        """A GUI macOS instance reaching this handler at all means the
+        bridge-side shortcut was bypassed. It must fail with an explicit
+        error, never silently fall through to saveImage() (GUI-thread
+        deadlock) or attempt its own screencapture."""
+        with patch(_FREECAD_PATH) as fc, patch(_PLATFORM_PATH) as plat, \
+             patch("subprocess.run") as mock_run:
+            fc.GuiUp = True
+            fc.ActiveDocument = MagicMock()
+            plat.system.return_value = "Darwin"
+            result = json.loads(make_handler().take_screenshot({}))
+        assert result["success"] is False
+        assert "bridge process" in result["error"].lower()
+        mock_run.assert_not_called()

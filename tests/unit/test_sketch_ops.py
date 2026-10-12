@@ -1,0 +1,685 @@
+"""Unit tests for SketchOpsHandler.
+
+Covers create_sketch, close_sketch, add_line, add_circle, add_rectangle,
+add_arc, add_polygon, add_constraint dispatch (Horizontal, Coincident,
+Distance, DistanceX, Radius, Angle), and delete_constraint. Sketch_ops
+is the largest unit-untested handler at 792 LOC and 13% statement
+coverage.
+
+The constraint-dispatch surface is the highest-stakes part — wrong
+geometry/point indices or missing value handling silently produce a
+sketch that solves but doesn't constrain what the user expected. Tests
+verify the right Sketcher.Constraint variant gets built for each type.
+
+Verify_sketch is exercised in test_open_wire_diagnosis.py — not
+duplicated here.
+"""
+
+import json
+import math
+import unittest
+from unittest.mock import MagicMock
+
+from handlers.sketch_ops import SketchOpsHandler
+
+from tests.unit._freecad_mocks import (
+    assert_error_contains,
+    assert_success_contains,
+    make_body,
+    make_handler,
+    make_mock_doc,
+    make_sketch,
+    mock_FreeCAD,
+    mock_Part,
+    mock_Sketcher,
+    reset_mocks,
+)
+
+
+def _make_real_sketch_mock(name="Sketch"):
+    """Sketch that survives addGeometry and addConstraint calls.
+
+    addGeometry returns sequential geo ids; addConstraint returns
+    sequential constraint indices. The handler-side recompute() does
+    nothing on the doc mock, but ConstraintCount and GeometryCount
+    track real call counts so close_sketch can report them.
+    """
+    s = make_sketch(name)
+    geo_counter = [0]
+    con_counter = [0]
+
+    def add_geom(_):
+        idx = geo_counter[0]
+        geo_counter[0] += 1
+        s.GeometryCount = geo_counter[0]
+        return idx
+
+    def add_constraint(_):
+        idx = con_counter[0]
+        con_counter[0] += 1
+        s.ConstraintCount = con_counter[0]
+        return idx
+
+    s.addGeometry = MagicMock(side_effect=add_geom)
+    s.addConstraint = MagicMock(side_effect=add_constraint)
+    s.delConstraint = MagicMock()
+    s.solve = MagicMock(return_value=0)  # default: fully constrained
+    s.GeometryCount = 0
+    s.ConstraintCount = 0
+    s.FullyConstrained = True
+    return s
+
+
+# ---------------------------------------------------------------------------
+# create_sketch
+# ---------------------------------------------------------------------------
+
+class TestCreateSketch(unittest.TestCase):
+    def setUp(self):
+        reset_mocks()
+        self.handler = make_handler(SketchOpsHandler)
+
+    def test_xy_plane_default(self):
+        doc = make_mock_doc()
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.create_sketch({'name': 'S'})
+
+        assert_success_contains(self, result, "S", "XY")
+        doc.addObject.assert_called_once_with('Sketcher::SketchObject', 'S')
+
+    def test_xz_plane(self):
+        doc = make_mock_doc()
+        mock_FreeCAD.ActiveDocument = doc
+        result = self.handler.create_sketch({'plane': 'XZ', 'name': 'S'})
+        assert_success_contains(self, result, "XZ")
+
+    def test_yz_plane(self):
+        doc = make_mock_doc()
+        mock_FreeCAD.ActiveDocument = doc
+        result = self.handler.create_sketch({'plane': 'YZ', 'name': 'S'})
+        assert_success_contains(self, result, "YZ")
+
+    def test_invalid_plane_rejected_instead_of_silent_xy(self):
+        """An unrecognized plane used to leave sketch.Placement at
+        doc.addObject's default (identical to the XY branch) while still
+        reporting "Created sketch: ... on {plane} plane" as success —
+        e.g. plane="ZY" silently creating an XY-oriented sketch labeled
+        "on ZY plane"."""
+        doc = make_mock_doc()
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.create_sketch({'plane': 'ZY', 'name': 'S'})
+
+        assert_error_contains(self, result, "invalid plane", "zy")
+        doc.addObject.assert_not_called()
+
+    def test_attaches_to_active_partdesign_body(self):
+        body = make_body("Body")
+        doc = make_mock_doc([body])
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.create_sketch({'name': 'S'})
+
+        assert_success_contains(self, result, "Body")
+        # body.addObject was called with the new sketch
+        body.addObject.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# close_sketch
+# ---------------------------------------------------------------------------
+
+class TestCloseSketch(unittest.TestCase):
+    def setUp(self):
+        reset_mocks()
+        self.handler = make_handler(SketchOpsHandler)
+
+    def test_reports_geometry_and_constraint_counts(self):
+        s = _make_real_sketch_mock("RectS")
+        s.GeometryCount = 4
+        s.ConstraintCount = 8
+        s.FullyConstrained = True
+        doc = make_mock_doc([s])
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.close_sketch({'sketch_name': 'RectS'})
+
+        assert_success_contains(self, result, "RectS", "4 geometries",
+                                "8 constraints", "fully constrained: True")
+
+
+# ---------------------------------------------------------------------------
+# add_line / add_circle / add_rectangle / add_arc / add_polygon
+# ---------------------------------------------------------------------------
+
+class TestAddLine(unittest.TestCase):
+    def setUp(self):
+        reset_mocks()
+        self.handler = make_handler(SketchOpsHandler)
+
+    def test_adds_line_segment_and_returns_geo_id(self):
+        s = _make_real_sketch_mock("S")
+        doc = make_mock_doc([s])
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.add_line({
+            'sketch_name': 'S', 'x1': 0, 'y1': 0, 'x2': 30, 'y2': 0,
+        })
+
+        assert_success_contains(self, result, "S", "(0,0)", "(30,0)",
+                                "geo_id=0")
+        # Part.LineSegment was called with vectors
+        mock_Part.LineSegment.assert_called_once()
+
+
+class TestAddCircle(unittest.TestCase):
+    def setUp(self):
+        reset_mocks()
+        self.handler = make_handler(SketchOpsHandler)
+
+    def test_adds_circle_and_three_constraints(self):
+        """Circle adds geometry plus DistanceX, DistanceY, Radius constraints."""
+        s = _make_real_sketch_mock("S")
+        doc = make_mock_doc([s])
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.add_circle({
+            'sketch_name': 'S', 'x': 5, 'y': 10, 'radius': 3,
+        })
+
+        assert_success_contains(self, result, "S", "center (5,10)",
+                                "radius 3", "geo_id=0")
+        # 3 constraint calls: DistanceX, DistanceY, Radius
+        self.assertEqual(s.addConstraint.call_count, 3)
+
+
+class TestAddRectangle(unittest.TestCase):
+    def setUp(self):
+        reset_mocks()
+        self.handler = make_handler(SketchOpsHandler)
+
+    def test_constrained_rectangle_creates_4_lines_and_12_constraints(self):
+        """4 lines + 4 coincident + 2 horizontal + 2 vertical + 2 position
+        + 2 size = 12 constraints total."""
+        s = _make_real_sketch_mock("S")
+        doc = make_mock_doc([s])
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.add_rectangle({
+            'sketch_name': 'S', 'x': 0, 'y': 0,
+            'width': 20, 'height': 15,
+        })
+
+        assert_success_contains(self, result, "20x15", "geo_ids=[0,1,2,3]")
+        # 4 line segments (one per side)
+        self.assertEqual(s.addGeometry.call_count, 4)
+        # 12 constraints
+        self.assertEqual(s.addConstraint.call_count, 12)
+
+    def test_unconstrained_rectangle_skips_constraints(self):
+        s = _make_real_sketch_mock("S")
+        doc = make_mock_doc([s])
+        mock_FreeCAD.ActiveDocument = doc
+
+        self.handler.add_rectangle({
+            'sketch_name': 'S', 'x': 0, 'y': 0,
+            'width': 20, 'height': 15,
+            'constrain': False,
+        })
+
+        self.assertEqual(s.addGeometry.call_count, 4)
+        self.assertEqual(s.addConstraint.call_count, 0)
+
+
+class TestAddArc(unittest.TestCase):
+    def setUp(self):
+        reset_mocks()
+        self.handler = make_handler(SketchOpsHandler)
+
+    def test_angles_converted_to_radians(self):
+        """Handler must convert degrees → radians for Part.ArcOfCircle."""
+        s = _make_real_sketch_mock("S")
+        doc = make_mock_doc([s])
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.add_arc({
+            'sketch_name': 'S', 'center_x': 0, 'center_y': 0,
+            'radius': 5, 'start_angle': 0, 'end_angle': 90,
+        })
+
+        assert_success_contains(self, result, "S", "0°", "90°", "R5")
+        # ArcOfCircle was called with radians (90° = π/2)
+        ac_call = mock_Part.ArcOfCircle.call_args
+        # Args: (Circle, start_rad, end_rad)
+        self.assertAlmostEqual(ac_call.args[1], 0.0, places=6)
+        self.assertAlmostEqual(ac_call.args[2], math.pi / 2, places=6)
+
+
+class TestAddPolygon(unittest.TestCase):
+    def setUp(self):
+        reset_mocks()
+        self.handler = make_handler(SketchOpsHandler)
+
+    def test_minimum_3_sides(self):
+        s = _make_real_sketch_mock("S")
+        doc = make_mock_doc([s])
+        mock_FreeCAD.ActiveDocument = doc
+        result = self.handler.add_polygon({
+            'sketch_name': 'S', 'sides': 2, 'radius': 5,
+        })
+        assert_error_contains(self, result, "at least 3 sides")
+
+    def test_hexagon_creates_6_segments(self):
+        s = _make_real_sketch_mock("S")
+        doc = make_mock_doc([s])
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.add_polygon({
+            'sketch_name': 'S', 'sides': 6, 'radius': 10,
+        })
+
+        assert_success_contains(self, result, "S", "6")
+        # 6 line segments for hexagon
+        self.assertEqual(s.addGeometry.call_count, 6)
+
+    def test_exactly_3_sides_makes_triangle(self):
+        """sides==3 is the boundary — must be accepted (the guard is `sides < 3`).
+        A `<`→`<=` mutant would silently kill triangles."""
+        s = _make_real_sketch_mock("S")
+        doc = make_mock_doc([s])
+        mock_FreeCAD.ActiveDocument = doc
+        result = self.handler.add_polygon({
+            'sketch_name': 'S', 'sides': 3, 'radius': 5,
+        })
+        assert_success_contains(self, result, "3")
+        self.assertEqual(s.addGeometry.call_count, 3)
+
+
+class TestAddSlot(unittest.TestCase):
+    def setUp(self):
+        reset_mocks()
+        self.handler = make_handler(SketchOpsHandler)
+
+    def test_length_equals_width_rejected(self):
+        """length == width → half_len == 0 → a degenerate (circular) slot. The
+        guard is `half_len <= 0`, so equal is rejected; pins which side of the
+        boundary `<=` falls on."""
+        s = _make_real_sketch_mock("S")
+        doc = make_mock_doc([s])
+        mock_FreeCAD.ActiveDocument = doc
+        result = self.handler.add_slot({
+            'sketch_name': 'S', 'length': 6, 'width': 6,
+        })
+        self.assertIn("must be greater", result)
+        self.assertFalse(s.addGeometry.called)
+
+    def test_length_just_over_width_succeeds(self):
+        s = _make_real_sketch_mock("S")
+        doc = make_mock_doc([s])
+        mock_FreeCAD.ActiveDocument = doc
+        result = self.handler.add_slot({
+            'sketch_name': 'S', 'length': 7, 'width': 6,
+        })
+        self.assertNotIn("must be greater", result)
+        self.assertTrue(s.addGeometry.called)
+
+
+# ---------------------------------------------------------------------------
+# add_constraint — dispatch table
+# ---------------------------------------------------------------------------
+
+class TestAddConstraint(unittest.TestCase):
+    def setUp(self):
+        reset_mocks()
+        self.handler = make_handler(SketchOpsHandler)
+
+    def test_unknown_constraint_type(self):
+        s = _make_real_sketch_mock("S")
+        doc = make_mock_doc([s])
+        mock_FreeCAD.ActiveDocument = doc
+        result = self.handler.add_constraint({
+            'sketch_name': 'S', 'constraint_type': 'WeirdType',
+        })
+        assert_error_contains(self, result, "unknown constraint type",
+                              "weirdtype")
+
+    def test_horizontal_takes_only_geo_id(self):
+        s = _make_real_sketch_mock("S")
+        doc = make_mock_doc([s])
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.add_constraint({
+            'sketch_name': 'S', 'constraint_type': 'Horizontal',
+            'geo_id1': 0,
+        })
+
+        assert_success_contains(self, result, "Horizontal")
+        # Sketcher.Constraint('Horizontal', 0)
+        sc_call = mock_Sketcher.Constraint.call_args
+        self.assertEqual(sc_call.args, ('Horizontal', 0))
+
+    def test_constraint_type_is_case_insensitive(self):
+        """'horizontal' must resolve to the canonical 'Horizontal' rather than
+        falling through to 'Unknown constraint type' (syntactic-seam fix)."""
+        s = _make_real_sketch_mock("S")
+        doc = make_mock_doc([s])
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.add_constraint({
+            'sketch_name': 'S', 'constraint_type': 'horizontal',
+            'geo_id1': 0,
+        })
+
+        self.assertNotIn("Unknown", result)
+        sc_call = mock_Sketcher.Constraint.call_args
+        self.assertEqual(sc_call.args, ('Horizontal', 0))
+
+    def test_coincident_takes_two_points(self):
+        s = _make_real_sketch_mock("S")
+        doc = make_mock_doc([s])
+        mock_FreeCAD.ActiveDocument = doc
+
+        self.handler.add_constraint({
+            'sketch_name': 'S', 'constraint_type': 'Coincident',
+            'geo_id1': 0, 'pos_id1': 2,
+            'geo_id2': 1, 'pos_id2': 1,
+        })
+
+        sc_call = mock_Sketcher.Constraint.call_args
+        self.assertEqual(sc_call.args, ('Coincident', 0, 2, 1, 1))
+
+    def test_radius_requires_value(self):
+        s = _make_real_sketch_mock("S")
+        doc = make_mock_doc([s])
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.add_constraint({
+            'sketch_name': 'S', 'constraint_type': 'Radius',
+            'geo_id1': 0,
+        })
+
+        assert_error_contains(self, result, "radius constraint requires a value")
+
+    def test_radius_with_value(self):
+        s = _make_real_sketch_mock("S")
+        doc = make_mock_doc([s])
+        mock_FreeCAD.ActiveDocument = doc
+
+        self.handler.add_constraint({
+            'sketch_name': 'S', 'constraint_type': 'Radius',
+            'geo_id1': 2, 'value': 7.5,
+        })
+
+        sc_call = mock_Sketcher.Constraint.call_args
+        self.assertEqual(sc_call.args, ('Radius', 2, 7.5))
+
+    def test_distance_with_two_points_and_value(self):
+        s = _make_real_sketch_mock("S")
+        doc = make_mock_doc([s])
+        mock_FreeCAD.ActiveDocument = doc
+
+        self.handler.add_constraint({
+            'sketch_name': 'S', 'constraint_type': 'Distance',
+            'geo_id1': 0, 'pos_id1': 1,
+            'geo_id2': 0, 'pos_id2': 2,
+            'value': 25,
+        })
+
+        sc_call = mock_Sketcher.Constraint.call_args
+        self.assertEqual(sc_call.args, ('Distance', 0, 1, 0, 2, 25))
+
+    def test_distance_x_short_form(self):
+        """DistanceX with just geo_id1+pos_id1+value (no geo_id2)."""
+        s = _make_real_sketch_mock("S")
+        doc = make_mock_doc([s])
+        mock_FreeCAD.ActiveDocument = doc
+
+        self.handler.add_constraint({
+            'sketch_name': 'S', 'constraint_type': 'DistanceX',
+            'geo_id1': 0, 'pos_id1': 1, 'value': 10,
+        })
+
+        sc_call = mock_Sketcher.Constraint.call_args
+        # Short form: single point with value
+        self.assertEqual(sc_call.args, ('DistanceX', 0, 1, 10))
+
+    def test_angle_converted_to_radians(self):
+        """Angle constraints take degrees from caller, convert to radians."""
+        s = _make_real_sketch_mock("S")
+        doc = make_mock_doc([s])
+        mock_FreeCAD.ActiveDocument = doc
+
+        self.handler.add_constraint({
+            'sketch_name': 'S', 'constraint_type': 'Angle',
+            'geo_id1': 0, 'geo_id2': 1, 'value': 45,
+        })
+
+        sc_call = mock_Sketcher.Constraint.call_args
+        # 45° in radians ≈ 0.7854
+        self.assertEqual(sc_call.args[0], 'Angle')
+        self.assertAlmostEqual(sc_call.args[3], math.pi / 4, places=4)
+
+    def test_fix_maps_to_lock_constraint(self):
+        """Fix is renamed to Lock internally."""
+        s = _make_real_sketch_mock("S")
+        doc = make_mock_doc([s])
+        mock_FreeCAD.ActiveDocument = doc
+
+        self.handler.add_constraint({
+            'sketch_name': 'S', 'constraint_type': 'Fix',
+            'geo_id1': 0, 'pos_id1': 1,
+        })
+
+        sc_call = mock_Sketcher.Constraint.call_args
+        self.assertEqual(sc_call.args[0], 'Lock')
+
+    # -- expression binding (issue #48) --------------------------------
+
+    def test_distance_x_expression_seeds_zero_and_calls_set_expression(self):
+        """No literal value: constraint is seeded at 0.0, then bound via
+        setExpression -- the seed is a placeholder until recompute resolves
+        the expression, per FreeCAD's setExpression() semantics."""
+        s = _make_real_sketch_mock("S")
+        doc = make_mock_doc([s])
+        mock_FreeCAD.ActiveDocument = doc
+        s.setExpression = MagicMock()
+
+        result = self.handler.add_constraint({
+            'sketch_name': 'S', 'constraint_type': 'DistanceX',
+            'geo_id1': 0, 'pos_id1': 1,
+            'expression': 'Dimensions.PanelLength / -2',
+        })
+
+        sc_call = mock_Sketcher.Constraint.call_args
+        self.assertEqual(sc_call.args, ('DistanceX', 0, 1, 0.0))
+        s.setExpression.assert_called_once_with(
+            'Constraints[0]', 'Dimensions.PanelLength / -2')
+        assert_success_contains(self, result, "expression=")
+
+    def test_expression_with_value_uses_value_as_seed(self):
+        """value + expression both given: value seeds the literal Constraint
+        call, expression is still bound afterward (recompute overrides it)."""
+        s = _make_real_sketch_mock("S")
+        doc = make_mock_doc([s])
+        mock_FreeCAD.ActiveDocument = doc
+        s.setExpression = MagicMock()
+
+        self.handler.add_constraint({
+            'sketch_name': 'S', 'constraint_type': 'Radius',
+            'geo_id1': 2, 'value': 7.5, 'expression': 'Dimensions.HoleRadius',
+        })
+
+        sc_call = mock_Sketcher.Constraint.call_args
+        self.assertEqual(sc_call.args, ('Radius', 2, 7.5))
+        s.setExpression.assert_called_once_with(
+            'Constraints[0]', 'Dimensions.HoleRadius')
+
+    def test_expression_rejected_for_non_dimensional_type(self):
+        """Horizontal/Vertical/etc. have no Value -- an expression there is
+        a caller mistake, not something to silently ignore."""
+        s = _make_real_sketch_mock("S")
+        doc = make_mock_doc([s])
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.add_constraint({
+            'sketch_name': 'S', 'constraint_type': 'Horizontal',
+            'geo_id1': 0, 'expression': 'Dimensions.Foo',
+        })
+
+        assert_error_contains(self, result, "expression is only supported for "
+                               "dimensional constraint types")
+
+    def test_dimensional_requires_value_or_expression(self):
+        s = _make_real_sketch_mock("S")
+        doc = make_mock_doc([s])
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.add_constraint({
+            'sketch_name': 'S', 'constraint_type': 'DistanceX',
+            'geo_id1': 0, 'pos_id1': 1,
+        })
+
+        assert_error_contains(self, result, "distancex constraint requires "
+                               "a value or expression")
+
+    def test_dof_message_reads_sketch_properties_not_solve_return(self):
+        """solve()'s return code is a solver-success code, not a DoF count
+        (issue #48) -- the response must report sketch.DoF/FullyConstrained,
+        and must reflect them even when solve() itself returns something
+        else entirely (e.g. a non-zero/non-boolean value)."""
+        s = _make_real_sketch_mock("S")
+        doc = make_mock_doc([s])
+        mock_FreeCAD.ActiveDocument = doc
+        s.solve = MagicMock(return_value=1)  # solver status, not DoF
+        s.DoF = 3
+        s.FullyConstrained = False
+
+        result = self.handler.add_constraint({
+            'sketch_name': 'S', 'constraint_type': 'Radius',
+            'geo_id1': 0, 'value': 5,
+        })
+
+        assert_success_contains(self, result, "DoF=3", "FullyConstrained=False")
+
+
+# ---------------------------------------------------------------------------
+# delete_constraint
+# ---------------------------------------------------------------------------
+
+class TestDeleteConstraint(unittest.TestCase):
+    def setUp(self):
+        reset_mocks()
+        self.handler = make_handler(SketchOpsHandler)
+
+    def test_index_required(self):
+        s = _make_real_sketch_mock("S")
+        doc = make_mock_doc([s])
+        mock_FreeCAD.ActiveDocument = doc
+        result = self.handler.delete_constraint({
+            'sketch_name': 'S',
+        })
+        assert_error_contains(self, result, "index is required")
+
+    def test_calls_delConstraint_with_int_index(self):
+        s = _make_real_sketch_mock("S")
+        doc = make_mock_doc([s])
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.delete_constraint({
+            'sketch_name': 'S', 'index': 3,
+        })
+
+        s.delConstraint.assert_called_once_with(3)
+        assert_success_contains(self, result, "Deleted constraint 3", "S")
+
+
+class TestListConstraints(unittest.TestCase):
+    """Full-review 2026-09-23, Medium finding #31: list_constraints used to
+    omit the "value" field for a legitimately-zero-valued dimensional
+    constraint (e.g. DistanceX constrained to exactly 0mm) -- indistinguishable
+    from a constraint type that has no Value at all (Horizontal, Coincident,
+    ...). Checking Type against _DIMENSIONAL_CONSTRAINT_TYPES instead of
+    hasattr(c, 'Value') and c.Value != 0 fixes this."""
+
+    def setUp(self):
+        reset_mocks()
+        self.handler = make_handler(SketchOpsHandler)
+
+    def _make_constraint(self, ctype, value=None, second=-2000, third=-2000, name=""):
+        c = MagicMock()
+        c.Type = ctype
+        c.First = 0
+        c.FirstPos = 1
+        c.Second = second
+        c.SecondPos = 1 if second != -2000 else -2000
+        c.Third = third
+        c.ThirdPos = 1 if third != -2000 else -2000
+        c.Name = name
+        if value is not None:
+            c.Value = value
+        else:
+            # FreeCAD always exposes .Value on every Constraint, defaulting
+            # to 0.0 for non-dimensional types -- must not surface it.
+            c.Value = 0.0
+        return c
+
+    def _list(self, constraints):
+        s = _make_real_sketch_mock("S")
+        s.Constraints = constraints
+        s.ConstraintCount = len(constraints)
+        s.DoF = 0
+        doc = make_mock_doc([s])
+        mock_FreeCAD.ActiveDocument = doc
+        result = self.handler.list_constraints({'sketch_name': 'S'})
+        return json.loads(result)
+
+    def test_dimensional_constraint_with_exactly_zero_value_reports_value(self):
+        # The exact case the old truthiness check broke: a legitimate
+        # zero-distance constraint must still report "value": 0.
+        data = self._list([self._make_constraint('DistanceX', value=0.0)])
+        self.assertIn('value', data['constraints'][0])
+        self.assertEqual(data['constraints'][0]['value'], 0.0)
+
+    def test_dimensional_constraint_with_nonzero_value_reports_value(self):
+        data = self._list([self._make_constraint('Distance', value=12.5)])
+        self.assertEqual(data['constraints'][0]['value'], 12.5)
+
+    def test_non_dimensional_constraint_omits_value_even_though_attribute_exists(self):
+        # Horizontal/Coincident/etc. always have .Value == 0.0 on the real
+        # FreeCAD object, but must never surface a "value" key -- they
+        # don't semantically have one.
+        data = self._list([self._make_constraint('Horizontal')])
+        self.assertNotIn('value', data['constraints'][0])
+
+    def test_angle_constraint_value_converted_to_degrees(self):
+        data = self._list([self._make_constraint('Angle', value=math.pi / 2)])
+        self.assertAlmostEqual(data['constraints'][0]['value'], 90.0, places=4)
+
+    def test_second_and_third_sentinel_still_respected(self):
+        data = self._list([self._make_constraint('Coincident', second=3, third=-2000)])
+        info = data['constraints'][0]
+        self.assertIn('second', info)
+        self.assertNotIn('third', info)
+
+
+class TestCreateSketchNoDocument(unittest.TestCase):
+    """create_sketch with no active document must return an error, not crash."""
+
+    def setUp(self):
+        reset_mocks()
+        self.handler = make_handler(SketchOpsHandler)
+        mock_FreeCAD.ActiveDocument = None
+
+    def test_returns_error_string(self):
+        result = self.handler.create_sketch({'plane': 'XY', 'name': 'S'})
+        self.assertIn("Error", result)
+        self.assertIn("create_document", result)
+
+    def test_does_not_call_newDocument(self):
+        self.handler.create_sketch({'plane': 'XY', 'name': 'S'})
+        mock_FreeCAD.newDocument.assert_not_called()
+
+
+if __name__ == '__main__':
+    unittest.main()

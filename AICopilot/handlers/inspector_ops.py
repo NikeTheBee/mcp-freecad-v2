@@ -1,0 +1,190 @@
+# Inspector DRC handler — runs FC-tools Inspector checks against a live document.
+#
+# The Inspector lives in a sibling repo (FC-tools/) rather than inside the
+# AICopilot module. This handler adds FC-tools to sys.path on first use,
+# then imports the inspector package and runs run_drc() against the active
+# (or named) document.
+#
+# Path resolution order:
+#   1. FreeCAD preference "InspectorPath" (User Parameter → BaseApp/Preferences/Mod/AICopilot)
+#   2. The env var FREECAD_INSPECTOR_PATH
+#   3. Well-known sibling path: the directory two levels above this file
+#      (…/AICopilot/handlers/ → …/AICopilot/ → …/freecad-mcp/ → …/FC-tools/)
+#   4. /Volumes/Files/claude/FC-tools  (hardcoded fallback for dev machine)
+#
+# All findings are serialised to JSON-friendly dicts — no FC-tools classes
+# cross the wire.
+
+import json
+import os
+import sys
+from typing import Any
+
+import FreeCAD
+
+from .base import AICOPILOT_PREF_PATH, NO_ACTIVE_DOCUMENT_ERROR, BaseHandler
+
+_FALLBACK_PATHS = [
+    os.path.normpath(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'FC-tools')),
+    '/Volumes/Files/claude/FC-tools',
+]
+
+
+def _ensure_inspector_importable() -> str:
+    """Add FC-tools to sys.path if needed. Returns the path used, or raises."""
+    # 1. FreeCAD preference
+    try:
+        pref = FreeCAD.ParamGet(AICOPILOT_PREF_PATH)
+        p = pref.GetString('InspectorPath', '')
+        if p and os.path.isdir(p):
+            if p not in sys.path:
+                sys.path.insert(0, p)
+            return p
+    except Exception:
+        pass
+
+    # 2. Environment variable
+    env = os.environ.get('FREECAD_INSPECTOR_PATH', '')
+    if env and os.path.isdir(env):
+        if env not in sys.path:
+            sys.path.insert(0, env)
+        return env
+
+    # 3 & 4. Try well-known paths
+    for path in _FALLBACK_PATHS:
+        if os.path.isdir(path):
+            if path not in sys.path:
+                sys.path.insert(0, path)
+            return path
+
+    raise ImportError(
+        "Could not locate FC-tools/inspector. "
+        "Set FreeCAD preference Mod/AICopilot → InspectorPath or "
+        "env var FREECAD_INSPECTOR_PATH to the FC-tools directory."
+    )
+
+
+def _finding_to_dict(f) -> dict:
+    """Serialise a Finding to a plain dict safe for JSON."""
+    return {
+        "rule_id":    f.rule_id,
+        "severity":   f.severity.name,   # "ERROR" / "WARNING" / "INFO"
+        "objects":    list(f.objects),
+        "message":    f.message,
+        "value":      f.value,
+        "limit":      f.limit,
+        "suggestion": f.suggestion,
+        "context":    dict(f.context) if f.context else {},
+    }
+
+
+class InspectorOpsHandler(BaseHandler):
+    """Runs Inspector DRC checks against the active FreeCAD document."""
+
+    def run(self, args: dict[str, Any]) -> str:
+        """Run Inspector DRC and return findings as JSON.
+
+        Args (all optional):
+            profile_process  — "resin" | "laser" | "cnc_3axis" (default: model-only)
+            machine          — profile machine string (informational)
+            profile_params   — dict of parameter overrides for process rules
+            objects          — list of object names to check; default = all in doc
+            doc_name         — document name; default = active document
+        (model validity + robustness checks always run; process rules are added
+         only when profile_process is supplied.)
+
+        Returns JSON:
+            {
+              "summary": {"error": N, "warning": N, "info": N},
+              "findings": [ {rule_id, severity, objects, message, ...}, ... ],
+              "object_count": N,
+              "checked_objects": ["Obj1", "Obj2", ...],
+              "profile": "resin / AnyCubic M7 Pro" | "model-only",
+              "inspector_path": "..."
+            }
+        """
+        try:
+            inspector_path = _ensure_inspector_importable()
+        except ImportError as e:
+            return json.dumps({"error": str(e)})
+
+        try:
+            from inspector.findings import Profile
+            from inspector.runner import _default_rules, run_drc
+        except ImportError as e:
+            return json.dumps({"error": f"Failed to import inspector: {e}"})
+
+        # Resolve document
+        doc_name = args.get('doc_name') or ''
+        if doc_name:
+            doc = FreeCAD.getDocument(doc_name)
+            if not doc:
+                return json.dumps({"error": f"Document '{doc_name}' not found"})
+        else:
+            doc = FreeCAD.ActiveDocument
+            if not doc:
+                return json.dumps({"error": NO_ACTIVE_DOCUMENT_ERROR})
+
+        # Resolve objects. get_object() raises ValueError on an ambiguous
+        # Label rather than guessing (see its docstring) — a DRC scan that
+        # silently checked the wrong solid on a duplicate-label document
+        # would be worse than surfacing the ambiguity as an error. The
+        # async-dispatch wrapper around this method catches that and
+        # returns a clean {"error": ...} response, same as every other
+        # exception path here.
+        requested_names: list = args.get('objects') or []
+        if requested_names:
+            objects = []
+            missing = []
+            for name in requested_names:
+                obj = self.get_object(name, doc)
+                if obj:
+                    objects.append(obj)
+                else:
+                    missing.append(name)
+            if missing:
+                return json.dumps({"error": f"Objects not found: {missing}"})
+        else:
+            objects = list(doc.Objects)
+
+        # Build profile
+        process = args.get('profile_process') or ''
+        machine  = args.get('machine') or ''
+        params   = args.get('profile_params') or {}
+        if process:
+            profile = Profile(process=process, machine=machine, params=params)
+            profile_str = f"{process}" + (f" / {machine}" if machine else "")
+        else:
+            profile = None
+            profile_str = "model-only"
+
+        # Build rule list — always include model rules; add process rules if profile given
+        rules = _default_rules(profile)
+
+        # An unrecognized profile_process silently contributes ZERO process rules
+        # (the runner has no branch for it), so the DRC would quietly skip every
+        # process check while still reporting success. Detect that by comparing
+        # against the model-only rule set — behaviour-based, so it stays correct
+        # if the supported-process list changes upstream.
+        if profile is not None and len(rules) <= len(_default_rules(None)):
+            return json.dumps({
+                "error": (
+                    f"Unknown profile_process {process!r}: it adds no process-specific "
+                    f"rules, so only model checks would run. Use a supported process "
+                    f"(e.g. laser, resin, cnc_3axis) or omit profile_process."
+                )
+            })
+
+        # Run
+        result = run_drc(objects=objects, doc=doc, profile=profile, rules=rules)
+
+        findings_out = [_finding_to_dict(f) for f in result.findings]
+
+        return json.dumps({
+            "summary":         result.summary,
+            "findings":        findings_out,
+            "object_count":    len(objects),
+            "checked_objects": [getattr(o, 'Name', str(o)) for o in objects],
+            "profile":         profile_str,
+            "inspector_path":  inspector_path,
+        }, indent=2)
