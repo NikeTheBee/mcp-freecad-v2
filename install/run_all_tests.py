@@ -90,7 +90,10 @@ _SKIP_LINE = re.compile(r"^[A-Z0-9_]+_SKIP\b.*$", re.MULTILINE)
 
 def _run(cmd, env=None) -> tuple[bool, str]:
     try:
-        p = subprocess.run(cmd, capture_output=True, text=True, timeout=300, env=env)
+        # freecadcmd writes in the ANSI code page whatever PYTHONUTF8 says; a strict
+        # decode lost the WHOLE output on the first "Ø" (sentinels are ASCII).
+        p = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", timeout=300, env=env)
         return p.returncode == 0, (p.stdout or "") + (p.stderr or "")
     except Exception as e:  # noqa: BLE001
         return False, f"<runner error: {e}>"

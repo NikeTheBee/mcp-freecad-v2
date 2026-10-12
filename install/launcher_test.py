@@ -34,6 +34,17 @@ def main() -> int:
         assert r and r.get("result") == "2", r
         print("2. upstream auth: no/wrong token rejected, right token accepted: OK")
 
+        # trust rule: the configured exe's folder, or its bin\ (portable build's root stub)
+        sys.path.insert(0, str(LAUNCHER.parent))
+        import mcp_freecad_launch as launcher
+        import psutil
+        real = Path(psutil.Process(pid).exe())
+        assert launcher.trust_problem(pid, real) is None
+        assert launcher.trust_problem(pid, real.parent.parent / real.name) is None   # root stub
+        other = launcher.trust_problem(pid, Path(inst.home) / "bin" / real.name)
+        assert other and "outside the configured FreeCAD" in other, other
+        print("2b. trust: configured folder or its bin\\ accepted, any other folder refused: OK")
+
         sup = subprocess.Popen([str(VENV_PY), str(LAUNCHER), "--supervise", "60"],
                                env=inst.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                text=True)

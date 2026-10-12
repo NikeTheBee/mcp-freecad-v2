@@ -133,7 +133,10 @@ def trust_problem(pid: int, freecadcmd: Path) -> str | None:
         return f"cannot inspect pid {pid}: {e}"
     if exe.name.lower() not in FREECAD_NAMES:
         return f"pid {pid} is {exe.name}, not FreeCAD"
-    if exe.parent != freecadcmd.parent:
+    # The configured exe may be the portable build's root stub, which starts the
+    # real <root>\bin\freecadcmd.exe: accept the configured folder and its bin\.
+    allowed = {os.path.normcase(str(d)) for d in (freecadcmd.parent, freecadcmd.parent / "bin")}
+    if os.path.normcase(str(exe.parent)) not in allowed:
         return f"pid {pid} runs {exe}, outside the configured FreeCAD ({freecadcmd.parent})"
     me = psutil.Process().username()
     if user != me:
