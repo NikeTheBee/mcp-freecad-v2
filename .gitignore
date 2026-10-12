@@ -27,6 +27,7 @@ secrets.*
 /checkpoints/*.FCStd
 /checkpoints/*.FCStd[0-9]*
 /recovery/
+/renders/
 
 # Runtime output of examples/resume_between_sessions.py
 /examples/demo_state/

@@ -23,7 +23,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver import Image, MCPServer
 
 REPO = Path(__file__).resolve().parents[2]
 SERVER_DIR = REPO / "server"
@@ -42,7 +42,8 @@ _p = {str(SERVER_DIR)!r}
 if _p not in sys.path:
     sys.path.insert(0, _p)
 import FreeCAD
-from freecad_layers import state, verify, checkpoint, recovery, spec, analysis, bom, drawing, gate, fem
+from freecad_layers import (state, verify, checkpoint, recovery, spec, analysis, bom, drawing, gate,
+                            fem, render)
 """
 
 mcp = MCPServer(
@@ -215,6 +216,26 @@ _r = fem.static(_a['target'], _a['fixed'], _a['loads'], material=_a['material'],
 _out = fem.summary(_r)
 """, _timeout=600.0, target=target, fixed=fixed, loads=loads, material=material,
         mesh=mesh_size_mm, sf=min_safety_factor, dmax=max_displacement_mm, refine=refine)
+
+
+@mcp.tool()
+def render_views(targets: list[str], views: list[str] | None = None,
+                 path: str | None = None) -> list:
+    """Shaded front/top/right/iso views of one or more parts as ONE image (works headless).
+
+    Use on request, or at a milestone of a complex part/assembly - not after every step.
+    The picture is not a measurement: check/analyze remain the source of truth.
+    views: any of front, top, right, iso. path: optional .png (default <project>/renders/).
+    """
+    try:
+        r = _run("""
+_out = render.views(_a['targets'], _a['path'], which=_a['views'])
+""", _timeout=120.0, targets=targets, path=path, views=views or ["front", "top", "right", "iso"])
+    except FreeCADError as e:
+        return [f"ERROR {e}"]
+    png = Path(r["path"])
+    return [f"rendered {', '.join(r['views'])} of {', '.join(targets)} "
+            f"({r['triangles']} triangles, bbox {r['bbox']} mm) -> {png}", Image(path=png)]
 
 
 @mcp.tool()

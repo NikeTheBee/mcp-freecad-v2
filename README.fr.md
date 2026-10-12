@@ -18,7 +18,7 @@ au lieu de croire la lecture qu'en fait l'IA.
   jour d'origine (`python install/bootstrap.py --update-base`). Corrigés : trous dans un Body
   PartDesign, verdict « entièrement contrainte » des esquisses, réponses trop grosses qui bloquaient
   2 minutes ([`CHANGES-NikeTheBee.md`](server/freecad-mcp/CHANGES-NikeTheBee.md)).
-- **Couche de fiabilité** (`freecad-layers`, 14 outils) : verdicts OK/FAIL/UNKNOWN, contrat de
+- **Couche de fiabilité** (`freecad-layers`, 15 outils) : verdicts OK/FAIL/UNKNOWN, contrat de
   conception, analyse de pièce, **vrai calcul de résistance (CalculiX)**, checkpoints,
   sauvegarde/récupération, relance supervisée de FreeCAD, anti-usurpation du port, et FreeCAD
   prouve son identité avant toute commande.
@@ -37,9 +37,10 @@ Vous (langage naturel)
   → client IA (Claude Code / Claude Desktop / tout client MCP)
     ├─ `freecad`         lanceur (démarre/surveille FreeCAD, refuse un port usurpé)
     │                      → bridge freecad-mcp (blwfish v8.2.3, intégré + corrigé, ~39 outils)
-    └─ `freecad-layers`  14 outils de fiabilité : project_status · require · check · analyze · fem_static ·
-                          check_assembly · printability · record_step · checkpoint · recover ·
-                          bill_of_materials · drawing_sheet · pd_hole · project_init
+    └─ `freecad-layers`  15 outils de fiabilité : project_status · require · check · analyze · fem_static ·
+                          render_views · check_assembly · printability · record_step ·
+                          checkpoint · recover · bill_of_materials · drawing_sheet · pd_hole ·
+                          project_init
          → FreeCAD 1.1 headless sur localhost:23456 (jeton) + ateliers greffés
 ```
 - **Le code décide, pas l'IA.** `check` répond `OK`, `FAIL` ou `UNKNOWN` (un contrôle qui n'a pas pu
@@ -81,6 +82,7 @@ documentées. **Expérimental** = marche sur les cas testés seulement.
 | Modélisation | PartDesign (esquisse, Pad/Pocket, vrais trous dans le Body), variantes par feuille de calcul | **Stable** |
 | Fabrication | STL conditionné à l'étanchéité + imprimabilité FDM · STEP/IGES · réparation de maillage | **Stable** |
 | Documentation | Nomenclature (vraies pièces, liens, CSV) | **Stable** |
+| Contrôle visuel | `render_views` : vues face/dessus/droite/iso ombrées en une image, sans interface, à la demande | **Bêta** |
 | Plans 2D | Vues TechDraw, échelle ISO auto, contrôle de mise en page, cotes d'encombrement → DXF | **Bêta** (PDF via l'interface) |
 | Mécanismes | Assemblages (placement), engrenages droits, ajustements, cinématique (bielle-manivelle, quatre barres) | **Bêta** |
 | Calcul de structure | `fem_static` : CalculiX statique linéaire, déplacement, von Mises, coefficient de sécurité, contrôle de convergence (F·L³/3EI à 0,3 % près) | **Bêta** (élastique linéaire) |

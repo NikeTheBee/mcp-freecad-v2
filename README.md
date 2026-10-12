@@ -19,7 +19,7 @@ trusting the AI's reading of it.
   (`python install/bootstrap.py --update-base`). Fixed in it: holes in a PartDesign Body, sketch
   "fully constrained" verdict, oversized replies that hung for 2 minutes
   ([`CHANGES-NikeTheBee.md`](server/freecad-mcp/CHANGES-NikeTheBee.md)).
-- **Reliability layer** (`freecad-layers`, 14 tools): OK/FAIL/UNKNOWN verdicts, design contract,
+- **Reliability layer** (`freecad-layers`, 15 tools): OK/FAIL/UNKNOWN verdicts, design contract,
   part analysis, **real FEM stress analysis (CalculiX)**, checkpoints, autosave/recovery,
   supervised FreeCAD restart, anti-squatting, and FreeCAD proves its identity before any command.
 - **New licence**: PolyForm Noncommercial (free to use and modify, not to sell).
@@ -37,9 +37,10 @@ You (natural language)
   → AI client (Claude Code / Claude Desktop / any MCP client)
     ├─ `freecad`         launcher (starts/supervises FreeCAD, refuses a hijacked port)
     │                      → freecad-mcp bridge (blwfish v8.2.3, vendored + fixed, ~39 tools)
-    └─ `freecad-layers`  14 reliability tools: project_status · require · check · analyze · fem_static ·
-                          check_assembly · printability · record_step · checkpoint · recover ·
-                          bill_of_materials · drawing_sheet · pd_hole · project_init
+    └─ `freecad-layers`  15 reliability tools: project_status · require · check · analyze · fem_static ·
+                          render_views · check_assembly · printability · record_step ·
+                          checkpoint · recover · bill_of_materials · drawing_sheet · pd_hole ·
+                          project_init
          → FreeCAD 1.1 headless on localhost:23456 (token auth) + domain workbench grafts
 ```
 - **The code decides, not the AI.** `check` returns `OK`, `FAIL` or `UNKNOWN` (a check that could
@@ -82,6 +83,7 @@ documented. **Experimental** = works on the tested cases only.
 | Core modeling | PartDesign (sketch, Pad/Pocket, real holes in the Body), spreadsheet variants | **Stable** |
 | Fabrication | STL gated on watertight + FDM printability (bed, walls, overhangs) · STEP/IGES · mesh repair | **Stable** |
 | Documentation | Bill of materials (real parts, links, CSV) | **Stable** |
+| Visual check | `render_views`: shaded front/top/right/iso views in one image, headless, on request | **Beta** |
 | 2D plans | TechDraw views, auto ISO scale, page-fit check, overall dims → DXF (headless) | **Beta** (PDF needs the GUI) |
 | Mechanism | Assemblies (placement), spur gears, fits, linkage kinematics (slider-crank, four-bar) | **Beta** |
 | Structural FEM | `fem_static`: CalculiX linear static, displacement, von Mises, safety factor, convergence check (matches F·L³/3EI within 0.3 %) | **Beta** (linear elastic only) |

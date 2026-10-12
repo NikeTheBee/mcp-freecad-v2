@@ -1,0 +1,156 @@
+"""Headless shaded views of parts: front, top, right and isometric in one PNG.
+
+FreeCAD's 3D viewer needs the GUI. This module renders without it:
+- the shape is tessellated (OCCT);
+- each view is an orthographic projection;
+- faces are flat-shaded and painted back to front with matplotlib (Agg).
+That gives a picture of what the part looks like, good enough to catch
+"right numbers, wrong part". Each view shows the bounding-box size along its
+two axes. The picture is not a measurement: `check`/`analyze` remain the
+source of truth.
+
+Use it on request, or at a milestone of a complex part or assembly (CLAUDE.md:
+no screenshots by default).
+"""
+from __future__ import annotations
+
+import math
+import time
+from typing import Any, Dict, List, Optional, Sequence
+
+import FreeCAD as App
+
+from . import project_dir, safe_out_path, verify
+
+# view -> (camera forward, up). Screen right = forward x up.
+_VIEWS = {
+    "front": ((0, 1, 0), (0, 0, 1)),     # from -Y: X right, Z up
+    "top":   ((0, 0, -1), (0, 1, 0)),    # from +Z: X right, Y up
+    "right": ((-1, 0, 0), (0, 0, 1)),    # from +X: Y right, Z up
+    "iso":   ((-1, 1, -1), (0, 0, 1)),   # from (+1, -1, +1), like FreeCAD's isometric
+}
+_AXIS_NAMES = {(1, 0, 0): "X", (0, 1, 0): "Y", (0, 0, 1): "Z"}
+_COLORS = [(0.55, 0.68, 0.85), (0.90, 0.62, 0.35), (0.55, 0.80, 0.55), (0.85, 0.55, 0.65),
+           (0.75, 0.70, 0.45), (0.60, 0.60, 0.85)]
+
+
+def _unit(v):
+    n = math.sqrt(sum(c * c for c in v))
+    return tuple(c / n for c in v)
+
+
+def _cross(a, b):
+    return (a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0])
+
+
+def _dot(a, b):
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+
+
+def _frame(view: str):
+    fwd, up = _VIEWS[view]
+    fwd = _unit(fwd)
+    right = _unit(_cross(fwd, up))
+    up = _unit(_cross(right, fwd))
+    return fwd, right, up
+
+
+def _mesh(shape, tol: float):
+    pts, tris = shape.tessellate(tol)
+    P = [(p.x, p.y, p.z) for p in pts]
+    return P, tris
+
+
+def views(targets, path: Optional[str] = None, which: Sequence[str] = ("front", "top", "right", "iso"),
+          size_px: int = 1000, overwrite: bool = False) -> Dict[str, Any]:
+    """Render `targets` (one name/object or a list) to a PNG grid.
+
+    Returns {path, views, triangles, bbox}. `path` defaults to
+    <project>/renders/<names>_<time>.png (gated by safe_out_path).
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.collections import PolyCollection
+
+    objs = [verify._resolve(t) for t in (targets if isinstance(targets, (list, tuple)) else [targets])]
+    shapes = []
+    for o in objs:
+        shp = getattr(o, "Shape", None)
+        if shp is None or not hasattr(shp, "isNull") or shp.isNull() or not shp.Faces:
+            raise ValueError(f"{o.Name} has no faces to render")
+        shapes.append(shp)
+    bad = [v for v in which if v not in _VIEWS]
+    if bad:
+        raise ValueError(f"unknown view(s) {bad}; use {sorted(_VIEWS)}")
+
+    bb = shapes[0].BoundBox
+    for s in shapes[1:]:
+        bb.add(s.BoundBox)
+    tol = max(bb.DiagonalLength / 400.0, 1e-3)
+    meshes = [_mesh(s, tol) for s in shapes]
+    n_tris = sum(len(t) for _, t in meshes)
+
+    names = "_".join(o.Name for o in objs)[:60]
+    if path is None:
+        path = project_dir() / "renders" / f"{names}_{time.strftime('%Y%m%d-%H%M%S')}.png"
+    out = safe_out_path(path, {".png"}, overwrite=overwrite)
+
+    cols = 2 if len(which) > 1 else 1
+    rows = math.ceil(len(which) / cols)
+    inch = size_px / 100.0
+    fig, axes = plt.subplots(rows, cols, figsize=(inch, inch * rows / cols), dpi=100,
+                             squeeze=False)
+    for k, view in enumerate(which):
+        ax = axes[k // cols][k % cols]
+        fwd, right, up = _frame(view)
+        # key light from the viewer's upper left: top, front and side faces read apart
+        cam_light = _unit(tuple(-0.5 * f + 0.8 * u - 0.3 * r for f, u, r in zip(fwd, up, right)))
+        polys, colors, depths = [], [], []
+        for i, (P, tris) in enumerate(meshes):
+            base = _COLORS[i % len(_COLORS)]
+            for a, b, c in tris:
+                pa, pb, pc = P[a], P[b], P[c]
+                n = _cross(tuple(pb[j] - pa[j] for j in range(3)), tuple(pc[j] - pa[j] for j in range(3)))
+                ln = math.sqrt(_dot(n, n))
+                if ln < 1e-15:
+                    continue
+                n = (n[0] / ln, n[1] / ln, n[2] / ln)
+                if _dot(n, fwd) > 0:          # facing away from the camera (closed solids)
+                    continue
+                shade = 0.45 + 0.55 * max(0.0, _dot(n, cam_light))
+                polys.append([(_dot(p, right), _dot(p, up)) for p in (pa, pb, pc)])
+                colors.append(tuple(min(1.0, ch * shade) for ch in base))
+                depths.append(_dot(((pa[0] + pb[0] + pc[0]) / 3, (pa[1] + pb[1] + pc[1]) / 3,
+                                    (pa[2] + pb[2] + pc[2]) / 3), fwd))
+        order = sorted(range(len(polys)), key=lambda j: -depths[j])   # far first
+        pc = PolyCollection([polys[j] for j in order], facecolors=[colors[j] for j in order],
+                            edgecolors=[colors[j] for j in order], linewidths=0.8)  # no seams
+        ax.add_collection(pc)
+        corners = [(x, y, z) for x in (bb.XMin, bb.XMax) for y in (bb.YMin, bb.YMax)
+                   for z in (bb.ZMin, bb.ZMax)]
+        us = [_dot(c, right) for c in corners]
+        vs = [_dot(c, up) for c in corners]
+        pad = 0.06 * max(max(us) - min(us), max(vs) - min(vs), 1e-6)
+        ax.set_xlim(min(us) - pad, max(us) + pad)
+        ax.set_ylim(min(vs) - pad, max(vs) + pad)
+        ax.set_aspect("equal")
+        ax.set_xticks([])
+        ax.set_yticks([])
+        rname = _AXIS_NAMES.get(tuple(round(c) for c in right))
+        uname = _AXIS_NAMES.get(tuple(round(c) for c in up))
+        if rname and uname:
+            size = {"X": bb.XLength, "Y": bb.YLength, "Z": bb.ZLength}
+            ax.set_title(f"{view}: {rname} {size[rname]:.4g} x {uname} {size[uname]:.4g} mm",
+                         fontsize=10)
+        else:
+            ax.set_title(f"{view}", fontsize=10)
+    for k in range(len(which), rows * cols):
+        axes[k // cols][k % cols].axis("off")
+    fig.suptitle(", ".join(o.Label for o in objs)
+                 + f"  (bbox {bb.XLength:.4g} x {bb.YLength:.4g} x {bb.ZLength:.4g} mm)", fontsize=11)
+    fig.tight_layout()
+    fig.savefig(str(out))
+    plt.close(fig)
+    return {"path": str(out), "views": list(which), "triangles": n_tris,
+            "bbox": [round(bb.XLength, 3), round(bb.YLength, 3), round(bb.ZLength, 3)]}

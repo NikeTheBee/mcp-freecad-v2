@@ -55,6 +55,7 @@ jobs:
             freecad=1.1
             calculix
             gmsh
+            matplotlib-base
 
       - name: Run core test suite
         shell: bash -el {0}

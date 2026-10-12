@@ -74,6 +74,11 @@ async def run(inst: Instance, project: str, out: str) -> None:
                              loads=[{"faces": "xmax", "force_N": 500, "direction": [0, 0, -1]}],
                              max_displacement_mm=0.01)
             assert txt.startswith("FAIL FEM static") and "max displacement" in txt, txt
+            res = await s.call_tool("render_views", {"targets": ["Body"], "views": ["top", "iso"]})
+            kinds = [c.type for c in res.content]
+            print("-> render_views:", kinds, _t(res)[:120])
+            assert kinds == ["text", "image"] and res.content[1].mime_type == "image/png", kinds
+            assert len(res.content[1].data) > 10000, len(res.content[1].data)
             txt = await call("bill_of_materials")
             assert "1 distinct part(s), 1 total" in txt, txt
             txt = await call("drawing_sheet", target="Body",

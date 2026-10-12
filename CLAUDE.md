@@ -55,8 +55,8 @@ reliability tools — prefer them over `execute_python`).
 - Fabrication outputs: STL only after `printability`/`check` OK; **never G-code** (`skill-cam`).
 - "Will it hold?": `fem_static` (CalculiX) with the user's supports, loads and material — never guess
   a strength; report the safety factor and its limits (linear elastic only, see `skill-fem`).
-- Text-only feedback by default. Screenshots only on request or for a complex part/assembly at a milestone
-  when measurements alone can't settle it.
+- Text-only feedback by default. Pictures only on request or for a complex part/assembly at a milestone
+  when measurements alone can't settle it: `render_views` (front/top/right/iso in one image, headless).
 
 ## Anti-patterns
 - Don't take screenshots by default.
