@@ -1,0 +1,394 @@
+"""
+Parametric Modeling Helpers for FreeCAD Building Models
+
+This module provides helper functions to reduce repetitive parametric modeling tasks:
+- Position sketches by parameter (e.g., half-buildingWidth)
+- Extrude sketches with parameter-driven thickness/reversal
+- Create punchout arrays and cut them from walls
+- Clone and position master sketches
+
+Usage:
+  Import this into FreeCAD's Python console or macro editor, then call functions like:
+    ph.sketch_position(sketch_name="WallLeft", x_offset="buildingWidth/2", reverse_x=True)
+    ph.sketch_extrude(sketch_name="WallLeft", depth="wallThickness", reverse=True)
+    ph.create_punchout_array(base_sketch="WindowMaster", wall_face="WallRight",
+                              array_count=4, spacing="bayWidth")
+"""
+
+import FreeCAD as App
+from FreeCAD import Vector
+
+
+def _num_to_col(num):
+    """1-based column number -> spreadsheet column letters ('A', 'Z', 'AA',
+    ...). get_param's cell-scan fallback used to build its column list via
+    string.ascii_uppercase[:max_col], which silently tops out at 26 --
+    slicing a 26-char string past its length is a no-op, so a spreadsheet
+    with more than 26 real columns had every parameter beyond column Z
+    silently unreachable through this fallback. Same Excel-style
+    multi-letter addressing AICopilot/handlers/spreadsheet_ops.py already
+    implements (kept as a local copy here rather than importing across
+    packages, since this module is meant to be usable standalone from
+    FreeCAD's own Python console -- see this file's module docstring)."""
+    col = ''
+    while num > 0:
+        num -= 1
+        col = chr(num % 26 + ord('A')) + col
+        num //= 26
+    return col
+
+
+class ParametricHelpers:
+    """Helper class for parametric building model workflows."""
+
+    def __init__(self, doc=None):
+        """Initialize with active document or specified document."""
+        self.doc = doc or App.activeDocument()
+        if not self.doc:
+            raise ValueError("No active FreeCAD document. Open a document first.")
+        self.params = self._get_params()
+
+    def _get_params(self):
+        """Get the params spreadsheet (handles both local and linked)."""
+        for obj in self.doc.Objects:
+            if "Spreadsheet" in obj.TypeId:
+                return obj
+            elif obj.TypeId == "App::Link" and "params" in obj.Label.lower():
+                return obj.LinkedObject
+        raise ValueError("No params spreadsheet found. Make sure Skeleton is linked.")
+
+    def get_param(self, alias):
+        """Get parameter value by alias. Returns float or string."""
+        try:
+            # Try direct alias lookup
+            if hasattr(self.params, alias):
+                val = getattr(self.params, alias)
+                # If it's a Quantity, get the value in mm
+                if hasattr(val, 'Value'):
+                    return val.Value
+                return float(val)
+        except Exception:
+            pass
+
+        # Try cell-by-cell lookup using the sheet's own dimensions when available
+        try:
+            max_row = self.params.rows() if callable(getattr(self.params, 'rows', None)) else None
+            max_col = self.params.columns() if callable(getattr(self.params, 'columns', None)) else None
+        except Exception:
+            max_row, max_col = None, None
+        # rows()/columns() are the real, authoritative sheet dimensions when
+        # available -- scan the whole thing, no heuristic needed. Only fall
+        # back to a bounded guess (10000 rows) plus the proximity-based
+        # early-break when the real dimensions aren't available at all,
+        # since guessing 10000 rows for what's usually a small parameter
+        # sheet is what the break exists to bound, not a reason to also cap
+        # a REAL, known row count -- that silently missed parameters placed
+        # more than 50 empty rows below the last aliased cell.
+        have_real_dims = max_row is not None and max_col is not None
+        if not have_real_dims:
+            max_row, max_col = max_row or 10000, max_col or 26
+        cols = [_num_to_col(n) for n in range(1, max_col + 1)]
+        last_hit_row = 0
+        for row in range(1, max_row + 1):
+            if not have_real_dims and row > last_hit_row + 50 and row > 1:
+                break
+            for col in cols:
+                cell_addr = f"{col}{row}"
+                try:
+                    cell_alias = self.params.getAlias(cell_addr)
+                    if cell_alias:
+                        last_hit_row = row
+                        if cell_alias == alias:
+                            return self.params.get(cell_addr).Value
+                except Exception:
+                    pass
+
+        raise ValueError(f"Parameter '{alias}' not found in spreadsheet")
+
+    def evaluate_expr(self, expr):
+        """Evaluate a parameter expression like 'buildingWidth/2' or '10 mm'."""
+        # If it's already a number, return it
+        try:
+            return float(expr)
+        except (ValueError, TypeError):
+            pass
+
+        # Substitute each identifier token with its parameter value in a single
+        # pass via re.sub. Using str.replace per token is substring-based and
+        # corrupts identifiers that contain other identifiers as prefixes
+        # (e.g. param "w" mangling identifier "width"). A re.sub callback over
+        # the same \b...\w*\b token pattern operates on whole identifiers and
+        # never revisits previously substituted text.
+        import re
+
+        def _replace(match):
+            token = match.group(0)
+            try:
+                return str(self.get_param(token))
+            except ValueError:
+                # Not a parameter, might be a unit like "mm" or "ft" or an
+                # identifier the eval below will catch.
+                return token
+
+        result_expr = re.sub(r'\b[a-zA-Z_]\w*\b', _replace, expr)
+
+        # Restricted eval: disable builtins to prevent arbitrary code execution.
+        # Only numeric literals and arithmetic operators should remain after token substitution.
+        try:
+            return eval(result_expr, {"__builtins__": {}}, {})
+        except Exception as e:
+            raise ValueError(f"Failed to evaluate expression '{expr}': {e}") from e
+
+    def get_object(self, name):
+        """Get object by internal Name or Label.
+
+        Tries internal Name first (unique by construction), then falls back
+        to Label search. FreeCAD does NOT enforce Label uniqueness — a
+        first-match loop silently risks operating on the wrong solid on a
+        duplicate-label document (the anti-pattern
+        AICopilot.handlers.base.BaseHandler.get_object() and this module's
+        own sibling, helpers/window_door_helpers.py, were both hardened
+        against; this copy hadn't been). Raise on ambiguity instead of
+        guessing.
+        """
+        obj = self.doc.getObject(name)
+        if obj:
+            return obj
+        matches = [o for o in self.doc.Objects if o.Label == name]
+        if not matches:
+            raise ValueError(f"Object '{name}' not found")
+        if len(matches) > 1:
+            names = [m.Name for m in matches]
+            raise ValueError(
+                f"Ambiguous label '{name}': {len(matches)} objects share this "
+                f"label ({', '.join(names)}). Use the internal Name to disambiguate."
+            )
+        return matches[0]
+
+    # ========== SKETCH OPERATIONS ==========
+
+    def sketch_position(self, sketch_name, x_offset=None, y_offset=None, z_offset=None,
+                       reverse_x=False, reverse_y=False, reverse_z=False):
+        """
+        Position a sketch by applying offsets (in mm or as expressions like 'buildingWidth/2').
+        Reverse flags flip the direction.
+
+        Example:
+            sketch_position("WallLeft", x_offset="buildingWidth/2", reverse_x=True)
+            → places sketch at x = -buildingWidth/2
+        """
+        sketch = self.get_object(sketch_name)
+
+        x = self.evaluate_expr(x_offset) if x_offset else 0
+        y = self.evaluate_expr(y_offset) if y_offset else 0
+        z = self.evaluate_expr(z_offset) if z_offset else 0
+
+        if reverse_x:
+            x = -x
+        if reverse_y:
+            y = -y
+        if reverse_z:
+            z = -z
+
+        sketch.Placement.Base = Vector(x, y, z)
+        self.doc.recompute()
+        return sketch
+
+    def sketch_extrude(self, sketch_name, depth, reverse=False, name=None):
+        """
+        Extrude a sketch by a parameter-driven depth.
+        If reverse=True, extrudes in negative direction.
+
+        Example:
+            sketch_extrude("WallLeft", depth="wallThickness", reverse=True)
+        """
+        sketch = self.get_object(sketch_name)
+        depth_val = self.evaluate_expr(depth)
+
+        if reverse:
+            depth_val = -depth_val
+
+        extrude = self.doc.addObject("Part::Extrusion", name or f"{sketch_name}_Extrude")
+        extrude.Base = sketch
+        extrude.Dir = Vector(0, 0, 1)
+        extrude.Solid = True
+        extrude.TaperAngle = 0
+        extrude.TaperAngle2 = 0
+        extrude.Symmetric = False
+        extrude.SymmetricReverse = False
+        extrude.LengthReverse = False
+        extrude.Length = abs(depth_val)
+
+        if depth_val < 0:
+            extrude.Reversed = True
+
+        self.doc.recompute()
+        return extrude
+
+    def sketch_from_master(self, master_label, new_sketch_name,
+                          x_offset=None, y_offset=None, z_offset=None):
+        """
+        Create a new sketch by importing geometry from a master sketch and positioning it.
+
+        Example:
+            sketch_from_master("Master XY", "EastWall",
+                              x_offset="buildingWidth/2")
+        """
+        # Find the master sketch
+        master = None
+        for obj in self.doc.Objects:
+            if obj.Label == master_label and "Sketch" in obj.TypeId:
+                master = obj
+                break
+
+        if not master:
+            raise ValueError(f"Master sketch '{master_label}' not found")
+
+        # Create new sketch
+        new_sketch = self.doc.addObject("Sketcher::SketchObject", new_sketch_name)
+        new_sketch.Label = new_sketch_name
+
+        # Copy geometry from master by adding external geometry references
+        # (This requires the master to be in the same doc or imported)
+        # For now, position and return—user will copy geometry manually or via UI
+
+        self.sketch_position(new_sketch_name, x_offset, y_offset, z_offset)
+        return new_sketch
+
+    # ========== PUNCHOUT OPERATIONS ==========
+
+    def create_punchout_array(self, base_sketch_name, wall_object_name,
+                             array_count, spacing,
+                             cut_immediately=True, name_prefix=None):
+        """
+        Create an array of punchouts and optionally cut from a wall.
+
+        Workflow:
+          1. Clone the base punchout sketch
+          2. Create array copies (spaced by 'spacing' parameter)
+          3. Extrude each to a cutting solid
+          4. Union into single cutting body
+          5. Cut from wall
+
+        Example:
+            create_punchout_array("WindowMaster", "EastWall",
+                                 array_count=4, spacing="bayWidth",
+                                 cut_immediately=True)
+        """
+        base_sketch = self.get_object(base_sketch_name)
+        wall = self.get_object(wall_object_name)
+        prefix = name_prefix or base_sketch_name.replace("Master", "")
+        spacing_val = self.evaluate_expr(spacing)
+
+        # Step 1: Create array of cloned sketches
+        clones = []
+        for i in range(array_count):
+            offset = i * spacing_val
+            clone_name = f"{prefix}Array{i}"
+
+            # Clone the sketch
+            clone = self.doc.addObject("Part::Clone", clone_name)
+            clone.Source = base_sketch
+            clone.Label = clone_name
+
+            # Position it
+            clone.Placement.Base = Vector(offset, 0, 0)
+            clones.append(clone)
+
+        # Step 2: Extrude each to a cutting solid
+        # (This depends on wall orientation—for now, extrude in Z)
+        extrusions = []
+        for i, clone in enumerate(clones):
+            extrude_name = f"{prefix}CutSolid{i}"
+            # Create a simple extrusion for now
+            # In practice, you'd measure the wall thickness
+            ext = self.doc.addObject("Part::Extrusion", extrude_name)
+            ext.Base = clone
+            ext.Dir = Vector(0, 0, 1)
+            ext.Length = 20  # Arbitrary depth; should match wall
+            ext.Solid = True
+            extrusions.append(ext)
+
+        # Step 3: Union all cutting solids
+        if len(extrusions) == 1:
+            cutting_body = extrusions[0]
+        else:
+            cutting_body = self.doc.addObject("Part::MultiFuse", f"{prefix}CutArray")
+            cutting_body.Shapes = extrusions
+
+        cutting_body.Label = f"{prefix}CutArray"
+
+        # Step 4: Cut from wall (if requested)
+        if cut_immediately:
+            cut_obj = self.doc.addObject("Part::Cut", f"{wall_object_name}_Cut_{prefix}")
+            cut_obj.Base = wall
+            cut_obj.Tool = cutting_body
+            cut_obj.Label = f"{wall_object_name} with {prefix} Punchouts"
+            self.doc.recompute()
+            return cut_obj
+
+        self.doc.recompute()
+        return cutting_body
+
+    # ========== WALL OPERATIONS ==========
+
+    def create_wall(self, sketch_name, thickness_param="wallThickness",
+                   reverse=False, name=None):
+        """
+        Convenience function: extrude a wall sketch with standard parameters.
+
+        Example:
+            create_wall("WallEast", thickness_param="wallThickness", reverse=True)
+        """
+        return self.sketch_extrude(sketch_name, depth=thickness_param,
+                                  reverse=reverse, name=name)
+
+    def position_wall(self, sketch_name, x_offset=None, y_offset=None, z_offset=None,
+                     reverse_x=False, reverse_y=False, reverse_z=False):
+        """
+        Convenience function: position a wall sketch.
+        """
+        return self.sketch_position(sketch_name, x_offset, y_offset, z_offset,
+                                   reverse_x, reverse_y, reverse_z)
+
+
+# ========== CONVENIENCE FUNCTIONS (call these from macro/console) ==========
+
+def init_helpers(doc=None):
+    """Initialize and return helper instance. Use this to start working."""
+    return ParametricHelpers(doc)
+
+
+# Quick helpers for common tasks
+def pos(sketch_name, x=None, y=None, z=None, rx=False, ry=False, rz=False):
+    """Shorthand: position a sketch."""
+    ph = ParametricHelpers()
+    return ph.sketch_position(sketch_name, x, y, z, rx, ry, rz)
+
+
+def extrude(sketch_name, depth, reverse=False, name=None):
+    """Shorthand: extrude a sketch."""
+    ph = ParametricHelpers()
+    return ph.sketch_extrude(sketch_name, depth, reverse, name)
+
+
+def wall(sketch_name, x=None, y=None, z=None, thickness="wallThickness",
+        reverse=False, reverse_extrude=False, rx=False, ry=False, rz=False):
+    """Shorthand: position and extrude a wall in one call."""
+    ph = ParametricHelpers()
+    if x or y or z:
+        ph.sketch_position(sketch_name, x, y, z, rx, ry, rz)
+    return ph.sketch_extrude(sketch_name, thickness, reverse_extrude, name=f"{sketch_name}_Wall")
+
+
+def punchout(base_sketch, wall_obj, count, spacing, prefix=None, cut=True):
+    """Shorthand: create and cut a punchout array."""
+    ph = ParametricHelpers()
+    return ph.create_punchout_array(base_sketch, wall_obj, count, spacing, cut, prefix)
+
+
+if __name__ == "__main__":
+    # Example usage (if run as script)
+    ph = init_helpers()
+    print(f"Initialized helpers for document: {ph.doc.Name}")
+    print(f"Found params: {ph.get_param('scale')}, {ph.get_param('wallThickness')}")

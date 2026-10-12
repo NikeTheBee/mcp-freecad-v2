@@ -1,0 +1,156 @@
+name: Minimal Repro - Expat Crash
+
+# One-off diagnostic workflow, not part of normal CI (workflow_dispatch
+# only). Tests whether the XML_ParseBuffer symbol collision documented in
+# KNOWN_ISSUES.md reproduces with a bare FreeCADCmd + Python script -- no
+# freecad-mcp socket server, no async job dispatch, none of our own code
+# in the loop at all. Written to close the reproduction gap in the
+# upstream FreeCAD bug report draft (our only confirmed repro so far goes
+# through freecad-mcp's own test suite).
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "FreeCAD weekly release tag to test"
+        required: true
+        default: "weekly-2026.07.15"
+        type: string
+
+jobs:
+  repro:
+    runs-on: ubuntu-latest
+    name: "Minimal repro on ${{ inputs.tag }}"
+
+    steps:
+      # Needed so the local composite action below (a file in this repo) is
+      # present on the runner. This workflow never touches freecad-mcp's own
+      # code otherwise -- the repro script is written inline and run
+      # standalone, with wire-module left at its default 'false'.
+      - uses: actions/checkout@v4
+
+      - name: Set up FreeCAD AppImage
+        uses: ./.github/actions/setup-freecad-appimage
+        with:
+          tag: ${{ inputs.tag }}
+          wire-module: 'false'
+          install-gdb: 'true'
+
+      - name: Write minimal repro script
+        run: |
+          cat > ~/minimal_repro.py <<'PYEOF'
+          import sys
+
+          def loaded_libs():
+              with open("/proc/self/maps") as f:
+                  return set(line.split()[-1] for line in f if ".so" in line)
+
+          def report(label):
+              libs = loaded_libs()
+              coin = [l for l in libs if "libCoin" in l]
+              print(f"[{label}] libCoin loaded: {bool(coin)} {coin}", flush=True)
+
+          report("startup, before any FreeCAD import")
+
+          import FreeCAD
+          report("after import FreeCAD")
+          print(f"FreeCAD.GuiUp: {FreeCAD.GuiUp}", flush=True)
+
+          # Second round (previous run of this workflow) replicated
+          # create_tool()'s exact call chain and STILL didn't crash or load
+          # libCoin. The one thing that script never did: freecad-mcp's own
+          # handler modules -- primitives.py, partdesign_ops.py,
+          # document_ops.py, view_ops.py -- do an *unconditional*
+          # `import FreeCADGui` at module level (KNOWN_ISSUES.md's
+          # 2026-07-20 note), regardless of FreeCAD.GuiUp. Our real
+          # headless_server.py imports all handler modules at startup, so
+          # every real run does this even for operations that never touch
+          # the GUI. Test directly: does importing FreeCADGui in headless
+          # mode load libCoin at all?
+          try:
+              import FreeCADGui
+              report("after import FreeCADGui (headless, GuiUp=False)")
+          except Exception as e:
+              print(f"FreeCADGui import failed: {e!r}", flush=True)
+
+          # First round (previous run of this workflow): importing Path and
+          # ToolBit alone never loaded libCoin and never crashed. This round
+          # replicates freecad-mcp's actual create_tool() call chain
+          # (AICopilot/handlers/cam_tools.py) exactly -- import, build a
+          # document, ToolBit.from_dict(), attach_to_doc() -- since the
+          # earlier round only tested imports, not execution.
+          from Path.Tool.Bit import ToolBit
+          report("after from Path.Tool.Bit import ToolBit")
+
+          doc = FreeCAD.newDocument("ReproDoc")
+          report("after FreeCAD.newDocument")
+
+          tool_dict = {
+              "version": 2,
+              "name": "6mm Endmill",
+              "shape": "endmill",
+              "attribute": {},
+              "parameter": {"Diameter": "6.0 mm"},
+          }
+          tool_bit = ToolBit.from_dict(tool_dict)
+          report("after ToolBit.from_dict")
+
+          tool_obj = tool_bit.attach_to_doc(doc=doc)
+          report("after attach_to_doc")
+          print(f"Created: {tool_obj.Label}", flush=True)
+
+          report("final check before XML test")
+
+          print("=== Testing plain xml.etree.ElementTree.fromstring ===", flush=True)
+          import xml.etree.ElementTree as ET
+          result = ET.fromstring("<a>test</a>")
+          print(f"Plain XML parse succeeded: {result}", flush=True)
+
+          print("=== Testing FreeCAD-document-shaped XML content ===", flush=True)
+          doc_xml = (
+              "<?xml version='1.0' encoding='utf-8'?>\n"
+              "<!-- FreeCAD Document, see https://www.freecad.org -->\n"
+              '<Document SchemaVersion="4" ProgramVersion="1.2 (Git)" '
+              'FileVersion="1">\n</Document>\n'
+          )
+          result2 = ET.fromstring(doc_xml)
+          print(f"Document-shaped XML parse succeeded: {result2}", flush=True)
+
+          print("=== ALL TESTS PASSED, NO CRASH ===", flush=True)
+          PYEOF
+          cat ~/minimal_repro.py
+
+      - name: Run under gdb (same trap technique as conftest.py's gdb-trap)
+        run: |
+          SQUASHFS="$HOME/freecad-appimage/squashfs-root"
+          FREECADCMD="$SQUASHFS/AppRun"
+
+          # gdb's --args loads its first argument as an executable image
+          # for symbols -- it errors ("not in executable format") if that
+          # argument is a shebang script rather than a real ELF binary.
+          # conftest.py's _spawn_headless hit exactly this with our own
+          # generated wrapper script; AppRun itself may or may not be one,
+          # so check rather than assume either way.
+          GDB_TARGET=("$FREECADCMD" freecadcmd "$HOME/minimal_repro.py")
+          if [ "$(head -c 2 "$FREECADCMD")" = "#!" ]; then
+            INTERPRETER=$(head -1 "$FREECADCMD" | tail -c +3)
+            echo "AppRun is a shebang script, interpreter: $INTERPRETER"
+            GDB_TARGET=($INTERPRETER "$FREECADCMD" freecadcmd "$HOME/minimal_repro.py")
+          else
+            echo "AppRun is a real binary, launching directly"
+          fi
+
+          timeout -s KILL 90 \
+            gdb -batch \
+              -ex "set follow-exec-mode same" \
+              -ex "handle all nostop noprint pass" \
+              -ex "handle SIGSEGV stop print nopass" \
+              -ex "run" \
+              -ex "echo \n===GDB-STOPPED===\n" \
+              -ex "info program" \
+              -ex "bt full" \
+              -ex "quit" \
+              --args "${GDB_TARGET[@]}" \
+            2>&1 | tee gdb-repro-output.txt
+          echo "--- exit code: $? ---"
+        timeout-minutes: 3

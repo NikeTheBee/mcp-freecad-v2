@@ -1,0 +1,452 @@
+"""
+Tests for mcp_bridge_framing.py — the bridge-side message framing protocol.
+
+No FreeCAD dependency — these test pure socket protocol logic.
+"""
+
+import json
+import os
+import socket
+import struct
+import sys
+import threading
+
+import pytest
+
+# Add project root to path so we can import mcp_bridge_framing
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+
+from mcp_bridge_framing import MAX_MESSAGE_SIZE, _recv_exact, receive_message, send_message
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def make_socketpair():
+    """Create a connected pair of sockets for testing."""
+    server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    path = f"/tmp/test_framing_{os.getpid()}.sock"
+    if os.path.exists(path):
+        os.remove(path)
+    server.bind(path)
+    server.listen(1)
+
+    client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    client.connect(path)
+    peer, _ = server.accept()
+
+    server.close()
+    os.remove(path)
+    return client, peer
+
+
+def frame_message(msg_str: str) -> bytes:
+    """Manually frame a message for testing receive_message."""
+    msg_bytes = msg_str.encode("utf-8")
+    return struct.pack(">I", len(msg_bytes)) + msg_bytes
+
+
+# ---------------------------------------------------------------------------
+# send_message tests
+# ---------------------------------------------------------------------------
+
+class TestSendMessage:
+    def test_basic_send(self):
+        client, peer = make_socketpair()
+        try:
+            assert send_message(client, "hello") is True
+
+            # Read what was sent
+            raw = peer.recv(4096)
+            length = struct.unpack(">I", raw[:4])[0]
+            assert length == 5
+            assert raw[4:] == b"hello"
+        finally:
+            client.close()
+            peer.close()
+
+    def test_send_json(self):
+        client, peer = make_socketpair()
+        try:
+            msg = json.dumps({"tool": "create_box", "args": {"length": 10}})
+            assert send_message(client, msg) is True
+
+            raw = peer.recv(4096)
+            length = struct.unpack(">I", raw[:4])[0]
+            decoded = raw[4:4 + length].decode("utf-8")
+            assert json.loads(decoded)["tool"] == "create_box"
+        finally:
+            client.close()
+            peer.close()
+
+    def test_send_unicode(self):
+        client, peer = make_socketpair()
+        try:
+            msg = "résultat: réussi"
+            assert send_message(client, msg) is True
+
+            raw = peer.recv(4096)
+            length = struct.unpack(">I", raw[:4])[0]
+            decoded = raw[4:4 + length].decode("utf-8")
+            assert decoded == msg
+        finally:
+            client.close()
+            peer.close()
+
+    def test_send_to_closed_socket(self):
+        client, peer = make_socketpair()
+        peer.close()
+        client.close()
+        assert send_message(client, "hello") is False
+
+    def test_send_empty_string(self):
+        client, peer = make_socketpair()
+        try:
+            assert send_message(client, "") is True
+            raw = peer.recv(4096)
+            length = struct.unpack(">I", raw[:4])[0]
+            assert length == 0
+        finally:
+            client.close()
+            peer.close()
+
+    def test_send_exactly_max_succeeds(self):
+        """A body of exactly MAX_MESSAGE_SIZE bytes is allowed — the cap is a
+        strict greater-than, so the boundary value must still transmit.
+
+        MAX_MESSAGE_SIZE (50 KiB) is far larger than the socket send buffer
+        (~8 KiB on macOS AF_UNIX), so the peer must be drained concurrently or
+        sendall() would block forever waiting for buffer space.
+        """
+        client, peer = make_socketpair()
+        received = bytearray()
+
+        def drain():
+            while True:
+                chunk = peer.recv(65536)
+                if not chunk:
+                    break
+                received.extend(chunk)
+
+        t = threading.Thread(target=drain)
+        t.start()
+        try:
+            payload = "x" * MAX_MESSAGE_SIZE  # ASCII => 1 byte/char
+            assert send_message(client, payload) is True
+        finally:
+            client.close()        # EOF unblocks the drain thread
+            t.join(timeout=5)
+            peer.close()
+
+        assert len(received) == 4 + MAX_MESSAGE_SIZE  # length prefix + body
+        length = struct.unpack(">I", received[:4])[0]
+        assert length == MAX_MESSAGE_SIZE
+
+    def test_send_oversized_refused(self):
+        """One byte over the cap must be refused (return False) and nothing put
+        on the wire — sending it would let the peer reject the body and desync
+        every subsequent frame."""
+        client, peer = make_socketpair()
+        try:
+            big = "x" * (MAX_MESSAGE_SIZE + 1)
+            assert send_message(client, big) is False
+            # Nothing should have been transmitted.
+            peer.setblocking(False)
+            with pytest.raises((BlockingIOError, socket.error)):
+                peer.recv(4096)
+        finally:
+            client.close()
+            peer.close()
+
+
+# ---------------------------------------------------------------------------
+# receive_message tests
+# ---------------------------------------------------------------------------
+
+class TestReceiveMessage:
+    def test_basic_receive(self):
+        client, peer = make_socketpair()
+        try:
+            peer.sendall(frame_message("hello"))
+            result = receive_message(client, timeout=5.0)
+            assert result == "hello"
+        finally:
+            client.close()
+            peer.close()
+
+    def test_receive_json(self):
+        client, peer = make_socketpair()
+        try:
+            msg = json.dumps({"result": "Box created"})
+            peer.sendall(frame_message(msg))
+            result = receive_message(client, timeout=5.0)
+            assert json.loads(result)["result"] == "Box created"
+        finally:
+            client.close()
+            peer.close()
+
+    def test_receive_timeout(self):
+        client, peer = make_socketpair()
+        try:
+            # Don't send anything — should timeout
+            result = receive_message(client, timeout=0.1)
+            assert result is None
+        finally:
+            client.close()
+            peer.close()
+
+    def test_receive_connection_closed(self):
+        client, peer = make_socketpair()
+        peer.close()
+        result = receive_message(client, timeout=1.0)
+        assert result is None
+        client.close()
+
+    def test_receive_oversized_message(self):
+        """Messages larger than 50KB should be rejected."""
+        client, peer = make_socketpair()
+        try:
+            # Send a length prefix claiming a very large message
+            fake_length = 100 * 1024  # 100KB
+            peer.sendall(struct.pack(">I", fake_length))
+            result = receive_message(client, timeout=2.0)
+            assert result is None
+        finally:
+            client.close()
+            peer.close()
+
+    def test_receive_preserves_original_timeout(self):
+        client, peer = make_socketpair()
+        try:
+            client.settimeout(42.0)
+            peer.sendall(frame_message("test"))
+            receive_message(client, timeout=5.0)
+            assert client.gettimeout() == 42.0
+        finally:
+            client.close()
+            peer.close()
+
+
+# ---------------------------------------------------------------------------
+# _recv_exact tests
+# ---------------------------------------------------------------------------
+
+class TestRecvExact:
+    def test_exact_bytes(self):
+        client, peer = make_socketpair()
+        try:
+            peer.sendall(b"ABCDEF")
+            result = _recv_exact(client, 6)
+            assert result == b"ABCDEF"
+        finally:
+            client.close()
+            peer.close()
+
+    def test_partial_reads(self):
+        """_recv_exact should handle data arriving in chunks."""
+        client, peer = make_socketpair()
+        try:
+            # Send data in two chunks with a small delay
+            def send_in_chunks():
+                import time
+                peer.sendall(b"ABC")
+                time.sleep(0.05)
+                peer.sendall(b"DEF")
+
+            t = threading.Thread(target=send_in_chunks)
+            t.start()
+            result = _recv_exact(client, 6)
+            t.join()
+            assert result == b"ABCDEF"
+        finally:
+            client.close()
+            peer.close()
+
+    def test_connection_closed_midstream(self):
+        client, peer = make_socketpair()
+        try:
+            peer.sendall(b"AB")
+            peer.close()
+            result = _recv_exact(client, 6)
+            assert result is None
+        finally:
+            client.close()
+
+
+# ---------------------------------------------------------------------------
+# Round-trip tests
+# ---------------------------------------------------------------------------
+
+class TestRoundTrip:
+    def test_send_then_receive(self):
+        """Full round trip: send_message on one side, receive_message on the other."""
+        client, peer = make_socketpair()
+        try:
+            msg = json.dumps({"tool": "create_box", "args": {"length": 10}})
+            assert send_message(client, msg) is True
+            result = receive_message(peer, timeout=5.0)
+            assert json.loads(result)["tool"] == "create_box"
+        finally:
+            client.close()
+            peer.close()
+
+    def test_multiple_messages(self):
+        """Multiple messages sent sequentially should each be received correctly."""
+        client, peer = make_socketpair()
+        try:
+            msgs = ["first", "second", "third"]
+            for m in msgs:
+                send_message(client, m)
+
+            for expected in msgs:
+                result = receive_message(peer, timeout=5.0)
+                assert result == expected
+        finally:
+            client.close()
+            peer.close()
+
+    def test_large_message_within_limit(self):
+        """A message just under 50KB should work fine."""
+        client, peer = make_socketpair()
+        try:
+            # 49KB of data — need threaded send/receive since buffer may be small
+            msg = "x" * (49 * 1024)
+
+            def sender():
+                send_message(client, msg)
+
+            t = threading.Thread(target=sender)
+            t.start()
+            result = receive_message(peer, timeout=10.0)
+            t.join()
+            assert result == msg
+        finally:
+            client.close()
+            peer.close()
+
+
+# ---------------------------------------------------------------------------
+# Threshold-boundary tests for MAX_MESSAGE_SIZE
+#
+# The check in receive_message is `message_len > MAX_MESSAGE_SIZE`, i.e. a
+# message of *exactly* MAX_MESSAGE_SIZE bytes must be accepted, and exactly
+# MAX_MESSAGE_SIZE+1 must be rejected.  The "49KB ok / 100KB rejected" pair
+# above doesn't pin the threshold.  These tests do.
+#
+# MAX_MESSAGE_SIZE is NOT redefined here — it's the one imported from
+# mcp_bridge_framing at the top of this file. A local redefinition used to
+# shadow that import, so these tests silently pinned a hardcoded literal
+# instead of the real constant: if the source value ever changed, every
+# test below would keep passing against the stale copy instead of catching
+# the drift.
+# ---------------------------------------------------------------------------
+
+
+class TestMaxMessageSizeThreshold:
+    def test_exactly_max_size_is_accepted(self):
+        """Length == MAX_MESSAGE_SIZE must pass (the check is `>`, not `>=`)."""
+        client, peer = make_socketpair()
+        try:
+            msg = "x" * MAX_MESSAGE_SIZE
+
+            def sender():
+                send_message(client, msg)
+
+            t = threading.Thread(target=sender)
+            t.start()
+            result = receive_message(peer, timeout=10.0)
+            t.join()
+            assert result == msg
+            assert len(result) == MAX_MESSAGE_SIZE
+        finally:
+            client.close()
+            peer.close()
+
+    def test_one_byte_over_max_is_rejected(self):
+        """Length == MAX_MESSAGE_SIZE + 1 must be rejected as oversized."""
+        client, peer = make_socketpair()
+        try:
+            # Don't bother sending a real payload; the length-prefix check
+            # rejects before reading the body.
+            peer.sendall(struct.pack(">I", MAX_MESSAGE_SIZE + 1))
+            result = receive_message(client, timeout=2.0)
+            assert result is None
+        finally:
+            client.close()
+            peer.close()
+
+    def test_zero_length_is_accepted(self):
+        """Length == 0 is a valid empty message and must round-trip.
+
+        receive_message distinguishes a 0-length frame (_recv_exact returns b'')
+        from a closed connection (_recv_exact returns None) by testing `is None`,
+        not falsiness — so the empty string is preserved rather than misread as a
+        disconnect. (Previously an xfail; fixed in the framing hardening pass.)"""
+        client, peer = make_socketpair()
+        try:
+            peer.sendall(struct.pack(">I", 0))
+            result = receive_message(client, timeout=2.0)
+            assert result == ""
+        finally:
+            client.close()
+            peer.close()
+
+
+# ---------------------------------------------------------------------------
+# Malformed-payload tests for receive_message
+#
+# These exercise the "external bytes don't decode as UTF-8" path, which
+# returns None rather than raising.  Without coverage, a buggy or malicious
+# peer can crash the bridge instead of seeing a clean None.
+# ---------------------------------------------------------------------------
+
+class TestReceiveMalformedPayload:
+    def test_invalid_utf8_returns_none(self):
+        """Bytes that aren't valid UTF-8 should cause receive_message to
+        return None, not raise UnicodeDecodeError up the call stack."""
+        client, peer = make_socketpair()
+        try:
+            # 0xC0 0x80 is the classic "overlong NUL" — illegal in UTF-8.
+            # Also try 0xFF, which is never valid as a leading byte.
+            bad = b"\xff\xfe\xfd"
+            peer.sendall(struct.pack(">I", len(bad)) + bad)
+            result = receive_message(client, timeout=2.0)
+            assert result is None
+        finally:
+            client.close()
+            peer.close()
+
+    def test_truncated_payload_returns_none(self):
+        """If the length-prefix claims more bytes than the peer actually
+        sends and the peer then closes, receive_message returns None."""
+        client, peer = make_socketpair()
+        try:
+            # Prefix says 100 bytes; we only send 10, then close.
+            peer.sendall(struct.pack(">I", 100) + b"abcdefghij")
+            peer.close()
+            result = receive_message(client, timeout=2.0)
+            assert result is None
+        finally:
+            client.close()
+
+    def test_multibyte_utf8_roundtrip(self):
+        """Length prefix is in *bytes*, not chars.  A message of multibyte
+        chars (each 3 bytes in UTF-8) must round-trip without splitting a
+        character.  Catches confusion between len(str) and len(bytes)."""
+        client, peer = make_socketpair()
+        try:
+            # 100 CJK characters * 3 bytes/char = 300 bytes
+            msg = "中" * 100
+            assert len(msg.encode("utf-8")) == 300
+
+            def sender():
+                send_message(client, msg)
+
+            t = threading.Thread(target=sender)
+            t.start()
+            result = receive_message(peer, timeout=5.0)
+            t.join()
+            assert result == msg
+        finally:
+            client.close()
+            peer.close()

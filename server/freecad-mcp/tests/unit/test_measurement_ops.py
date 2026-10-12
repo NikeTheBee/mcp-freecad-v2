@@ -1,0 +1,463 @@
+"""Unit tests for MeasurementOpsHandler.
+
+Focus: list_faces, get_volume, get_surface_area, get_center_of_mass,
+count_elements, measure_distance, get_mass_properties, get_bounding_box,
+check_solid. The list_faces op is the load-bearing one — PartDesign
+tests rely on its face indices and normals being correct.
+
+Run with: python3 -m pytest tests/unit/test_measurement_ops.py -v
+"""
+
+import unittest
+from unittest.mock import MagicMock
+
+from handlers.measurement_ops import MeasurementOpsHandler
+
+from tests.unit._freecad_mocks import (
+    assert_error_contains,
+    assert_success_contains,
+    make_box_object,
+    make_handler,
+    make_mock_doc,
+    make_part_object,
+    mock_FreeCAD,
+    reset_mocks,
+)
+
+
+def _attach_face_geometry(obj, faces_data):
+    """Replace obj.Shape.Faces with mocks carrying real numeric attributes.
+
+    faces_data: list of dicts {area, normal: (nx,ny,nz), centroid: (cx,cy,cz)}.
+
+    Also sets obj.Shape.Area to the summed face area, matching real
+    FreeCAD's own invariant (Part.Shape.Area is a single GProp pass that
+    always equals the sum of its faces' areas) -- measurement_ops.py's
+    get_surface_area/get_mass_properties now read shape.Area directly
+    instead of summing face.Area in a Python loop (full-review 2026-09-23,
+    Low finding #86).
+    """
+    faces = []
+    for f in faces_data:
+        face = MagicMock()
+        face.Area = f['area']
+        nx, ny, nz = f['normal']
+        face.normalAt = MagicMock(return_value=MagicMock(x=nx, y=ny, z=nz))
+        cx, cy, cz = f['centroid']
+        face.CenterOfMass = MagicMock(x=cx, y=cy, z=cz)
+        faces.append(face)
+    obj.Shape.Faces = faces
+    obj.Shape.Area = sum(f['area'] for f in faces_data)
+
+
+def _attach_box_face_geometry(obj, length=10.0, width=10.0, height=10.0):
+    """Add 6 box faces with axis-aligned normals and predictable areas."""
+    _attach_face_geometry(obj, [
+        # +X face
+        {'area': width * height, 'normal': (1, 0, 0),
+         'centroid': (length, width / 2, height / 2)},
+        # -X face
+        {'area': width * height, 'normal': (-1, 0, 0),
+         'centroid': (0, width / 2, height / 2)},
+        # +Y face
+        {'area': length * height, 'normal': (0, 1, 0),
+         'centroid': (length / 2, width, height / 2)},
+        # -Y face
+        {'area': length * height, 'normal': (0, -1, 0),
+         'centroid': (length / 2, 0, height / 2)},
+        # +Z face
+        {'area': length * width, 'normal': (0, 0, 1),
+         'centroid': (length / 2, width / 2, height)},
+        # -Z face
+        {'area': length * width, 'normal': (0, 0, -1),
+         'centroid': (length / 2, width / 2, 0)},
+    ])
+
+
+class TestListFaces(unittest.TestCase):
+    """list_faces is critical infrastructure — PartDesign tests rely on it."""
+
+    def setUp(self):
+        reset_mocks()
+        self.handler = make_handler(MeasurementOpsHandler)
+
+    def test_missing_object(self):
+        doc = make_mock_doc([])
+        mock_FreeCAD.ActiveDocument = doc
+        result = self.handler.list_faces({'object_name': 'Ghost'})
+        assert_error_contains(self, result, "not found", "Ghost")
+
+    def test_no_active_document(self):
+        mock_FreeCAD.ActiveDocument = None
+        result = self.handler.list_faces({'object_name': 'Box'})
+        assert_error_contains(self, result, "no active document")
+
+    def test_object_without_shape(self):
+        obj = MagicMock()
+        obj.Name = "Datum"
+        obj.Label = "Datum"
+        del obj.Shape
+        doc = make_mock_doc([obj])
+        mock_FreeCAD.ActiveDocument = doc
+        result = self.handler.list_faces({'object_name': 'Datum'})
+        assert_error_contains(self, result, "shape")
+
+    def test_lists_all_box_faces_with_normals_and_areas(self):
+        """A 10x10x10 box reports 6 faces with axis-aligned normals."""
+        box = make_box_object("Box1", 10.0, 10.0, 10.0)
+        _attach_box_face_geometry(box, 10.0, 10.0, 10.0)
+        doc = make_mock_doc([box])
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.list_faces({'object_name': 'Box1'})
+
+        assert_success_contains(self, result,
+                                "6 total",
+                                "Face1:", "Face2:", "Face3:",
+                                "Face4:", "Face5:", "Face6:")
+        # Each face line should have a normal vector printed
+        self.assertIn("normal=", result)
+        self.assertIn("centroid=", result)
+        self.assertIn("area=", result)
+        # Areas of all 6 faces of a 10x10x10 box are each 100 mm²
+        self.assertIn("100.00", result)
+
+    def test_face_normals_are_axis_aligned_for_box(self):
+        """Each box face normal should be ±1 along one axis."""
+        box = make_box_object("Box1", 10.0, 10.0, 10.0)
+        _attach_box_face_geometry(box, 10.0, 10.0, 10.0)
+        doc = make_mock_doc([box])
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.list_faces({'object_name': 'Box1'})
+
+        # The format string in the handler uses '+.2f' for components,
+        # so each normal prints as e.g. "(+1.00, +0.00, +0.00)".
+        # All 6 axis-aligned normals must appear in the output.
+        for component in ("(+1.00, +0.00, +0.00)",
+                          "(-1.00, +0.00, +0.00)",
+                          "(+0.00, +1.00, +0.00)",
+                          "(+0.00, -1.00, +0.00)",
+                          "(+0.00, +0.00, +1.00)",
+                          "(+0.00, +0.00, -1.00)"):
+            self.assertIn(component, result,
+                          f"Missing normal {component} from list_faces output")
+
+    def test_face_index_is_1_based(self):
+        """Handler emits Face1..FaceN, not Face0..FaceN-1.
+
+        PartDesign's `datum_from_face` / face references in FreeCAD use
+        1-based indexing — list_faces must agree."""
+        box = make_box_object("Box1", 10.0, 10.0, 10.0)
+        _attach_box_face_geometry(box, 10.0, 10.0, 10.0)
+        doc = make_mock_doc([box])
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.list_faces({'object_name': 'Box1'})
+
+        self.assertIn("Face1:", result)
+        self.assertIn("Face6:", result)
+        self.assertNotIn("Face0:", result)
+
+    def test_object_lookup_falls_back_to_label(self):
+        """list_faces must use base.get_object()'s label fallback."""
+        box = make_box_object("Box1", 10.0, 10.0, 10.0)
+        _attach_box_face_geometry(box)
+        box.Label = "MyBox"
+        doc = make_mock_doc([box])
+        mock_FreeCAD.ActiveDocument = doc
+
+        # Pass the Label, not the Name — fallback path
+        result = self.handler.list_faces({'object_name': 'MyBox'})
+
+        assert_success_contains(self, result, "6 total")
+
+    def test_per_face_error_does_not_abort_listing(self):
+        """If one face's normalAt() raises, the others should still print."""
+        box = make_box_object("Box1", 10.0, 10.0, 10.0)
+        _attach_box_face_geometry(box, 10.0, 10.0, 10.0)
+        # Sabotage face[2] — normalAt raises
+        box.Shape.Faces[2].normalAt = MagicMock(
+            side_effect=RuntimeError("synthetic"))
+        doc = make_mock_doc([box])
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.list_faces({'object_name': 'Box1'})
+
+        # Face3 should report the error inline
+        self.assertIn("Face3: error reading face", result)
+        # Other faces still listed
+        self.assertIn("Face1:", result)
+        self.assertIn("Face6:", result)
+
+
+class TestGetVolume(unittest.TestCase):
+    def setUp(self):
+        reset_mocks()
+        self.handler = make_handler(MeasurementOpsHandler)
+
+    def test_missing_object(self):
+        doc = make_mock_doc([])
+        mock_FreeCAD.ActiveDocument = doc
+        result = self.handler.get_volume({'object_name': 'Ghost'})
+        assert_error_contains(self, result, "not found")
+
+    def test_volume_reported_with_units(self):
+        obj = make_part_object("Cube", volume=1000.0)
+        doc = make_mock_doc([obj])
+        mock_FreeCAD.ActiveDocument = doc
+        result = self.handler.get_volume({'object_name': 'Cube'})
+        assert_success_contains(self, result, "1000", "mm")
+
+
+class TestCountElements(unittest.TestCase):
+    def setUp(self):
+        reset_mocks()
+        self.handler = make_handler(MeasurementOpsHandler)
+
+    def test_box_counts(self):
+        """A box-shaped mock reports 6 faces, 12 edges, 8 vertices."""
+        box = make_box_object("Box1", 10.0, 10.0, 10.0)
+        # Defaults from _make_shape: 6 faces, 12 edges, 8 vertices, 1 solid
+        doc = make_mock_doc([box])
+        mock_FreeCAD.ActiveDocument = doc
+        result = self.handler.count_elements({'object_name': 'Box1'})
+        assert_success_contains(self, result,
+                                "Faces: 6", "Edges: 12", "Vertices: 8",
+                                "Solids: 1")
+
+
+class TestMeasureDistance(unittest.TestCase):
+    def setUp(self):
+        reset_mocks()
+        self.handler = make_handler(MeasurementOpsHandler)
+
+    def test_missing_first_object(self):
+        doc = make_mock_doc([])
+        mock_FreeCAD.ActiveDocument = doc
+        result = self.handler.measure_distance({'object1': 'A', 'object2': 'B'})
+        assert_error_contains(self, result, "not found", "A")
+
+    def test_distance_between_two_boxes(self):
+        a = make_part_object("A")
+        # distToShape returns [dist, points, geom_info]; [0] is the minimum
+        # surface-to-surface distance (not centroid distance).
+        a.Shape.distToShape = MagicMock(return_value=(42.5, [], []))
+        b = make_part_object("B")
+        doc = make_mock_doc([a, b])
+        mock_FreeCAD.ActiveDocument = doc
+        result = self.handler.measure_distance({'object1': 'A', 'object2': 'B'})
+        assert_success_contains(self, result, "42.5", "mm")
+        a.Shape.distToShape.assert_called_once_with(b.Shape)
+
+    def test_overlapping_reports_touching_not_centroid(self):
+        """Overlapping/touching parts must report ~0 surface distance and say so
+        — the old centroid-distance implementation returned a positive value."""
+        a = make_part_object("A")
+        a.Shape.distToShape = MagicMock(return_value=(0.0, [], []))
+        b = make_part_object("B")
+        doc = make_mock_doc([a, b])
+        mock_FreeCAD.ActiveDocument = doc
+        result = self.handler.measure_distance({'object1': 'A', 'object2': 'B'})
+        self.assertIn("touching", result.lower())
+
+    def test_distance_just_below_touching_threshold_reports_touching(self):
+        """M17: the 1e-7 touching/overlap threshold had no boundary
+        coverage. distance < 1e-7 -> 'touching'."""
+        a = make_part_object("A")
+        a.Shape.distToShape = MagicMock(return_value=(9e-8, [], []))
+        b = make_part_object("B")
+        doc = make_mock_doc([a, b])
+        mock_FreeCAD.ActiveDocument = doc
+        result = self.handler.measure_distance({'object1': 'A', 'object2': 'B'})
+        self.assertIn("touching", result.lower())
+
+    def test_distance_exactly_at_threshold_does_not_report_touching(self):
+        """Strict less-than: exactly 1e-7 does NOT satisfy `distance < 1e-7`."""
+        a = make_part_object("A")
+        a.Shape.distToShape = MagicMock(return_value=(1e-7, [], []))
+        b = make_part_object("B")
+        doc = make_mock_doc([a, b])
+        mock_FreeCAD.ActiveDocument = doc
+        result = self.handler.measure_distance({'object1': 'A', 'object2': 'B'})
+        self.assertNotIn("touching", result.lower())
+
+    def test_distance_just_above_threshold_does_not_report_touching(self):
+        a = make_part_object("A")
+        a.Shape.distToShape = MagicMock(return_value=(1.1e-7, [], []))
+        b = make_part_object("B")
+        doc = make_mock_doc([a, b])
+        mock_FreeCAD.ActiveDocument = doc
+        result = self.handler.measure_distance({'object1': 'A', 'object2': 'B'})
+        self.assertNotIn("touching", result.lower())
+
+
+class TestGetSurfaceArea(unittest.TestCase):
+    def setUp(self):
+        reset_mocks()
+        self.handler = make_handler(MeasurementOpsHandler)
+
+    def test_box_surface_area_summed_over_faces(self):
+        """Box surface area = sum of face areas."""
+        box = make_box_object("Box1", 10.0, 10.0, 10.0)
+        _attach_box_face_geometry(box, 10.0, 10.0, 10.0)
+        doc = make_mock_doc([box])
+        mock_FreeCAD.ActiveDocument = doc
+        result = self.handler.get_surface_area({'object_name': 'Box1'})
+        # 6 faces × 100mm² = 600mm²
+        assert_success_contains(self, result, "600", "mm")
+
+
+class TestGetCenterOfMass(unittest.TestCase):
+    def setUp(self):
+        reset_mocks()
+        self.handler = make_handler(MeasurementOpsHandler)
+
+    def test_center_of_mass_coordinates_in_output(self):
+        obj = make_part_object("X")
+        obj.Shape.CenterOfMass = MagicMock(x=5.0, y=10.0, z=15.0)
+        doc = make_mock_doc([obj])
+        mock_FreeCAD.ActiveDocument = doc
+        result = self.handler.get_center_of_mass({'object_name': 'X'})
+        assert_success_contains(self, result, "5.00", "10.00", "15.00")
+
+
+class TestGetBoundingBox(unittest.TestCase):
+    """Regression test for the duplicate-method bug: get_bounding_box must
+    return real bounding box info, not the shadowed check_solid output."""
+
+    def setUp(self):
+        reset_mocks()
+        self.handler = make_handler(MeasurementOpsHandler)
+
+    def test_returns_bounding_box_dimensions(self):
+        """A 10x10x10 box reports XLength/YLength/ZLength = 10."""
+        box = make_box_object("Box1", 10.0, 10.0, 10.0)
+        doc = make_mock_doc([box])
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.get_bounding_box({'object_name': 'Box1'})
+
+        assert_success_contains(self, result, "Bounding box", "Box1",
+                                "length: 10", "width: 10", "height: 10")
+
+
+class TestCheckSolid(unittest.TestCase):
+    """check_solid was previously hidden behind the duplicate get_bounding_box
+    name. Since the rename, it must dispatch as a real op."""
+
+    def setUp(self):
+        reset_mocks()
+        self.handler = make_handler(MeasurementOpsHandler)
+
+    def test_valid_closed_solid(self):
+        box = make_box_object("Box1")
+        # _make_shape default: isValid=True, isClosed=True, 1 solid
+        doc = make_mock_doc([box])
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.check_solid({'object_name': 'Box1'})
+
+        assert_success_contains(self, result, "Solid check", "Box1",
+                                "Is a closed solid", "Shape is valid")
+
+    def test_open_shape_reports_not_closed(self):
+        box = make_box_object("Box1")
+        box.Shape.isClosed = MagicMock(return_value=False)
+        doc = make_mock_doc([box])
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.check_solid({'object_name': 'Box1'})
+
+        assert_success_contains(self, result, "Not a closed solid")
+
+    def test_single_input_no_escalation_note(self):
+        """One upstream input is the ordinary case (a Pad from one sketch,
+        say) -- not the multi-child-compound blind spot this note exists
+        for. Threshold: exactly 1 input must NOT trigger it."""
+        box = make_box_object("Box1")
+        box.OutList = [MagicMock(Name="Sketch")]
+        doc = make_mock_doc([box])
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.check_solid({'object_name': 'Box1'})
+
+        self.assertNotIn("find_root_cause", result)
+
+    def test_zero_inputs_no_escalation_note(self):
+        box = make_box_object("Box1")
+        box.OutList = []
+        doc = make_mock_doc([box])
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.check_solid({'object_name': 'Box1'})
+
+        self.assertNotIn("find_root_cause", result)
+
+    def test_two_inputs_and_clean_result_adds_escalation_note(self):
+        """Threshold: exactly 2 inputs (the boundary, not comfortably above
+        it) is enough to trigger -- this is the multi-child-compound shape
+        the note exists for."""
+        compound = make_box_object("Compound1")
+        compound.OutList = [MagicMock(Name="Part1"), MagicMock(Name="Part2")]
+        doc = make_mock_doc([compound])
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.check_solid({'object_name': 'Compound1'})
+
+        assert_success_contains(self, result, "find_root_cause",
+                                "more than one upstream input")
+
+    def test_multiple_inputs_but_not_solid_suppresses_escalation_note(self):
+        """The note only makes sense when the check reported clean -- if
+        check_solid already found a problem, the model doesn't need
+        redirecting to a different tool."""
+        compound = make_box_object("Compound1")
+        compound.OutList = [MagicMock(Name="Part1"), MagicMock(Name="Part2")]
+        compound.Shape.isClosed = MagicMock(return_value=False)
+        doc = make_mock_doc([compound])
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.check_solid({'object_name': 'Compound1'})
+
+        self.assertNotIn("find_root_cause", result)
+
+    def test_unconfigured_outlist_mock_does_not_crash(self):
+        """Regression guard for the exact bug class this note risked
+        introducing: OutList is guaranteed to be a real list on any live
+        FreeCAD object, but a test double (or, hypothetically, an SDK/API
+        edge case) that leaves it as an unconfigured MagicMock must not
+        blow up len() inside check_solid."""
+        box = make_box_object("Box1")
+        # Deliberately NOT setting box.OutList -- MagicMock auto-creates it
+        # as a non-list attribute, exactly the case the isinstance guard
+        # exists for.
+        doc = make_mock_doc([box])
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.check_solid({'object_name': 'Box1'})
+
+        assert_success_contains(self, result, "Is a closed solid", "Shape is valid")
+        self.assertNotIn("Error checking solid", result)
+
+
+class TestGetMassProperties(unittest.TestCase):
+    def setUp(self):
+        reset_mocks()
+        self.handler = make_handler(MeasurementOpsHandler)
+
+    def test_volume_area_and_com_all_reported(self):
+        box = make_box_object("Box1", 10.0, 10.0, 10.0)
+        _attach_box_face_geometry(box, 10.0, 10.0, 10.0)
+        box.Shape.CenterOfMass = MagicMock(x=5.0, y=5.0, z=5.0)
+        doc = make_mock_doc([box])
+        mock_FreeCAD.ActiveDocument = doc
+        result = self.handler.get_mass_properties({'object_name': 'Box1'})
+        # Volume from default _make_shape, area from sum of faces, COM from above
+        assert_success_contains(self, result,
+                                "Volume:", "Surface Area:", "Center of Mass:",
+                                "600", "5.00")
+
+
+if __name__ == '__main__':
+    unittest.main()

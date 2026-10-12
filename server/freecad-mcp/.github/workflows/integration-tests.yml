@@ -1,0 +1,122 @@
+name: Integration Tests
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - slot: "1.1-stable"
+            tag: "1.1.1"
+            appimage: "FreeCAD_1.1.1-Linux-x86_64-py311.AppImage"
+            # real_document is excluded here too (not just dev-weekly) --
+            # it belongs to the separate PR-only job below, on every push.
+            pytest_args: "-m 'not cam and not real_document and not fc_tools'"
+          - slot: "dev-weekly"
+            tag: "weekly-2026.09.09"
+            appimage: ""  # resolved by glob below
+            pytest_args: "-m 'not real_document and not fc_tools'"
+
+    name: "FreeCAD ${{ matrix.slot }}"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install test dependencies
+        run: pip install pytest pytest-timeout
+
+      - name: Set up FreeCAD AppImage
+        uses: ./.github/actions/setup-freecad-appimage
+        with:
+          tag: ${{ matrix.tag }}
+          appimage: ${{ matrix.appimage }}
+          use-cache: 'true'
+          install-gdb: 'true'
+
+      - name: Run integration tests
+        shell: bash
+        run: |
+          set -o pipefail
+          python -m pytest tests/integration/ -v -rs --timeout=120 ${{ matrix.pytest_args }} 2>&1 | tee pytest-output.log
+          exit_code=$?
+          # tests/integration/conftest.py's freecad_instance fixture is a
+          # session-scoped autouse fixture that pytest.skip()s on any
+          # _spawn_headless() failure (binary missing, socket never ready,
+          # wrong env var) — every test in the run inherits that skip, and
+          # a run where 100% of tests skip still exits 0. That would let a
+          # broken FreeCAD-AppImage download (or any other spawn-
+          # infrastructure failure) silently turn "run the integration
+          # suite" into "run nothing" while reporting green. Fail explicitly
+          # instead: a run that exits 0 but reports no passing tests earned
+          # no actual confidence and must not be treated as success.
+          if [ "$exit_code" -eq 0 ] && ! grep -qE '[0-9]+ passed' pytest-output.log; then
+            echo "::error::Integration tests exited 0 but reported no passing tests (likely all skipped — see freecad_instance fixture in tests/integration/conftest.py). Treating this as a failure so a broken FreeCAD spawn doesn't silently mask as green CI."
+            exit 1
+          fi
+          exit $exit_code
+        timeout-minutes: 5
+        # FREECAD_MCP_TEST_GDB_TRAP=1 (KNOWN_ISSUES.md's CAM SIGSEGV
+        # investigation) is deliberately NOT set here, on the routine
+        # 158-test suite -- re-enabling it (2026-07-22, same day) after
+        # widening _stop_headless()'s teardown timeout reintroduced the
+        # exact same cascading failure at test_job_status: a real ~20s
+        # stall (not instant EAGAIN) right after test_configure_job_stock,
+        # every time, only under gdb-trap. The teardown-timeout fix was
+        # real and correct on its own, but it only helps at the very end
+        # of a session -- diagnose_dead_spawned_process() is a
+        # non-blocking proc.poll() check made *during* the run, so it
+        # can't retroactively benefit from a longer final-cleanup wait.
+        # Whatever gdb-wrapping the *entire* session costs mid-run around
+        # job creation/configuration is a separate, unresolved problem.
+        # Use FREECAD_MCP_TEST_GDB_TRAP on a narrowly scoped run (a single
+        # test or file, like bisect-cam-crash.yml /
+        # minimal-repro-expat-crash.yml) for focused investigation, not
+        # wrapped around the full suite.
+
+  real-document-regression:
+    # real_document tests pull in an 8MB LFS fixture and exercise a
+    # multi-hundred-solid real document -- heavier than the routine suite
+    # above, so they run on PR only, not on every push to main/dev. One
+    # FreeCAD build is enough here: the property under test (ordinary
+    # commands stay fast when CAPTURE_STATE_PER_COMMAND is off) isn't
+    # version-specific the way CAM/Path features are.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install test dependencies
+        run: pip install pytest pytest-timeout
+
+      - name: Set up FreeCAD AppImage
+        uses: ./.github/actions/setup-freecad-appimage
+        with:
+          tag: "weekly-2026.08.05"
+          appimage: ""
+          use-cache: 'true'
+          install-gdb: 'true'
+
+      - name: Run real-document regression tests
+        run: python -m pytest tests/integration/ -v -rs --timeout=120 -m real_document
+        timeout-minutes: 5
