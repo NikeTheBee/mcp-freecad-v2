@@ -6,7 +6,9 @@ copy of a document under /recovery/<doc>/, keeping the newest `keep` copies.
 Call it after every validated step (the freecad-layers tools do it for you);
 `latest()` / `open_latest()` bring the work back after a crash.
 """
+import os
 import re
+import shutil
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -16,6 +18,9 @@ import FreeCAD  # available inside FreeCAD / freecadcmd
 from . import project_dir, safe_out_path, safe_under
 
 KEEP = 5
+# Working copies of reopened snapshots (see open_copy). Sanitized document
+# names never start with "_", so this is never a document's folder.
+_OPENED = "_opened"
 
 
 def _root() -> Path:
@@ -63,7 +68,8 @@ def autosave(doc=None, keep: int = KEEP, reason: str = "") -> str:
 
 def list_recovery(doc_name: Optional[str] = None) -> List[Dict[str, Any]]:
     """Recovery copies, newest first: [{doc, file, size}]."""
-    dirs = [_doc_dir(doc_name)] if doc_name else [p for p in _root().iterdir() if p.is_dir()]
+    dirs = [_doc_dir(doc_name)] if doc_name else [p for p in _root().iterdir()
+                                                  if p.is_dir() and not p.name.startswith("_")]
     out = []
     for d in dirs:
         for f in sorted(d.glob("*.FCStd"), reverse=True):
@@ -77,11 +83,35 @@ def latest(doc_name: str) -> Optional[str]:
 
 
 def open_latest(doc_name: str):
-    """Open the newest recovery copy of `doc_name` (as a new document)."""
+    """Open the newest recovery copy of `doc_name` as document `doc_name`."""
     f = latest(doc_name)
     if f is None:
         raise ValueError(f"no recovery copy for {doc_name!r}")
-    return FreeCAD.openDocument(f)
+    return open_copy(f, doc_name, origin=f"recovery-{doc_name}")
+
+
+def open_copy(path, doc_name: str, origin: str):
+    """Open the snapshot at `path` (a checkpoint or an autosave) as document
+    `doc_name`, working on a copy under recovery/_opened/<origin>/.
+
+    Opened directly, the snapshot became the document's own file, so a later
+    save overwrote the checkpoint or the autosave; and the document took the
+    file's name ("_20261013_..."), so its autosaves went to another folder and
+    recover(doc) no longer found the latest work. Documents still open from an
+    earlier copy of the same origin are autosaved, then closed: the result is
+    always the saved content.
+    """
+    name = re.sub(r"[^A-Za-z0-9_]+", "_", doc_name).strip("_") or "Restored"
+    folder = safe_under(safe_under(_root(), _OPENED),
+                        re.sub(r"[^A-Za-z0-9_.-]+", "_", origin).strip("._") or "copy")
+    for dname, doc in list(FreeCAD.listDocuments().items()):
+        if doc.FileName and os.path.normcase(os.path.dirname(os.path.abspath(doc.FileName)))                 == os.path.normcase(str(folder)):
+            autosave(doc, reason="before-reopen")
+            FreeCAD.closeDocument(dname)
+    folder.mkdir(parents=True, exist_ok=True)
+    dst = folder / f"{name}.FCStd"
+    shutil.copyfile(str(path), str(dst))
+    return FreeCAD.openDocument(str(dst))
 
 
 def summary() -> str:

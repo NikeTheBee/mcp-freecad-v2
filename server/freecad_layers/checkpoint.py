@@ -125,7 +125,16 @@ def restore(name: str, replace_active: bool = False):
         abandoned = FreeCAD.ActiveDocument
         recovery.autosave(abandoned, reason=f"before-restore-{_slug(name)}")
         FreeCAD.closeDocument(abandoned.Name)
-    return FreeCAD.openDocument(str(path))
+    from . import recovery
+    # a copy, named after the checkpointed document: the checkpoint file itself
+    # never becomes the document's file (a save would overwrite it)
+    entry = next(c for c in list_checkpoints() if c.get("name") == name)
+    doc = recovery.open_copy(path, entry.get("source_doc") or path.stem,
+                             origin=f"checkpoint-{path.stem}")
+    # the rollback is the latest work now: after a crash, recover() must bring
+    # it back, not the state the user just abandoned
+    recovery.autosave(doc, reason=f"restored-{_slug(name)}")
+    return doc
 
 
 def summary() -> str:

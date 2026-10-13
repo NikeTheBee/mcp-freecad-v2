@@ -212,6 +212,15 @@ async def run(inst: Instance, project: str, out: str) -> None:
             busy.join()
             assert txt.startswith("ERROR FreeCAD stopped during this call") and "recover(" in txt, txt
             print("FreeCAD crash during a call: reported as a crash, with recover: OK")
+            # ...and the way back works: the next call starts FreeCAD again, recover opens
+            # the newest autosave, and the part checks out
+            txt = await call("recover", action="open", doc="Plate")
+            assert txt == "opened Plate", txt          # its own name, not the copy's file name
+            txt = await call("check", target="Body")
+            # the LATEST work: the no-hole rollback (60x40x8 full = 19200), autosaved when it
+            # was restored - not the abandoned state before it (18973.8, with the hole)
+            assert txt.startswith("OK Body") and "V=19200 " in txt, txt
+            print("after the crash: FreeCAD back on its own, recover reopened the work: OK")
     # long calls are explained to the person waiting, not as raw bridge errors
     sys.path.insert(0, str(SERVER.parent))
     import freecad_layers_server as srv

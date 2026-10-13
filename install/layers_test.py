@@ -85,13 +85,35 @@ wb.Length = 555
 work.recompute()
 FreeCAD.setActiveDocument("Work")
 back = checkpoint.restore("good", replace_active=True)
-assert "Work" not in FreeCAD.listDocuments(), "abandoned doc still open"
+# the abandoned doc is closed; the restored one carries on under the SAME name
+# (so its autosaves and recover("Work") keep finding it) and is not bound to
+# the checkpoint file (a save there would overwrite the checkpoint)
+assert back.Name == "Work" and list(FreeCAD.listDocuments()).count("Work") == 1,     list(FreeCAD.listDocuments())
 assert back.getObject("B").Length.Value == 10
-saved = recovery.latest("Work")
-assert saved, "abandoned work was not autosaved"
+assert "checkpoints" not in back.FileName.replace("\\", "/").split("/"), back.FileName
+copies = [e["file"] for e in recovery.list_recovery("Work")]
+saved = next((f for f in copies if "before-restore-good" in f), None)
+assert saved, ("abandoned work was not autosaved", copies)
 lost = FreeCAD.openDocument(saved)
 assert lost.getObject("B").Length.Value == 555, "recovery copy is not the abandoned state"
-print("rollback keeps the abandoned work in recovery: OK")
+FreeCAD.closeDocument(lost.Name)
+# the newest copy is the rollback itself: recover() after a crash brings back the
+# state the user chose, not the one abandoned
+assert "restored-good" in copies[0], copies
+print("rollback keeps the abandoned work in recovery, and the rollback is the latest copy: OK")
+back.getObject("B").Length = 321
+back.recompute()
+back.save()                                   # saves the working copy, never the checkpoint
+again = checkpoint.restore("good")
+assert again.getObject("B").Length.Value == 10, "saving a restored document overwrote its checkpoint"
+FreeCAD.closeDocument(again.Name)
+rec = recovery.open_latest("Work")            # recover keeps the document's own name
+assert rec.Name == "Work" and rec.getObject("B").Length.Value == 10, (rec.Name, rec.FileName)
+FreeCAD.closeDocument(rec.Name)
+# the edited copy that this restore replaced was autosaved first, not lost
+reopened = [e["file"] for e in recovery.list_recovery("Work") if "before-reopen" in e["file"]]
+assert reopened and FreeCAD.openDocument(reopened[0]).getObject("B").Length.Value == 321, reopened
+print("restored/recovered documents keep their name; the snapshot files stay intact: OK")
 
 # --- autosave keeps only the newest copies ---------------------------------
 for _ in range(7):
