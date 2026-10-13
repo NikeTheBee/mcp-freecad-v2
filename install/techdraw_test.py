@@ -68,6 +68,27 @@ def main() -> int:
         if res["dims"] < 4 or Path(dxf).stat().st_size < 1000:
             print("note: headless HLR produced reduced geometry (backend-dependent)")
 
+        # every overall dimension present reads the part's real size along its view axes
+        # (a wrong number on a workshop plan is worse than a missing one)
+        bb = b.Shape.BoundBox
+        checked = 0
+        for dim in (o for o in doc.Objects if o.TypeId == "TechDraw::DrawViewDimExtent"):
+            view = dim.References2D[0][0]
+            xd = App.Vector(view.XDirection).normalize()
+            yd = App.Vector(view.Direction).cross(xd).normalize()
+            axis = xd if dim.Type == "DistanceX" else yd
+            want = sum(abs(c) * ln for c, ln in zip((axis.x, axis.y, axis.z),
+                                                    (bb.XLength, bb.YLength, bb.ZLength)))
+            assert abs(dim.getRawValue() - want) < 1e-6, (view.Name, dim.Type, dim.getRawValue(), want)
+            checked += 1
+        print(f"{checked} overall dimensions read the part's real size: OK")
+        # an iso view first: its projected extent must not be dimensioned as a size
+        iso = drawing.sheet_for(b, views=("iso", "front", "top"), scale=1.0)
+        iso_dims = [o for o in doc.Objects if o.TypeId == "TechDraw::DrawViewDimExtent"
+                    and o.References2D[0][0].Name == iso["views"][0]]
+        assert not iso_dims and iso["dims"] >= 1, (iso, [d.Name for d in iso_dims])
+        print("iso view gets no overall-size dimension (projected length): OK")
+
         page = doc.getObject(res["page"])
         v = drawing.verdict(page)
         print(v)

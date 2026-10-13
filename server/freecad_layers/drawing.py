@@ -220,7 +220,8 @@ def sheet_for(obj, dxf_path: Optional[str] = None,
 
     Creates a page with up to 4 projections (front top-left, top below it,
     right top-right, 4th bottom-right), overall-extent dimensions on the first
-    two views, and optionally exports DXF. scale="auto" picks the largest
+    two axis-aligned views (never on an iso view: a projected length is not a
+    size), and optionally exports DXF. scale="auto" picks the largest
     standard scale (1:1, 1:2, 1:5, 2:1...) at which every view fits its slot.
     Returns a compact summary dict (token-minimal).
     """
@@ -239,7 +240,11 @@ def sheet_for(obj, dxf_path: Optional[str] = None,
                              name=f"{obj.Name}_{vname}"))
     ndims = 0
     if dims:
-        for v in made[:2]:
+        # overall sizes only on axis-aligned views: on an iso (or any tilted) view
+        # an extent is a projected length, not a size of the part
+        ortho = [v for v in made
+                 if sum(abs(c) > 1e-9 for c in (v.Direction.x, v.Direction.y, v.Direction.z)) == 1]
+        for v in ortho[:2]:
             ndims += len(add_extent_dims(v))
     out = None
     if dxf_path:
