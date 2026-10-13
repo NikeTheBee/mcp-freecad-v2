@@ -67,7 +67,7 @@ Linux/macOS: the pieces are portable but untested — contributions welcome.
 ```
 python install/run_all_tests.py
 ```
-~33 tests: the audit's traps (verdicts that used to pass on wrong parts), layers, grafts, the
+~36 tests: the audit's traps (verdicts that used to pass on wrong parts), layers, grafts, the
 launcher (auth, crash restart, port-squatting refusal) and full MCP loops — all end-to-end tests
 run on an **isolated** FreeCAD (port 23499, private home), never on your live instance. A skipped
 test is reported as SKIP, never as a pass. The vendored base also keeps its own ~2,100 unit tests

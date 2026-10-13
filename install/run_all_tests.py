@@ -82,6 +82,7 @@ LIVE_TESTS = [
     ("mcp_loop_test.py", "MCP_LOOP_OK"),
     ("layers_mcp_test.py", "LAYERS_MCP_OK"),
     ("base_fixes_test.py", "BASE_FIXES_OK"),
+    ("base_exactness_test.py", "BASE_EXACT_OK"),
 ]
 VENV_PY = (Path.home() / ".freecad-mcp" / "venv"
            / ("Scripts/python.exe" if os.name == "nt" else "bin/python"))

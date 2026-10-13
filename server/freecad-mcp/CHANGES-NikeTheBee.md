@@ -95,4 +95,6 @@ Upstream unit tests on Windows, compared with the unmodified upstream version in
   deselected.
 
 These fixes are also checked live against a real FreeCAD by `install/base_fixes_test.py` in the
-parent project (34/34 project tests, including the Windows CI job `windows-full`).
+parent project. `install/base_exactness_test.py` compares the base's geometry operations with
+known values: booleans, move, scale, spreadsheet-driven parameters, measurements, interference,
+distance and clearance. It is the guard to run after every upstream update (34/34 project tests, including the Windows CI job `windows-full`).

@@ -66,7 +66,7 @@ première erreur et n'écrase jamais une configuration Claude Desktop illisible.
 ```
 python install/run_all_tests.py
 ```
-~33 tests : les pièges de l'audit (verdicts qui passaient sur des pièces fausses), couches, greffes,
+~36 tests : les pièges de l'audit (verdicts qui passaient sur des pièces fausses), couches, greffes,
 lanceur (authentification, relance après crash, refus d'un port usurpé) et boucles MCP complètes —
 sur une instance FreeCAD **isolée** (port 23499), jamais sur votre instance réelle. Un test ignoré
 s'affiche SKIP, jamais comme réussi. La base intégrée garde aussi ses ~2 100 tests unitaires
