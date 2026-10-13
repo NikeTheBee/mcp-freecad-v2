@@ -101,31 +101,40 @@ def views(targets, path: Optional[str] = None, which: Sequence[str] = ("front", 
     inch = size_px / 100.0
     fig, axes = plt.subplots(rows, cols, figsize=(inch, inch * rows / cols), dpi=100,
                              squeeze=False)
+    # Triangles as numpy arrays (one pass per part): corners A, B, C, unit normals
+    # and a base colour per triangle -- the per-view work below is vectorised.
+    import numpy as np
+    tri_a, tri_b, tri_c, tri_n, tri_col = [], [], [], [], []
+    for i, (P, tris) in enumerate(meshes):
+        if not tris:
+            continue
+        Pa = np.asarray(P, dtype=float)
+        T = np.asarray(tris, dtype=int).reshape(-1, 3)
+        a, b, c = Pa[T[:, 0]], Pa[T[:, 1]], Pa[T[:, 2]]
+        n = np.cross(b - a, c - a)
+        ln = np.linalg.norm(n, axis=1)
+        keep = ln > 1e-15                     # drop degenerate slivers
+        tri_a.append(a[keep]); tri_b.append(b[keep]); tri_c.append(c[keep])
+        tri_n.append(n[keep] / ln[keep, None])
+        tri_col.append(np.tile(_COLORS[i % len(_COLORS)], (int(keep.sum()), 1)))
+    A, B, C = (np.concatenate(x) if x else np.zeros((0, 3)) for x in (tri_a, tri_b, tri_c))
+    N = np.concatenate(tri_n) if tri_n else np.zeros((0, 3))
+    COL = np.concatenate(tri_col) if tri_col else np.zeros((0, 3))
+
     for k, view in enumerate(which):
         ax = axes[k // cols][k % cols]
         fwd, right, up = _frame(view)
         # key light from the viewer's upper left: top, front and side faces read apart
         cam_light = _unit(tuple(-0.5 * f + 0.8 * u - 0.3 * r for f, u, r in zip(fwd, up, right)))
-        polys, colors, depths = [], [], []
-        for i, (P, tris) in enumerate(meshes):
-            base = _COLORS[i % len(_COLORS)]
-            for a, b, c in tris:
-                pa, pb, pc = P[a], P[b], P[c]
-                n = _cross(tuple(pb[j] - pa[j] for j in range(3)), tuple(pc[j] - pa[j] for j in range(3)))
-                ln = math.sqrt(_dot(n, n))
-                if ln < 1e-15:
-                    continue
-                n = (n[0] / ln, n[1] / ln, n[2] / ln)
-                if _dot(n, fwd) > 0:          # facing away from the camera (closed solids)
-                    continue
-                shade = 0.45 + 0.55 * max(0.0, _dot(n, cam_light))
-                polys.append([(_dot(p, right), _dot(p, up)) for p in (pa, pb, pc)])
-                colors.append(tuple(min(1.0, ch * shade) for ch in base))
-                depths.append(_dot(((pa[0] + pb[0] + pc[0]) / 3, (pa[1] + pb[1] + pc[1]) / 3,
-                                    (pa[2] + pb[2] + pc[2]) / 3), fwd))
-        order = sorted(range(len(polys)), key=lambda j: -depths[j])   # far first
-        pc = PolyCollection([polys[j] for j in order], facecolors=[colors[j] for j in order],
-                            edgecolors=[colors[j] for j in order], linewidths=0.8)  # no seams
+        f, r_, u_, lt = (np.asarray(v, dtype=float) for v in (fwd, right, up, cam_light))
+        front = N @ f <= 0                     # back faces of closed solids are hidden
+        a, b, c, n = A[front], B[front], C[front], N[front]
+        shade = 0.45 + 0.55 * np.clip(n @ lt, 0.0, None)
+        colors = np.clip(COL[front] * shade[:, None], 0.0, 1.0)
+        verts = np.stack([np.stack([p @ r_, p @ u_], axis=1) for p in (a, b, c)], axis=1)
+        order = np.argsort(-(((a + b + c) / 3.0) @ f), kind="stable")   # far first
+        pc = PolyCollection(verts[order], facecolors=colors[order],
+                            edgecolors=colors[order], linewidths=0.8)  # no seams
         ax.add_collection(pc)
         corners = [(x, y, z) for x in (bb.XMin, bb.XMax) for y in (bb.YMin, bb.YMax)
                    for z in (bb.ZMin, bb.ZMax)]
