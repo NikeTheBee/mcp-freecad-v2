@@ -38,6 +38,9 @@ au lieu de croire la lecture qu'en fait l'IA.
   identiques quelle que soit leur orientation ; trous, porte-à-faux et imprimabilité jugent
   chaque pièce seule ; un plan ne met jamais de cote d'encombrement sur une vue iso (une
   longueur projetée n'est pas une dimension).
+- **Retour arrière et récupération préservent le travail** : un checkpoint restauré ou une copie
+  récupérée se rouvre sous le nom du document, en copie de travail (un enregistrement n'écrase
+  plus le checkpoint), et après un plantage `recover` ramène le retour arrière choisi.
 
 ## Nouveautés de la 2.1
 - **Calcul de résistance** (`fem_static`, CalculiX) : déplacement, contrainte de von Mises et

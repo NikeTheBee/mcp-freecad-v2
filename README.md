@@ -37,6 +37,9 @@ trusting the AI's reading of it.
 - **Assemblies measured part by part**: the parts list counts identical parts once whatever
   their orientation; holes, overhangs and printability judge each part on its own; a plan
   never puts an overall size on an iso view (a projected length is not a size).
+- **Rollback and recovery keep the work whole**: a restored checkpoint or recovered copy reopens
+  under the document's own name, as a working copy (a later save no longer overwrites the
+  checkpoint), and after a crash `recover` brings back the rollback you chose.
 
 ## What's new in 2.1
 - **Stress analysis** (`fem_static`, CalculiX): displacement, von Mises stress and safety factor,
