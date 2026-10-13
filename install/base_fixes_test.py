@@ -80,11 +80,13 @@ json.dumps({'vol': round(b.Shape.Volume, 3), 'tip': b.Tip.TypeId,
 def op(inst: Instance, tool: str, args: dict, wait: float = 60.0):
     """Call a tool; queued operations return a job id that is polled to completion."""
     r = inst.call(tool, args)
+    # keep the submission's id: a "running" poll reply does not repeat it
+    job_id = (r.get("job_id") or r.get("id")) if isinstance(r, dict) else None
     deadline = time.monotonic() + wait
     while isinstance(r, dict) and r.get("status") in ("submitted", "running", "queued"):
         assert time.monotonic() < deadline, f"{tool} still running: {r}"
         time.sleep(0.2)
-        r = inst.call("poll_job", {"job_id": r.get("job_id") or r.get("id")})
+        r = inst.call("poll_job", {"job_id": job_id})
     return r.get("result", r) if isinstance(r, dict) else r
 
 
@@ -152,6 +154,22 @@ def main() -> int:
         # minus their 1/3 mm3 overlap at that corner
         assert abs(float(v) - (1000 - 2 * 0.5 * 10 + 1 / 3)) < 1e-3, v
         print("fillet/chamfer: named edges work, Part chamfer cuts, headless without edges explains: OK")
+
+        # 6. a headless job runs on its own thread: the submission answers at once (it used
+        #    to answer only when the job was done, after the bridge had reported a crash),
+        #    and a lock-free read waits for it, then says "busy" instead of racing it
+        t0 = time.monotonic()
+        sub = inst.call("execute_python_async", {"code": "import time\ntime.sleep(30)\n'slept'"})
+        assert sub.get("status") == "submitted" and time.monotonic() - t0 < 5, sub
+        r = inst.call("view_control", {"operation": "list_objects"}, timeout=40)
+        assert "busy" in str(r.get("error")) and sub["job_id"] in r["error"], r
+        deadline = time.monotonic() + 30
+        while (r := inst.call("poll_job", {"job_id": sub["job_id"]})).get("status") == "running":
+            assert time.monotonic() < deadline, r
+            time.sleep(0.5)
+        assert r.get("status") == "done" and "slept" in str(r.get("result")), r
+        assert "result" in inst.call("view_control", {"operation": "list_objects"})
+        print("headless job on its own thread; reads say busy meanwhile, then work: OK")
 
         # 4. listener proof: the real FreeCAD proves it knows the token...
         with socket.create_connection(("127.0.0.1", inst.port), timeout=10) as s:

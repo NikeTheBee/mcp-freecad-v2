@@ -797,7 +797,10 @@ class FreeCADSocketServer:
         # with nothing analogous to GUI mode's _gui_thread_busy guard. This
         # lock serializes headless inline execution the same way the GUI
         # thread naturally serializes Qt-queued tasks.
-        self._headless_exec_lock = threading.Lock()
+        # MCP FREECAD v2: reentrant -- the lock-free view_control reads now
+        # take it, and create_document itself calls _run_on_gui_thread, which
+        # takes it again on the same thread (a plain Lock deadlocked there).
+        self._headless_exec_lock = threading.RLock()
         # MCP FREECAD v2: a headless "async" job used to run inline on the
         # submitting socket thread, so the submission only answered once the
         # job was DONE. The bridge waits 35 s for that answer, then reported
@@ -806,6 +809,10 @@ class FreeCADSocketServer:
         # the submission answers at once and the bridge polls, as designed.
         # Unit tests that inspect a job right after submitting set this True.
         self._headless_async_inline = False
+        # How long a lock-free headless read (list_objects...) waits for a job
+        # holding the lock: under the bridge's 35 s answer wait, so the caller
+        # gets "busy" instead of a false crash report.
+        self._headless_busy_wait = 25.0
 
         # Stamped every _process_gui_tasks tick (every ~100ms) as long as the
         # Qt event loop is alive and pumping. Lets a request be rejected
@@ -1379,6 +1386,15 @@ class FreeCADSocketServer:
                 if "result" in result:
                     return json.dumps({"result": result["result"]})
             return json.dumps({"result": str(result)})
+
+    def _busy_error(self) -> str:
+        """JSON error for a call that found headless FreeCAD busy on a long job."""
+        now = time.time()
+        running = [f"{jid} ({job.get('tool', '?')}, {now - job['started']:.0f} s)"
+                   for jid, job in list(self._async_jobs.items()) if job.get("status") == "running"]
+        return json.dumps({"error": "FreeCAD is busy with a long operation"
+                                    + (f" (job {', '.join(running)})" if running else "")
+                                    + ". Wait for it (poll_job), then retry this call."})
 
     def _run_on_gui_thread_async(self, job_id: str, task_fn) -> None:
         """Schedule task_fn on the Qt GUI thread without blocking the caller.
@@ -2349,11 +2365,21 @@ class FreeCADSocketServer:
             return self._call_on_gui_thread_async(gui_ops[operation], args, f"view_control {operation}")
 
         if operation in safe_ops:
+            # MCP FREECAD v2: headless, these ran with no lock -- beside a job
+            # still computing on its own thread, reading or SAVING the document
+            # while it changes (FreeCAD is not thread-safe). They now take the
+            # headless lock, and say so plainly when a long job holds it.
+            lock = self._headless_exec_lock if QtCore is None else None
+            if lock is not None and not lock.acquire(timeout=self._headless_busy_wait):
+                return self._busy_error()
             try:
                 result = safe_ops[operation](args)
                 return json.dumps({"result": result})
             except Exception as e:
                 return json.dumps({"error": f"View control {operation} error: {e}"})
+            finally:
+                if lock is not None:
+                    lock.release()
 
         return json.dumps({"error": f"Unknown view control operation: {operation}"})
 

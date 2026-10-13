@@ -68,11 +68,13 @@ def body_volume(inst):
 
 def op(inst, tool, args, wait=60.0):
     r = inst.call(tool, args)
+    # keep the submission's id: a "running" poll reply does not repeat it
+    job_id = r.get("job_id") if isinstance(r, dict) else None
     t0 = time.monotonic()
     while isinstance(r, dict) and r.get("status") in ("submitted", "running", "queued"):
         assert time.monotonic() - t0 < wait, f"{tool} still running"
         time.sleep(0.2)
-        r = inst.call("poll_job", {"job_id": r.get("job_id")})
+        r = inst.call("poll_job", {"job_id": job_id})
     return r.get("result", r) if isinstance(r, dict) else r
 
 

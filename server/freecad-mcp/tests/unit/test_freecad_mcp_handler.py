@@ -1316,6 +1316,58 @@ class TestHeadlessAsyncThread:
         job = self._wait(job_id)
         assert job["status"] == "error" and "boom" in job["error"]
 
+    def test_lock_free_read_says_busy_while_a_long_job_runs(self):
+        """list_objects & co ran with no lock, beside a job changing the document."""
+        self.server._headless_busy_wait = 0.1
+        self.server._async_jobs["abcd1234"] = {"status": "running", "started": time.time() - 200,
+                                               "tool": "execute_python_async"}
+        held, release = threading.Event(), threading.Event()
+
+        def job_thread():                       # the long job holds the lock
+            with self.server._headless_exec_lock:
+                held.set()
+                release.wait(5)
+        t = threading.Thread(target=job_thread)
+        t.start()
+        held.wait(5)
+        try:
+            reply = json.loads(self.server._dispatch_view_control({"operation": "list_objects"}))
+        finally:
+            release.set()
+            t.join()
+        assert "busy" in reply["error"] and "abcd1234" in reply["error"], reply
+
+    def test_lock_free_read_releases_the_lock(self):
+        self.server.document_ops.list_objects = MagicMock(return_value=["Box"])
+        for _ in range(2):
+            reply = json.loads(self.server._dispatch_view_control({"operation": "list_objects"}))
+            assert reply == {"result": ["Box"]}, reply
+        got = []                                  # another thread can take it: not leaked
+
+        def other_thread():
+            lock = self.server._headless_exec_lock
+            got.append(lock.acquire(timeout=1))
+            if got[-1]:
+                lock.release()
+        t = threading.Thread(target=other_thread)
+        t.start()
+        t.join()
+        assert got == [True]
+
+    def test_read_that_runs_on_the_gui_path_itself_does_not_deadlock(self):
+        """create_document calls _run_on_gui_thread, which takes the lock again
+        on the same thread: with a plain Lock that hung FreeCAD for good."""
+        def create_document(args):
+            return json.loads(self.server._run_on_gui_thread(lambda: {"result": "Doc"}, timeout=1))
+        self.server.document_ops.create_document = create_document
+        done = []
+        t = threading.Thread(target=lambda: done.append(
+            self.server._dispatch_view_control({"operation": "create_document", "name": "D"})),
+            daemon=True)
+        t.start()
+        t.join(5)
+        assert done and "Doc" in done[0], done
+
     def test_job_cancelled_before_it_starts_never_runs(self):
         ran = []
         with self.server._headless_exec_lock:      # FreeCAD busy with something else
