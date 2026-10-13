@@ -244,6 +244,23 @@ def _solve_once(doc, target, fixed_specs, loads, mat, mesh_size: float, prefix: 
     }
 
 
+def estimated_nodes(shape, size: float) -> int:
+    """A LOW estimate of the nodes Gmsh makes at `size` (2nd-order tetrahedra).
+
+    Measured: about 7 V/h³ on bulky parts and 8 A/h² while h exceeds the
+    thickness; small features only add nodes. Used to refuse a hopeless mesh
+    BEFORE meshing: a mesh_size_mm of 0.01 used to keep Gmsh busy for ages
+    before the node limit was even checked.
+    """
+    return int(max(6.0 * shape.Volume / size ** 3, 7.0 * shape.Area / size ** 2))
+
+
+def smallest_mesh_size(shape) -> float:
+    """Below this size the estimate alone exceeds MAX_NODES."""
+    return max((6.0 * shape.Volume / MAX_NODES) ** (1.0 / 3.0),
+               (7.0 * shape.Area / MAX_NODES) ** 0.5)
+
+
 def default_mesh_size(shape) -> float:
     bb = shape.BoundBox
     dims = sorted(d for d in (bb.XLength, bb.YLength, bb.ZLength) if d > 1e-9)
@@ -290,6 +307,11 @@ def static(target, fixed: Sequence[str], loads: Sequence[Dict[str, Any]],
     size = float(mesh_size_mm or default_mesh_size(obj.Shape))
     if size <= 0:
         raise ValueError("mesh_size_mm must be > 0")
+    est = estimated_nodes(obj.Shape, size)
+    if est > MAX_NODES:
+        floor = math.ceil(smallest_mesh_size(obj.Shape) * 100) / 100
+        raise ValueError(f"mesh_size_mm {size:g} would make at least ~{est} nodes "
+                         f"(limit {MAX_NODES}); use {floor:g} mm or more")
     prefix = f"FEM_{obj.Name}_"
     _, m = _solve_once(doc, obj, list(fixed), list(loads), mat, size, prefix)
     if "error" in m:
@@ -298,7 +320,10 @@ def static(target, fixed: Sequence[str], loads: Sequence[Dict[str, Any]],
     m["material"] = mat["name"]
     m["yield_MPa"] = mat["yield"]
 
-    if refine:
+    if refine and estimated_nodes(obj.Shape, size / 1.6) > MAX_NODES:
+        advisories.append(f"refined solve skipped: a {size / 1.6:.3g} mm mesh would exceed "
+                          f"{MAX_NODES} nodes; convergence unknown")
+    elif refine:
         _, m2 = _solve_once(doc, obj, list(fixed), list(loads), mat, size / 1.6, prefix)
         if "error" in m2:
             advisories.append(f"refined solve failed ({m2['error']}); convergence unknown")

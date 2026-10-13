@@ -98,6 +98,24 @@ for bad in (dict(fixed=[], loads=[{"faces": "xmax", "force_N": 1}]),
         print("refused:", str(e)[:70])
     else:
         raise AssertionError(f"accepted bad input {bad}")
+# a hopeless mesh is refused BEFORE meshing (Gmsh used to grind first), with a size that works
+import time  # noqa: E402
+t0 = time.time()
+try:
+    fem.static("Beam", ["xmin"], [{"faces": "xmax", "force_N": 1}], mesh_size_mm=0.01)
+except ValueError as e:
+    msg = str(e)
+    print("refused:", msg)
+    assert "nodes" in msg and "mm or more" in msg and time.time() - t0 < 5, (msg, time.time() - t0)
+    hint = float(msg.split("use ")[1].split(" mm")[0])
+    assert fem.estimated_nodes(doc.Beam.Shape, hint) <= fem.MAX_NODES, hint
+else:
+    raise AssertionError("a 0.01 mm mesh was accepted")
+# the estimate stays BELOW what Gmsh really made (never refuses a mesh that would fit)
+est = fem.estimated_nodes(doc.Beam.Shape, r["measures"]["mesh_size_mm"])
+assert est <= r["measures"]["nodes"], (est, r["measures"])
+print(f"hopeless mesh refused before meshing, with a usable size "
+      f"(estimate {est} <= {r['measures']['nodes']} real nodes): OK")
 sheet = doc.addObject("Part::Feature", "Sheet")
 sheet.Shape = Part.makePlane(10, 10)
 doc.recompute()
