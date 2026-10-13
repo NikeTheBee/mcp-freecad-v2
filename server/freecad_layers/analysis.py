@@ -110,36 +110,58 @@ def _face_samples(face, n: int):
                 yield p, face.normalAt(u, v)
 
 
-def min_wall(obj_or_shape, per_face: int = 3, max_samples: int = 600) -> Dict[str, Any]:
+def min_wall(obj_or_shape, per_face: Optional[int] = None, max_samples: int = 2000) -> Dict[str, Any]:
     """Estimated minimum wall thickness by inward ray-casting (sampled).
 
-    Returns {min_mm, at, samples, method}. It is a lower-bound-ish ESTIMATE:
-    thin spots between sample points can be missed — say so to the user.
+    Rays start just inside each face and go along the inward normal. The
+    first wall they leave through (a facet of a fine mesh of the solid,
+    facing along the ray) gives the thickness there. It is an ESTIMATE:
+    thin spots between sample points can be missed, so say so to the user.
+
+    Samples are spread over ALL faces (per_face x per_face each, sized from
+    max_samples). The former version stopped after the first `max_samples`
+    points, so the faces listed last were never checked, and it ran one
+    boolean op per ray (about 15 ms each). Returns
+    {min_mm, at, samples, faces_sampled, faces, method}.
     """
+    import MeshPart
+
     shp = _shape(obj_or_shape)
     solids = shp.Solids
     if not solids:
         return {"min_mm": None, "samples": 0, "method": "no solid"}
     diag = shp.BoundBox.DiagonalLength
-    best, where, count = math.inf, None, 0
-    for solid in solids:
-        for face in solid.Faces:
-            for p, n in _face_samples(face, per_face):
-                if count >= max_samples:
-                    break
-                count += 1
-                start = p - n * 1e-4
-                seg = Part.LineSegment(start, p - n * diag).toShape()
-                inside = solid.common(seg)
-                for e in inside.Edges:
-                    a, b = e.Vertexes[0].Point, e.Vertexes[-1].Point
-                    if min((a - start).Length, (b - start).Length) < 1e-2:
-                        t = e.Length + 1e-4
-                        if t < best:
-                            best, where = t, p
+    defl = max(diag * 2e-4, 1e-3)            # mesh chord error: ~0.02 % of the part size
+    eps = max(diag * 1e-7, 1e-7)
+    faces = [(s, f) for s in solids for f in s.Faces]
+    n = per_face or max(1, min(6, int(math.sqrt(max_samples / max(len(faces), 1)))))
+    stride = max(1, math.ceil(len(faces) * n * n / max_samples))   # huge models: every k-th face
+    best, where, count, sampled = math.inf, None, 0, 0
+    meshes = {}
+    for k, (solid, face) in enumerate(faces):
+        if k % stride:
+            continue
+        sampled += 1
+        mesh = meshes.get(id(solid))
+        if mesh is None:
+            mesh = meshes[id(solid)] = MeshPart.meshFromShape(
+                Shape=solid, LinearDeflection=defl, AngularDeflection=0.2)
+        for p, nrm in _face_samples(face, n):
+            count += 1
+            start = p - nrm * eps
+            # angle < 90 deg: only facets facing along the ray (the wall it exits
+            # through), never the face it starts from
+            hits = mesh.nearestFacetOnRay((start.x, start.y, start.z),
+                                          (-nrm.x, -nrm.y, -nrm.z), 1.5)
+            for q in hits.values():
+                t = (App.Vector(*q) - start).dot(-nrm) + eps
+                if 0 < t < best:
+                    best, where = t, p
     return {"min_mm": None if best is math.inf else round(best, 4),
             "at": None if where is None else [round(x, 3) for x in (where.x, where.y, where.z)],
-            "samples": count, "method": f"sampled ray-cast ({per_face}x{per_face}/face)"}
+            "samples": count, "faces_sampled": sampled, "faces": len(faces),
+            "method": f"mesh ray-cast ({n}x{n}/face"
+                      + (f", every {stride}th face)" if stride > 1 else ", all faces)")}
 
 
 def overhangs(obj_or_shape, max_angle_deg: float = 45.0,
