@@ -210,6 +210,7 @@ class TestFilletEdges(unittest.TestCase):
 
     def test_no_args_returns_awaiting_selection(self):
         """Without edges or auto_select_all, fillet asks the user to pick."""
+        mock_FreeCAD.GuiUp = True   # MCP FREECAD v2: interactive selection needs the GUI
         box = make_box_object("B")
         doc = make_mock_doc([box])
         mock_FreeCAD.ActiveDocument = doc
@@ -331,6 +332,7 @@ class TestChamferEdges(unittest.TestCase):
         self.handler = make_handler(PartDesignOpsHandler)
 
     def test_no_args_returns_awaiting_selection(self):
+        mock_FreeCAD.GuiUp = True   # MCP FREECAD v2: interactive selection needs the GUI
         box = make_box_object("B")
         doc = make_mock_doc([box])
         mock_FreeCAD.ActiveDocument = doc
@@ -1679,3 +1681,49 @@ class TestDatumFromFace(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+# ---------------------------------------------------------------------------
+# MCP FREECAD v2: explicit edges (headless) for fillet / chamfer
+# ---------------------------------------------------------------------------
+
+from handlers.partdesign_ops import edge_indices  # noqa: E402
+
+
+class TestEdgeIndices(unittest.TestCase):
+    def test_accepts_ints_digits_and_names(self):
+        self.assertEqual(edge_indices([3, "4", "Edge5", " Edge6 "]), ([3, 4, 5, 6], None))
+        self.assertEqual(edge_indices("Edge2"), ([2], None))
+
+    def test_rejects_garbage(self):
+        for bad in (["Face1"], [0], ["Edge0"], [True], ["x"], []):
+            idx, err = edge_indices(bad)
+            self.assertIsNone(idx, bad)
+            self.assertTrue(err)
+
+
+class TestHeadlessFilletChamfer(unittest.TestCase):
+    def setUp(self):
+        reset_mocks()
+        self.handler = make_handler(PartDesignOpsHandler)
+        self.box = make_box_object("B")
+        mock_FreeCAD.ActiveDocument = make_mock_doc([self.box])
+
+    def test_headless_without_edges_explains_instead_of_awaiting_selection(self):
+        for call, op in ((self.handler.fillet_edges, "fillet"), (self.handler.chamfer_edges, "chamfer")):
+            out = call({"object_name": "B"})
+            self.assertIn(f"{op} needs edges=[...]", out)
+        self.handler.selector.request_selection.assert_not_called()
+
+    def test_named_edges_reach_the_feature(self):
+        doc = mock_FreeCAD.ActiveDocument
+        out = self.handler.chamfer_edges({"object_name": "B", "distance": 1, "edges": ["Edge1", 2]})
+        self.handler.selector.request_selection.assert_not_called()
+        chamfer = next(o for o in doc.Objects if o.TypeId == "Part::Chamfer")
+        self.assertEqual(chamfer.Edges, [(1, 1, 1), (2, 1, 1)], out)   # (edge, size1, size2)
+        self.assertNotIn("Error", out)
+
+    def test_bad_edge_name_is_a_clear_error_not_a_type_error(self):
+        out = self.handler.fillet_edges({"object_name": "B", "edges": ["Face1"]})
+        self.assertIn("Invalid edge 'Face1'", out)
+        self.assertNotIn("not supported between", out)

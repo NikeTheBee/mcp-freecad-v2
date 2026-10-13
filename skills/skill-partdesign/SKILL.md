@@ -33,6 +33,11 @@ After `addGeometry`, add constraints for robust parametrics:
 `s1.setDatum(idx, value)` or expressions (see variants below).
 
 ## Dress-up: fillet / chamfer
+Prefer the tool: `partdesign_operations(operation="fillet", object_name="Pad", radius=2,
+edges=["Edge1", 3])`. Chamfer is the same with `distance`. Inside a Body it creates a
+PartDesign feature; on a Part object it creates `Part::Fillet` / `Part::Chamfer`.
+**Always pass `edges`** (or `auto_select_all=true`): the headless FreeCAD has no interactive
+selection. Then `check` the result. The equivalent in code:
 ```python
 f = body.newObject("PartDesign::Fillet", "Fillet")
 f.Base = (pad, ["Edge1", "Edge3"]); f.Radius = 2     # PartDesign::Chamfer is analogous (.Size)

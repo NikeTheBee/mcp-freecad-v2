@@ -1433,6 +1433,11 @@ async def main():
                     # Common parameters
                     "length": {"type": "number", "description": "Length/depth for pad", "default": 10},
                     "radius": {"type": "number", "description": "Radius for fillet/holes", "default": 1},
+                    "edges": {"type": "array", "items": {"type": ["integer", "string"]},
+                              "description": "fillet/chamfer: edges as 1-based indices or names like 'Edge3' "
+                                             "(see measurement_operations list_faces). Required on a headless "
+                                             "FreeCAD, which has no interactive selection."},
+                    "auto_select_all": {"type": "boolean", "description": "fillet/chamfer: every edge of the object"},
                     "distance": {"type": "number", "description": "Distance for chamfer", "default": 1},
                     "angle": {"type": "number", "description": "Angle for revolution/draft", "default": 360},
                     "thickness": {"type": "number", "description": "Thickness value", "default": 2},

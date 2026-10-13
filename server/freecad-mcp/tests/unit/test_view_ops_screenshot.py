@@ -421,3 +421,31 @@ class TestHeadlessViewOps:
             plat.system.return_value = "Windows"
             out = json.loads(make_handler().take_screenshot({}))
         assert out["success"] is False and "render_views" in out["error"], out
+
+    def test_headless_hide_show_use_document_visibility(self):
+        obj = MagicMock()
+        obj.ViewObject = None
+        obj.Visibility = True
+        doc = MagicMock()
+        doc.getObject.return_value = obj
+        with patch(_FREECAD_PATH) as fc:
+            fc.GuiUp = False
+            fc.ActiveDocument = doc
+            h = make_handler()
+            out = h.hide_object({"object_name": "Box"})
+            assert obj.Visibility is False and "document visibility" in out, out
+            out = h.show_object({"object_name": "Box"})
+            assert obj.Visibility is True and "NoneType" not in out, out
+
+    def test_headless_report_view_reads_the_launcher_console_log(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        monkeypatch.setenv("HOME", str(tmp_path))
+        logs = tmp_path / ".freecad-mcp" / "logs"
+        logs.mkdir(parents=True)
+        (logs / "freecad_headless.log").write_bytes(b"line one\nCalculiX finished\nline \xd8 three\n")
+        with patch(_FREECAD_PATH) as fc:
+            fc.GuiUp = False
+            out = make_handler().get_report_view({"tail": 2})
+            assert "CalculiX finished" in out and "line one" not in out, out
+            out = make_handler().get_report_view({"filter": "calculix"})
+            assert out.endswith("CalculiX finished"), out

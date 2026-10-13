@@ -75,6 +75,10 @@ It runs `git subtree pull --squash` on a clean tree. Then run the base's unit te
 | `tests/unit/test_version_check.py` | Two exact-dict assertions also check `how_to_update`. | Follows the new key. |
 | `AICopilot/handlers/view_ops.py` | On a headless FreeCAD, `set_view`, `fit_all`, `zoom_in` and `zoom_out` say that there is no 3D view. The screenshot error adds the same hint. Both point to the `freecad-layers` tool `render_views`. | They crashed with "'NoneType' object has no attribute 'ActiveDocument'" (`FreeCADGui` is `None` headless), which told the AI nothing. |
 | `tests/unit/test_view_ops_screenshot.py` | New `TestHeadlessViewOps` (5 tests). | Covers it. |
+| `AICopilot/handlers/view_ops.py` | Headless `hide_object`/`show_object` set the document's own `Visibility`. Headless `get_report_view` reads the console log that the launcher keeps (`~/.freecad-mcp/logs/freecad_headless.log`), with the same `tail` and `filter` arguments. | They raised "'NoneType' object has no attribute ..."; a full sweep of the 190 operations found them. |
+| `AICopilot/handlers/partdesign_ops.py`, `freecad_mcp_server.py` | `fillet` and `chamfer` take `edges` (now in the schema) as 1-based indices or names like `"Edge3"` (`edge_indices`); `auto_select_all` is in the schema too. On a headless FreeCAD without edges, they return a clear message instead of an interactive selection request that can never complete. | The tool schema had no way to name edges, so a headless fillet or chamfer was impossible through MCP. Passing `"Edge1"` also raised a raw `TypeError`. |
+| `AICopilot/handlers/partdesign_ops.py` | `Part::Chamfer` edges are `(edge, size1, size2)` triples (was `(edge, size)`). | Every non-Body chamfer, including the GUI selection path and `auto_select_all`, failed with "tuple index out of range". |
+| tests | `TestEdgeIndices`, `TestHeadlessFilletChamfer`, and 2 more headless view tests. Two upstream "awaiting selection" tests now set `GuiUp = True`, since they model the GUI. | Coverage; the live check is in `install/base_fixes_test.py`. |
 
 ## Test status
 

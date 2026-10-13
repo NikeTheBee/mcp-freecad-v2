@@ -2,12 +2,34 @@
 
 import json
 import math
+import re
 from typing import Any
 
 import FreeCAD
 import Part
 
 from .base import NO_ACTIVE_DOCUMENT_ERROR, BaseHandler, axis_vector_or_none
+
+# MCP FREECAD v2: fillet/chamfer edges given explicitly (the only way that works
+# on a headless FreeCAD, which has no interactive selection).
+_HEADLESS_EDGES = ("{op} needs edges=[...] on a headless FreeCAD (no interactive selection): "
+                   "1-based indices or names like 'Edge3' -- list them with "
+                   "measurement_operations list_faces / count_elements -- or auto_select_all=true")
+
+
+def edge_indices(edges) -> tuple[list[int] | None, str | None]:
+    """1-based edge indices from 3, "3" or "Edge3"; (None, reason) if any is invalid."""
+    items = edges if isinstance(edges, (list, tuple)) else [edges]
+    out = []
+    for e in items:
+        m = re.fullmatch(r"(?:Edge)?(\d+)", str(e).strip()) if not isinstance(e, bool) else None
+        if not m or int(m.group(1)) < 1:
+            return None, f"Invalid edge {e!r}: use 1-based indices (3) or names ('Edge3')"
+        out.append(int(m.group(1)))
+    if not out:
+        return None, "No edges given"
+    return out, None
+
 
 
 class PartDesignOpsHandler(BaseHandler):
@@ -143,11 +165,17 @@ class PartDesignOpsHandler(BaseHandler):
 
             # Method 1: Use explicit edge list if provided
             if edges:
-                return self._create_fillet_with_edges(object_name, edges, radius, name)
+                idx, err = edge_indices(edges)
+                if err:
+                    return err
+                return self._create_fillet_with_edges(object_name, idx, radius, name)
 
             # Method 2: Auto-select all edges if requested
             if auto_select_all:
                 return self._create_fillet_auto(args)
+
+            if not FreeCAD.GuiUp:
+                return _HEADLESS_EDGES.format(op="fillet")
 
             # Method 3: Interactive selection workflow
             selection_request = self.selector.request_selection(
@@ -328,8 +356,19 @@ class PartDesignOpsHandler(BaseHandler):
 
                 return self._create_chamfer_with_selection(args, selection_result)
 
+            edges = args.get('edges', [])
+            if edges:
+                idx, err = edge_indices(edges)
+                if err:
+                    return err
+                return self._create_chamfer_with_selection(
+                    args, {"selection_data": {"elements": idx}})
+
             if auto_select_all:
                 return self._create_chamfer_auto(args)
+
+            if not FreeCAD.GuiUp:
+                return _HEADLESS_EDGES.format(op="chamfer")
 
             selection_request = self.selector.request_selection(
                 tool_name="chamfer_edges",
@@ -386,7 +425,9 @@ class PartDesignOpsHandler(BaseHandler):
                     )
                 chamfer = doc.addObject("Part::Chamfer", name)
                 chamfer.Base = obj
-                chamfer.Edges = [(idx, distance) for idx in edge_indices]
+                # MCP FREECAD v2: Part::Chamfer wants (edge, size1, size2) -- a pair
+                # raised "tuple index out of range" (non-Body chamfers never worked).
+                chamfer.Edges = [(idx, distance, distance) for idx in edge_indices]
 
             self.recompute(doc)
 
@@ -424,7 +465,7 @@ class PartDesignOpsHandler(BaseHandler):
 
             chamfer = doc.addObject("Part::Chamfer", name)
             chamfer.Base = obj
-            chamfer.Edges = [(i + 1, distance) for i in range(n_edges)]
+            chamfer.Edges = [(i + 1, distance, distance) for i in range(n_edges)]  # see above
 
             self.recompute(doc)
 

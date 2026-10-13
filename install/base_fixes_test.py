@@ -56,6 +56,7 @@ doc = FreeCAD.ActiveDocument
 body = doc.addObject('PartDesign::Body', 'Body')
 blk = body.newObject('PartDesign::AdditiveBox', 'Blk')
 blk.Length, blk.Width, blk.Height = 20, 20, 10
+pbox = doc.addObject('Part::Box', 'PBox')
 sk = doc.addObject('Sketcher::SketchObject', 'Free')
 P = [FreeCAD.Vector(0, 0, 0), FreeCAD.Vector(10, 0, 0),
      FreeCAD.Vector(10, 5, 0), FreeCAD.Vector(0, 5, 0)]
@@ -128,6 +129,29 @@ def main() -> int:
         assert dt < 15, dt
         r = inst.call("execute_python_sync", {"code": "1+1"})
         assert r and r.get("result") == "2", r  # the connection protocol is still in sync
+
+        # 5. fillet / chamfer with explicit edges (the only way headless)
+        r = op(inst, "partdesign_operations", {"operation": "fillet", "object_name": "Blk",
+                                                "radius": 1, "edges": ["Edge1", 2]})
+        print("fillet, named edges:", str(r)[:120])
+        assert "Fillet" in str(r) and "rror" not in str(r), r
+        vol_f = json.loads(inst.call("execute_python_sync", {"code": PROBE})["result"].strip("'\""))
+        assert vol_f["tip"] == "PartDesign::Fillet", vol_f
+        r = op(inst, "partdesign_operations", {"operation": "chamfer", "object_name": "Blk"})
+        assert "needs edges=[...]" in str(r), r            # headless: no interactive selection
+        r = op(inst, "partdesign_operations", {"operation": "fillet", "object_name": "Blk",
+                                                "edges": ["Face1"]})
+        assert "Invalid edge 'Face1'" in str(r), r
+        r = op(inst, "partdesign_operations", {"operation": "chamfer", "object_name": "PBox",
+                                                "distance": 1, "edges": [1, "Edge2"]})
+        assert "Created chamfer" in str(r), r      # Part::Chamfer: (edge, size1, size2)
+        v = inst.call("execute_python_sync", {"code": (
+            "import FreeCAD\nc = [o for o in FreeCAD.ActiveDocument.Objects if o.TypeId == 'Part::Chamfer'][0]\n"
+            "round(c.Shape.Volume, 3)")})["result"]
+        # 10 mm box, two 1 mm chamfers on edges meeting at a corner: 2 x 5 mm3 removed,
+        # minus their 1/3 mm3 overlap at that corner
+        assert abs(float(v) - (1000 - 2 * 0.5 * 10 + 1 / 3)) < 1e-3, v
+        print("fillet/chamfer: named edges work, Part chamfer cuts, headless without edges explains: OK")
 
         # 4. listener proof: the real FreeCAD proves it knows the token...
         with socket.create_connection(("127.0.0.1", inst.port), timeout=10) as s:

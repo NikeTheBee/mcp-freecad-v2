@@ -418,6 +418,11 @@ class ViewOpsHandler(BaseHandler):
             obj = self.get_object(object_name, doc)
             if not obj:
                 return f"Error: Object '{object_name}' not found"
+            if getattr(obj, 'ViewObject', None) is None:
+                # MCP FREECAD v2: headless -- no view provider; the document's own
+                # Visibility property is saved in the file (and read by BOMs).
+                obj.Visibility = False
+                return f"Object '{object_name}' hidden (document visibility; headless, no 3D view)"
             obj.ViewObject.Visibility = False
             return f"Object '{object_name}' hidden"
         except Exception as e:
@@ -435,6 +440,9 @@ class ViewOpsHandler(BaseHandler):
             obj = self.get_object(object_name, doc)
             if not obj:
                 return f"Error: Object '{object_name}' not found"
+            if getattr(obj, 'ViewObject', None) is None:
+                obj.Visibility = True   # MCP FREECAD v2: headless, see hide_object
+                return f"Object '{object_name}' shown (document visibility; headless, no 3D view)"
             obj.ViewObject.Visibility = True
             return f"Object '{object_name}' shown"
         except Exception as e:
@@ -649,6 +657,31 @@ class ViewOpsHandler(BaseHandler):
         except Exception as e:
             return f"Error removing clip plane: {e}"
 
+    @staticmethod
+    def _headless_report(args: dict[str, Any]) -> str:
+        """MCP FREECAD v2: a headless FreeCAD has no Report View; its console
+        output is what MCP FREECAD's launcher writes to freecad_headless.log."""
+        log = os.path.join(os.path.expanduser("~"), ".freecad-mcp", "logs", "freecad_headless.log")
+        if not os.path.isfile(log):
+            return ("No Report View in headless mode, and no console log at "
+                    f"{log} (FreeCAD was not started by MCP FREECAD's launcher)")
+        with open(log, "rb") as f:
+            f.seek(0, os.SEEK_END)
+            f.seek(max(0, f.tell() - 512_000))            # last ~500 KB is plenty
+            lines = f.read().decode("utf-8", errors="replace").splitlines()
+        filter_str = args.get('filter', '')
+        if filter_str:
+            lines = [ln for ln in lines if filter_str.lower() in ln.lower()]
+        try:
+            tail = int(args.get('tail', 50))
+        except (TypeError, ValueError):
+            tail = 50
+        if tail > 0:
+            lines = lines[-tail:]
+        note = " (clear ignored: it is a log file)" if args.get('clear') else ""
+        return (f"Headless FreeCAD console ({log}){note}:\n" + "\n".join(lines)
+                if lines else f"Headless FreeCAD console ({log}): no matching lines{note}")
+
     def get_report_view(self, args: dict[str, Any]) -> str:
         """Read text from FreeCAD's Report View widget.
 
@@ -660,6 +693,8 @@ class ViewOpsHandler(BaseHandler):
             clear: if True, clear the Report View after reading
         """
         try:
+            if not FreeCAD.GuiUp:
+                return self._headless_report(args)
             from PySide import QtWidgets
             mw = FreeCADGui.getMainWindow()
             text_edits = mw.findChildren(QtWidgets.QTextEdit)
