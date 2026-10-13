@@ -29,7 +29,8 @@ trusting the AI's reading of it.
   which size works.
 - **A long operation no longer looks like a crash**: past 35 s, the base reported "FreeCAD
   crashed" while headless FreeCAD was still computing. It now returns the result (or, past
-  2 minutes, a job id to poll).
+  2 minutes, a job id to poll). A real crash during a layers call is reported as one, with the
+  way back (`recover`).
 
 ## What's new in 2.1
 - **Stress analysis** (`fem_static`, CalculiX): displacement, von Mises stress and safety factor,

@@ -47,6 +47,22 @@ def _socket_wait(timeout: float) -> float:
     return max(120.0, timeout + 15.0)
 
 
+_STOPPED = ("FreeCAD stopped during this call (pid {pid} is gone: a crash?). It restarts on "
+            "its own; reopen your work with recover(action='open', doc=...) and redo the last step.")
+
+
+def _gone(pid: int) -> bool:
+    """True when the FreeCAD that took the call no longer exists: no answer
+    then means a crash, not a long computation."""
+    try:
+        # pid_exists alone is not enough on Windows: a dead process keeps its pid
+        # while anyone holds a handle on it. A live FreeCAD always serves its port.
+        return (not launcher.psutil.pid_exists(pid)
+                or pid not in launcher.port_owners(launcher.PORT))
+    except Exception:  # noqa: BLE001 — unknown: keep the "still computing" reading
+        return False
+
+
 def _explain(err: str, timeout: float) -> str:
     """FreeCAD's replies for a long call, said for the person waiting on it."""
     if err.startswith("Operation timeout"):         # GUI addon
@@ -107,7 +123,7 @@ def _run(template: str, /, _timeout: float = 30.0, **args: Any) -> Any:
     if fc is None:
         raise FreeCADError("freecadcmd not found (set FREECAD_MCP_FREECAD_BIN)")
     try:
-        launcher.ensure(fc)
+        pid = launcher.ensure(fc)
     except launcher.Untrusted as e:
         raise FreeCADError(f"refusing to talk to port {launcher.PORT}: {e}") from e
     env_dir = os.environ.get("MCP_FREECAD_PROJECT_DIR")
@@ -126,6 +142,8 @@ def _run(template: str, /, _timeout: float = 30.0, **args: Any) -> Any:
             raise FreeCADError(f"not sent: {refusal}")
         send_message(s, json.dumps(payload))
         raw = receive_message(s, timeout=wait)
+    if not raw and _gone(pid):
+        raise FreeCADError(_STOPPED.format(pid=pid))
     resp = json.loads(raw) if raw else {"error": "no response from FreeCAD"}
     if "error" in resp:
         raise FreeCADError(_explain(str(resp["error"]), _timeout)[:2000])

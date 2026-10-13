@@ -197,6 +197,21 @@ async def run(inst: Instance, project: str, out: str) -> None:
             r = inst.call("execute_python_sync", {"code": "import time\ntime.sleep(2)\n'slept'",
                                                   "timeout": 1})
             assert r.get("result") == "'slept'" and time.time() - t0 >= 2, r
+
+            # LAST (FreeCAD dies here): a crash while a layers call waits is reported as a
+            # crash with the way back, not as "still computing"
+            import threading
+            busy = threading.Thread(target=lambda: inst.call(
+                "execute_python_sync", {"code": "import time\ntime.sleep(20)\n'x'"}, timeout=30))
+            busy.start()                                   # holds FreeCAD for 20 s
+            await asyncio.sleep(1.0)
+            pending = asyncio.ensure_future(call("check", target="Body"))   # waits behind it
+            await asyncio.sleep(2.0)
+            inst.kill()                                    # the crash
+            txt = await pending
+            busy.join()
+            assert txt.startswith("ERROR FreeCAD stopped during this call") and "recover(" in txt, txt
+            print("FreeCAD crash during a call: reported as a crash, with recover: OK")
     # long calls are explained to the person waiting, not as raw bridge errors
     sys.path.insert(0, str(SERVER.parent))
     import freecad_layers_server as srv
@@ -208,6 +223,18 @@ async def run(inst: Instance, project: str, out: str) -> None:
     assert "within 315 s" in srv._explain("no response from FreeCAD", 300.0)
     assert srv._explain("No object named 'Nope'", 30.0) == "No object named 'Nope'"
     assert srv._explain("Python execution error: no project 'x'", 30.0) == "no project 'x'"
+    # no answer + the FreeCAD that took the call is gone = a crash, not a long computation
+    import subprocess
+    dead = subprocess.Popen([sys.executable, "-c", "pass"])
+    dead.wait()
+    assert srv._gone(dead.pid)
+    serving = srv.launcher.port_owners
+    srv.launcher.port_owners = lambda port: {os.getpid()}     # "still serves its port"
+    try:
+        assert not srv._gone(os.getpid())
+    finally:
+        srv.launcher.port_owners = serving
+    assert "recover(action='open'" in srv._STOPPED.format(pid=dead.pid)
     print("long calls: headless runs them to the end; timeouts explained plainly: OK")
 
 

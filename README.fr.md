@@ -29,7 +29,8 @@ au lieu de croire la lecture qu'en fait l'IA.
   la taille qui convient.
 - **Une opération longue ne passe plus pour un plantage** : au-delà de 35 s, la base annonçait
   « FreeCAD a planté » alors que FreeCAD headless calculait encore. Elle rend maintenant le
-  résultat (ou, au-delà de 2 minutes, un identifiant de tâche à interroger).
+  résultat (ou, au-delà de 2 minutes, un identifiant de tâche à interroger). Un vrai plantage
+  pendant un appel des couches est signalé comme tel, avec le moyen de s'en remettre (`recover`).
 
 ## Nouveautés de la 2.1
 - **Calcul de résistance** (`fem_static`, CalculiX) : déplacement, contrainte de von Mises et
