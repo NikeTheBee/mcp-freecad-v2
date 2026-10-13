@@ -257,6 +257,13 @@ SAVE_REGISTER = {
                "the save runs inside the GUI-thread job body",
         "shapes": ["doc.save"],
     },
+    # MCP FREECAD v2: restart_freecad in a launcher-managed headless FreeCAD.
+    ("handlers/diagnostics_ops.py", "DiagnosticsOpsHandler._restart_managed_headless"): {
+        "why": "explicit: restart_freecad(save_documents=...) headless under the launcher — saves "
+               "file-backed documents, copies untitled ones to the temp folder, only while no "
+               "job holds FreeCAD (headless lock), just before the process exits",
+        "shapes": ["doc.save", "doc.saveCopy"],
+    },
     ("handlers/execute_python_ops.py", "ExecutePythonOpsHandler.run_code"): {
         "why": "explicit: the execute_python tool runs the CALLER'S code — statements, the trailing expression, or the whole module",
         "shapes": [

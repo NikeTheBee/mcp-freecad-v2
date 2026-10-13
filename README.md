@@ -31,6 +31,9 @@ trusting the AI's reading of it.
   crashed" while headless FreeCAD was still computing. It now returns the result (or, past
   2 minutes, a job id to poll). A real crash during a layers call is reported as one, with the
   way back (`recover`).
+- **A stuck FreeCAD can be restarted by the assistant** (`restart_freecad`, headless too): it saves
+  what it safely can, exits, and the launcher starts a fresh one. Before, only killing the
+  process by hand helped.
 
 ## What's new in 2.1
 - **Stress analysis** (`fem_static`, CalculiX): displacement, von Mises stress and safety factor,

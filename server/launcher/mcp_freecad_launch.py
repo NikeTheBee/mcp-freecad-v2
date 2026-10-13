@@ -155,7 +155,9 @@ def spawn(freecadcmd: Path) -> subprocess.Popen:
     if sys.platform == "win32":   # survive the launcher; no console window
         flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
     logf = _log_path().with_name("freecad_headless.log").open("ab")
-    env = dict(os.environ, FREECAD_MCP_PORT=str(PORT))
+    # MANAGED: this FreeCAD is started again by us when it exits (supervisor, or
+    # the next ensure()), so the base's restart_freecad may restart it by exiting.
+    env = dict(os.environ, FREECAD_MCP_PORT=str(PORT), MCP_FREECAD_MANAGED="1")
     proc = subprocess.Popen([str(freecadcmd), str(HEADLESS)], cwd=str(HEADLESS.parent),
                             stdin=subprocess.DEVNULL, stdout=logf, stderr=logf,
                             creationflags=flags, close_fds=True, env=env)

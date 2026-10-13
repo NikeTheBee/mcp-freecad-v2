@@ -27,6 +27,8 @@ The launcher starts FreeCAD headless on `localhost:23456` when needed, restarts 
 dies, and refuses to run if a non-FreeCAD process holds the port (anti-squatting). Just call
 `check_freecad_connection` at session start; expect a one-time ~5–30 s cold start. Never launch
 FreeCAD manually. After a crash: `recovery.open_latest(<doc>)` (see `skill-verify`).
+Stuck (a job that never ends, `cancel_job` did nothing)? `restart_freecad`: it saves the documents
+when it safely can (untitled ones as copies in the temp folder), exits, and the launcher restarts it.
 Logs: `~/.freecad-mcp/logs/launcher.log`. The base's `spawn_freecad_instance` is Unix-only.
 - Re-register / full install: `python install/bootstrap.py [--with-grafts]` (idempotent; stops on any error).
 - Run all tests: `python install/run_all_tests.py` (layers, traps, grafts, launcher, MCP loop on an isolated test instance).

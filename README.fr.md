@@ -31,6 +31,9 @@ au lieu de croire la lecture qu'en fait l'IA.
   « FreeCAD a planté » alors que FreeCAD headless calculait encore. Elle rend maintenant le
   résultat (ou, au-delà de 2 minutes, un identifiant de tâche à interroger). Un vrai plantage
   pendant un appel des couches est signalé comme tel, avec le moyen de s'en remettre (`recover`).
+- **Un FreeCAD bloqué peut être redémarré par l'assistant** (`restart_freecad`, aussi sans
+  interface) : il enregistre ce qui peut l'être sans risque, quitte, et le lanceur en démarre un
+  neuf. Avant, seul un arrêt manuel du processus en venait à bout.
 
 ## Nouveautés de la 2.1
 - **Calcul de résistance** (`fem_static`, CalculiX) : déplacement, contrainte de von Mises et

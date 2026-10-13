@@ -413,3 +413,85 @@ class TestRestartFreecadUnresponsiveGuiFallback(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestRestartManagedHeadless(unittest.TestCase):
+    """MCP FREECAD v2: headless FreeCAD started by the project's launcher
+    (MCP_FREECAD_MANAGED=1) restarts by saving, replying and exiting; the
+    launcher starts a fresh one. Before, a stuck headless FreeCAD had no way
+    out but killing it by hand."""
+
+    def setUp(self):
+        import threading
+        reset_mocks()
+        mock_FreeCAD.GuiUp = False
+        self.server = MagicMock()
+        self.server._headless_exec_lock = threading.RLock()
+        self.handler = make_handler(DiagnosticsOpsHandler, server=self.server)
+        self.handler.RESTART_SAVE_WAIT = 0.1
+        self.timers = []
+        test = self
+
+        class _Timer:               # never fires: a real one would os._exit pytest
+            def __init__(self, delay, fn):
+                test.timers.append(delay)
+
+            def start(self):
+                pass
+        self.Timer = _Timer
+
+    def _restart(self, docs, args=None):
+        import os
+        mock_FreeCAD.listDocuments = MagicMock(return_value=docs)
+        with patch.dict(os.environ, {"MCP_FREECAD_MANAGED": "1"}), \
+                patch("threading.Timer", self.Timer):
+            return json.loads(self.handler.restart_freecad(args or {}))
+
+    def _docs(self):
+        saved, untitled = MagicMock(), MagicMock()
+        saved.FileName = "C:/work/part.FCStd"
+        untitled.FileName = ""
+        return {"part": saved, "Unnamed": untitled}
+
+    def test_saves_documents_copies_untitled_ones_then_exits(self):
+        docs = self._docs()
+        r = self._restart(docs)
+        docs["part"].save.assert_called_once()
+        self.assertEqual(r["saved_documents"], ["C:/work/part.FCStd"])
+        copy_path = docs["Unnamed"].saveCopy.call_args[0][0]
+        self.assertIn("freecad_mcp_restart", copy_path)
+        self.assertEqual(r["saved_copies_of_unsaved_documents"], [copy_path])
+        self.assertEqual(self.timers, [0.5])          # exit scheduled after the reply
+        self.assertIn("launcher starts a fresh one", r["result"])
+
+    def test_stuck_job_means_nothing_is_saved_and_it_says_so(self):
+        import threading
+        docs = self._docs()
+        held, release = threading.Event(), threading.Event()
+
+        def stuck_job():
+            with self.server._headless_exec_lock:
+                held.set()
+                release.wait(5)
+        t = threading.Thread(target=stuck_job)
+        t.start()
+        held.wait(5)
+        try:
+            r = self._restart(docs)
+        finally:
+            release.set()
+            t.join()
+        docs["part"].save.assert_not_called()
+        docs["Unnamed"].saveCopy.assert_not_called()
+        self.assertEqual(sorted(r["not_saved"]), ["Unnamed", "part"])
+        self.assertIn("nothing was saved", r["result"])
+        self.assertEqual(self.timers, [0.5])
+
+    def test_not_managed_keeps_the_upstream_refusal(self):
+        import os
+        mock_FreeCAD.listDocuments = MagicMock(return_value={})
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("MCP_FREECAD_MANAGED", None)
+            r = json.loads(self.handler.restart_freecad({}))
+        self.assertIn("headless", r["error"])
+        self.assertEqual(self.timers, [])

@@ -6,6 +6,8 @@ list tools, create a document and a box, read the volume back.
 Run with the bridge venv Python (mcp 2.x + psutil). Sentinel: MCP_LOOP_OK
 """
 import asyncio
+import json
+import os
 import sys
 from pathlib import Path
 
@@ -43,6 +45,18 @@ async def run(inst: Instance) -> int:
             vol = _text(r)
             print("volume:", vol[:120])
             assert "6000" in vol, f"unexpected volume: {vol}"
+
+            # restart_freecad works headless under the launcher (it used to answer "not
+            # available in headless mode": a stuck FreeCAD had no way out): the untitled
+            # document is copied to the temp folder, FreeCAD exits, the launcher restarts it
+            r = await session.call_tool("restart_freecad", {})
+            txt = _text(r)
+            print("restart:", txt[:200])
+            assert "restarted successfully" in txt and "freecad_mcp_restart" in txt, txt
+            for path in json.loads(txt)["restart_response"]["saved_copies_of_unsaved_documents"]:
+                os.remove(path)                    # the test's own copy, in the real temp folder
+            r = await session.call_tool("execute_python", {"code": "'fresh'"})
+            assert "fresh" in _text(r), _text(r)
 
             # a long operation (40 s, past the bridge's 35 s answer wait) returns its
             # result: headless jobs used to run inline on the submitting socket, so

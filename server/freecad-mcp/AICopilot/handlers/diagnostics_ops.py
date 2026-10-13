@@ -189,13 +189,15 @@ class DiagnosticsOpsHandler(BaseHandler):
         falls back to _restart_unresponsive_gui, which needs nothing from
         the GUI thread to work.
         """
+        save_docs = args.get("save_documents", True)
+        reopen_docs = args.get("reopen_documents", True)
+
         if not FreeCAD.GuiUp:
+            if os.environ.get("MCP_FREECAD_MANAGED") == "1":
+                return self._restart_managed_headless(save_docs)
             return json.dumps({"error": "restart_freecad is not available in headless mode"})
 
         import shutil
-
-        save_docs = args.get("save_documents", True)
-        reopen_docs = args.get("reopen_documents", True)
 
         # Resolve the binary here (pure path lookup, no GUI work): a missing
         # binary is a named failure and nothing is queued. shutil.which is
@@ -235,6 +237,60 @@ class DiagnosticsOpsHandler(BaseHandler):
             }
 
         return self.server._submit_async_job("restart_freecad", restart_job)
+
+    # How long a managed headless restart waits for a running job before it
+    # gives up saving (the job may be stuck: that is often why one restarts).
+    RESTART_SAVE_WAIT = 5.0
+
+    def _restart_managed_headless(self, save_docs: bool) -> str:
+        """MCP FREECAD v2: headless FreeCAD started by the parent project's
+        launcher (MCP_FREECAD_MANAGED=1), which starts it again within seconds
+        when it exits. Restart = save, reply, exit. Before, a headless FreeCAD
+        stuck in an OCCT call that never returns had no way out but killing
+        the process by hand.
+
+        Documents are saved only when no job holds FreeCAD (the headless
+        lock is free): saving beside a stuck job risks corrupting them, as
+        _restart_unresponsive_gui explains. Never-saved documents get a copy
+        in the temp folder, so they can be reopened after the restart.
+        """
+        import tempfile
+        import threading
+
+        saved, copies, not_saved, note = [], [], [], ""
+        docs = list(FreeCAD.listDocuments().items())
+        lock = self.server._headless_exec_lock
+        if save_docs and docs and lock.acquire(timeout=self.RESTART_SAVE_WAIT):
+            try:
+                folder = os.path.join(tempfile.gettempdir(), "freecad_mcp_restart")
+                stamp = time.strftime("%Y%m%d-%H%M%S")
+                for name, doc in docs:
+                    try:
+                        if doc.FileName:
+                            doc.save()
+                            saved.append(doc.FileName)
+                        else:
+                            os.makedirs(folder, exist_ok=True)
+                            path = os.path.join(folder, f"{name}-{stamp}.FCStd")
+                            doc.saveCopy(path)
+                            copies.append(path)
+                    except Exception as e:
+                        not_saved.append(f"{name} ({e})")
+            finally:
+                lock.release()
+        elif save_docs and docs:
+            not_saved = [name for name, _ in docs]
+            note = (" A job still holds FreeCAD (stuck?), so nothing was saved: saving beside "
+                    "it risks corrupting the documents. Their unsaved changes are lost.")
+        threading.Timer(0.5, lambda: os._exit(0)).start()
+        return json.dumps({
+            "result": ("Restarting: this headless FreeCAD exits in 0.5 s and the launcher "
+                       "starts a fresh one." + note
+                       + (" Reopen the documents with view_control open_document." if saved or copies else "")),
+            "saved_documents": saved,
+            "saved_copies_of_unsaved_documents": copies,
+            "not_saved": not_saved,
+        })
 
     def _restart_unresponsive_gui(self, fc_bin: str, reopen_docs: bool) -> str:
         """Recovery path for restart_freecad when the Qt GUI thread itself
