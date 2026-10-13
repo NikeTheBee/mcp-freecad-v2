@@ -275,6 +275,12 @@ def check_assembly(objects: Iterable, tol: float = 1e-6) -> Dict[str, Any]:
     {status, parts, interferences: [{a, b, volume}]}; FAIL if any pair overlaps.
     """
     objs = [_resolve(o) for o in objects]
+    names = [o.Name for o in objs]
+    dup = sorted({n for n in names if names.count(n) > 1})
+    if dup:   # a part listed twice "overlaps itself" by its whole volume
+        raise ValueError(f"object(s) listed more than once: {dup}")
+    if len(objs) < 2:   # nothing to compare: an OK here would verify nothing
+        raise ValueError(f"an interference check needs 2 or more parts (got {names})")
     shapes = [o.Shape for o in objs]
     hits = interference(shapes, tol, names=[o.Name for o in objs])
     return {"status": FAIL if hits else OK, "parts": len(objs), "interferences": hits}

@@ -80,6 +80,8 @@ def views(targets, path: Optional[str] = None, which: Sequence[str] = ("front", 
     from matplotlib.collections import PolyCollection
 
     objs = [verify._resolve(t) for t in (targets if isinstance(targets, (list, tuple)) else [targets])]
+    if not objs:
+        raise ValueError("targets must name at least one object to render")
     shapes = []
     for o in objs:
         shp = getattr(o, "Shape", None)

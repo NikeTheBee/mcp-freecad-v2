@@ -48,6 +48,7 @@ reliability tools — prefer them over `execute_python`).
   and replay its steps (each still checked). When a part's contract is OK: `recipe save`.
 - When the user states dimensions/requirements, record them once with `require(target, kind, params)`
   (bbox, holes, hole_at, mass, min_wall, no_interference...). They are re-checked automatically.
+  The user changes one: `require(..., replaces="S3")` (or `kind="remove"`) — never leave a stale one failing.
 - After each modeling step: `check(target)` must say `OK` on the geometry AND the contract.
   `FAIL` = fix it; `UNKNOWN` = not verified — never treat as OK. A valid solid can still be the wrong part.
 - After a validated step: `record_step(...)` (memory + autosave). Before a risky step: `checkpoint save`;

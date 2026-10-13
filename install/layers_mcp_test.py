@@ -144,6 +144,53 @@ async def run(inst: Instance, project: str, out: str) -> None:
                 os.utime(f, (st.st_atime, st.st_mtime))
             print("layers reloaded after an update, without restarting FreeCAD: OK")
 
+            # the user changes a requirement: replaced in one step, removable, never stuck
+            txt = await call("require", target="Body", kind="bbox", params={"size": [70, 40, 8]},
+                             replaces="S1")
+            assert "(replaces S1)" in txt, txt
+            new_id = txt.split()[0]
+            assert "FAIL contract" in await call("check", target="Body")   # the part is 60 long
+            txt = await call("require", target="Body", kind="bbox", params={"size": [60, 40, 8]},
+                             replaces=new_id)
+            txt = await call("check", target="Body")   # (the hole was rolled back above)
+            assert "FAIL contract 1/2 | S2 holes" in txt and "bbox" not in txt.split("contract")[1], txt
+            txt = await call("require", target="Body", kind="remove", replaces="S99")
+            assert txt.startswith("ERROR no requirement 'S99'"), txt     # no wrapper prefix
+            txt = await call("require", target="Body", kind="holes", params={"diam": 6})
+            assert txt.startswith("ERROR") and "unknown parameter" in txt, txt
+            # a hole that cuts nothing / would break the part is not kept
+            vol = await call("check", target="Body")
+            txt = await call("pd_hole", body="Body", diameter=3, x=1e9, y=0)
+            assert txt.startswith("FAIL pd_hole: it cuts no material") and "not kept" in txt, txt
+            txt = await call("pd_hole", body="Body", diameter=500, x=0, y=0)
+            assert txt.startswith("FAIL pd_hole: the part would be broken"), txt
+            assert (await call("check", target="Body")).splitlines()[0] == vol.splitlines()[0]
+            # nonsense requests are refused with the reason
+            for tool, kw, why in (("check_assembly", {"objects": ["Body", "Body"]}, "more than once"),
+                                  ("check_assembly", {"objects": ["Body"]}, "2 or more"),
+                                  ("render_views", {"targets": []}, "at least one"),
+                                  ("printability", {"target": "Body", "bed_mm": [-1, 5]}, "bed_mm"),
+                                  ("recover", {"action": "bogus"}, "list or open"),
+                                  ("record_step", {"feature": "", "ftype": ""}, "must name")):
+                txt = await call(tool, **kw)
+                assert txt.startswith("ERROR") and why in txt, (tool, txt)
+            print("requirements replaced/removed; useless holes not kept; nonsense refused: OK")
+            # pd_hole in a MOVED Body: positions are the Body's own (the global bounding box
+            # used to put the cylinder 50 mm too high, beside the part)
+            inst.call("execute_python_sync", {"code": (
+                "import FreeCAD\n"
+                "d = FreeCAD.ActiveDocument\n"
+                "b = d.addObject('PartDesign::Body', 'Moved')\n"
+                "p = b.newObject('PartDesign::AdditiveBox', 'MovedBox')\n"
+                "p.Length = p.Width = p.Height = 10\n"
+                "b.Placement.Base = FreeCAD.Vector(100, 0, 50)\n"
+                "d.recompute()\n'ok'")})
+            txt = await call("pd_hole", body="Moved", diameter=4, x=5, y=5)
+            assert txt.startswith("OK Moved"), txt
+            txt = await call("analyze", target="Moved")
+            assert "D4.0 @ [105.0, 5.0, 55.0]" in txt, txt
+            print("pd_hole in a moved Body lands where asked, through the part: OK")
+
             # headless FreeCAD runs a call to the end whatever its timeout: what limits a
             # heavy check is our socket wait (hence 300 s for the analysis tools)
             t0 = time.time()
@@ -160,6 +207,7 @@ async def run(inst: Instance, project: str, out: str) -> None:
                                         "Wait for it to complete or use execute_python_async.", 30.0)
     assert "within 315 s" in srv._explain("no response from FreeCAD", 300.0)
     assert srv._explain("No object named 'Nope'", 30.0) == "No object named 'Nope'"
+    assert srv._explain("Python execution error: no project 'x'", 30.0) == "no project 'x'"
     print("long calls: headless runs them to the end; timeouts explained plainly: OK")
 
 

@@ -70,6 +70,37 @@ def main() -> int:
         print("FAIL: malformed spec accepted"); return 1
     except ValueError:
         print("malformed spec refused: OK")
+    # every malformed spec is refused at require time, with the reason
+    bad = [("bbox", {"size": "abc"}), ("bbox", {"size": [60, -1, 8]}),
+           ("holes", {"diam": 6}),                      # typo: used to be silently ignored
+           ("holes", {"count": -1}), ("holes", {"count": 1, "through": "yes"}),
+           ("min_wall", {"min": "x"}), ("min_wall", {"min": 0}),
+           ("volume", {"value": None}), ("volume", {"min": 5, "max": 1}),
+           ("mass", {"density_g_cm3": 0, "max": 10}), ("solids", {"count": 0}),
+           ("hole_at", {"diameter": 5, "center": [None, None, None]}),
+           ("no_interference", {"objects": "Body"}), ("no_interference", {"objects": ["A", "A"]})]
+    for kind, params in bad:
+        try:
+            spec.require("Body", kind, **params)
+        except ValueError as e:
+            assert kind in str(e) or "size" in str(e) or "center" in str(e), (kind, params, e)
+        else:
+            print(f"FAIL: accepted {kind} {params}"); return 1
+    print(f"{len(bad)} malformed specs refused with a reason: OK")
+    # a spec saved before validation existed is UNKNOWN for itself, not a crash of check
+    state.update(lambda s: s["specs"].append({"id": "S99", "target": "Body", "kind": "bbox",
+                                              "params": {"size": "abc"}, "note": "", "at": ""}))
+    r = spec.check_all("Body")
+    s99 = [x for x in r["results"] if x["id"] == "S99"][0]
+    assert s99["status"] == verify.UNKNOWN and "could not evaluate" in s99["message"], s99
+    assert r["status"] != verify.OK, r
+    spec.remove("S99")
+    try:
+        spec.remove("S99")
+        print("FAIL: removing an unknown spec was silent"); return 1
+    except ValueError:
+        pass
+    print("old poisoned spec -> UNKNOWN for itself; remove() refuses unknown ids: OK")
 
     _tmp.cleanup()
     print("SPEC_OK")

@@ -50,7 +50,37 @@ def require(target: str, kind: str, note: str = "", **params) -> str:
     return _state.update(add)
 
 
+# Accepted parameters per kind. An unknown key is refused: a typo such as
+# {"diam": 6} used to be ignored, leaving a weaker contract than the user's.
+_PARAMS = {
+    "bbox": {"size", "tol", "any_orientation"},
+    "volume": {"value", "tol", "min", "max"},
+    "mass": {"density_g_cm3", "value", "tol", "min", "max"},
+    "solids": {"count"},
+    "holes": {"count", "diameter", "through", "tol"},
+    "hole_at": {"diameter", "center", "tol"},
+    "min_wall": {"min"},
+    "no_interference": {"objects"},
+    "valid": set(),
+}
+
+
+def _number(kind: str, key: str, x: Any, low: Optional[float] = None,
+            strict: bool = False) -> None:
+    ok = isinstance(x, (int, float)) and not isinstance(x, bool) and x == x \
+        and abs(x) != float("inf")
+    if ok and low is not None:
+        ok = x > low if strict else x >= low
+    if not ok:
+        bound = "" if low is None else f" {'>' if strict else '>='} {low:g}"
+        raise ValueError(f"spec {kind!r}: {key} must be a number{bound} (got {x!r})")
+
+
 def _validate(kind: str, p: Dict[str, Any]) -> None:
+    unknown = sorted(set(p) - _PARAMS[kind])
+    if unknown:
+        raise ValueError(f"spec {kind!r}: unknown parameter(s) {unknown}; "
+                         f"accepted: {sorted(_PARAMS[kind]) or 'none'}")
     need = {"bbox": ["size"], "mass": ["density_g_cm3"], "solids": ["count"],
             "hole_at": ["diameter", "center"], "min_wall": ["min"],
             "no_interference": ["objects"]}.get(kind, [])
@@ -59,13 +89,57 @@ def _validate(kind: str, p: Dict[str, Any]) -> None:
         raise ValueError(f"spec {kind!r} needs {missing}")
     if kind in ("volume", "mass") and not ({"value", "min", "max"} & p.keys()):
         raise ValueError(f"spec {kind!r} needs value(+tol), min or max")
-    if kind == "bbox" and len(p["size"]) != 3:
-        raise ValueError("bbox size must be [x, y, z]")
+    if "tol" in p:
+        _number(kind, "tol", p["tol"], 0)
+    for key in ("value", "min", "max"):
+        if key in p and kind != "min_wall":
+            _number(kind, key, p[key])
+    if "min" in p and "max" in p and kind != "min_wall" and p["min"] > p["max"]:
+        raise ValueError(f"spec {kind!r}: min {p['min']} > max {p['max']}")
+    if kind == "bbox":
+        if not isinstance(p["size"], (list, tuple)) or len(p["size"]) != 3:
+            raise ValueError("bbox size must be [x, y, z]")
+        for i, x in enumerate(p["size"]):
+            _number(kind, f"size[{i}]", x, 0, strict=True)
+    if kind == "mass":
+        _number(kind, "density_g_cm3", p["density_g_cm3"], 0, strict=True)
+    if kind == "solids":
+        if not isinstance(p["count"], int) or isinstance(p["count"], bool) or p["count"] < 1:
+            raise ValueError(f"spec 'solids': count must be an integer >= 1 (got {p['count']!r})")
+    if kind == "holes" and "count" in p and (
+            not isinstance(p["count"], int) or isinstance(p["count"], bool) or p["count"] < 0):
+        raise ValueError(f"spec 'holes': count must be an integer >= 0 (got {p['count']!r})")
+    if kind in ("holes", "hole_at") and "diameter" in p:
+        _number(kind, "diameter", p["diameter"], 0, strict=True)
+    if kind == "holes" and "through" in p and not isinstance(p["through"], bool):
+        raise ValueError(f"spec 'holes': through must be true or false (got {p['through']!r})")
+    if kind == "hole_at":
+        c = p["center"]
+        if not isinstance(c, (list, tuple)) or len(c) != 3 or all(x is None for x in c):
+            raise ValueError("hole_at center must be [x, y, z] (null for a free coordinate, "
+                             "at least one given)")
+        for i, x in enumerate(c):
+            if x is not None:
+                _number(kind, f"center[{i}]", x)
+    if kind == "min_wall":
+        _number(kind, "min", p["min"], 0, strict=True)
+    if kind == "no_interference":
+        objs = p["objects"]
+        if (not isinstance(objs, (list, tuple)) or len(objs) < 2
+                or not all(isinstance(o, str) and o for o in objs) or len(set(objs)) != len(objs)):
+            raise ValueError("no_interference objects must be a list of 2 or more distinct "
+                             f"object names (got {objs!r})")
 
 
 def remove(spec_id: str) -> None:
-    _state.update(lambda s: s.__setitem__(
-        "specs", [x for x in s["specs"] if x.get("id") != spec_id]))
+    """Delete requirement `spec_id` (e.g. 'S3'); an unknown id is an error."""
+    def drop(s):
+        kept = [x for x in s["specs"] if x.get("id") != spec_id]
+        if len(kept) == len(s["specs"]):
+            known = [x.get("id") for x in s["specs"]]
+            raise ValueError(f"no requirement {spec_id!r}; recorded: {known or 'none'}")
+        s["specs"] = kept
+    _state.update(drop)
 
 
 def list_specs() -> List[Dict[str, Any]]:
@@ -85,6 +159,19 @@ def _expect_txt(p: Dict[str, Any], default_tol: float) -> str:
 
 
 def _eval(spec: Dict[str, Any], doc=None) -> Dict[str, Any]:
+    """Evaluate one spec. One that cannot be evaluated (e.g. saved with bad
+    parameters before they were validated) is UNKNOWN for itself — it used to
+    crash every later `check` of its target."""
+    try:
+        return _eval_spec(spec, doc)
+    except Exception as e:  # noqa: BLE001 — reported in the result, never silent
+        return {"id": spec.get("id"), "kind": spec.get("kind"), "target": spec.get("target"),
+                "status": UNKNOWN, "measured": None, "expected": spec.get("params"),
+                "message": f"could not evaluate ({type(e).__name__}: {e}); "
+                           f"remove it and record it again"[:240]}
+
+
+def _eval_spec(spec: Dict[str, Any], doc=None) -> Dict[str, Any]:
     kind, p, target = spec["kind"], spec["params"], spec["target"]
     res = {"id": spec["id"], "kind": kind, "target": target}
     try:

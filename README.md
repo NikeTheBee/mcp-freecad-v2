@@ -21,6 +21,12 @@ trusting the AI's reading of it.
   - `check` runs the slow OCCT analysis once per shape version;
   - the analysis tools wait up to 5 minutes for FreeCAD instead of 2, and a call that is
     still running is explained plainly instead of a raw "no response".
+- **Bad inputs get a reason, not a wrong answer** (all 17 layer tools swept): malformed
+  requirements are refused (a typo no longer weakens the contract), a requirement can be
+  replaced or removed (`replaces="S3"`), and a hole that cuts nothing or breaks the part is
+  rolled back.
+- `fem_static` refuses a hopeless mesh size at once (Gmsh used to grind on it first) and says
+  which size works.
 
 ## What's new in 2.1
 - **Stress analysis** (`fem_static`, CalculiX): displacement, von Mises stress and safety factor,

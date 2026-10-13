@@ -58,7 +58,9 @@ def _explain(err: str, timeout: float) -> str:
     if err == "no response from FreeCAD":           # our socket wait ran out
         return (f"no answer from FreeCAD within {_socket_wait(timeout):.0f} s: it may "
                 "still be computing (a very heavy model?). Wait, then retry this call.")
-    return err
+    # our templates raise ValueError with the user-facing reason: the base's
+    # wrapper prefix only adds noise (and tokens) to every refusal
+    return err.removeprefix("Python execution error: ")
 TOKEN_PATH = Path.home() / ".freecad-mcp" / "windows_auth_token"
 
 # FreeCAD outlives Claude sessions: reload the layers when any of their files
@@ -212,14 +214,31 @@ def project_switch(name: str) -> str:
 
 @mcp.tool()
 @_safe
-def require(target: str, kind: str, params: dict, note: str = "") -> str:
+def require(target: str, kind: str, params: dict | None = None, note: str = "",
+            replaces: str = "") -> str:
     """Record a user requirement checked automatically by `check`.
     kind: bbox{size:[x,y,z],tol?,any_orientation?} | volume{value,tol|min|max} |
     mass{density_g_cm3,value,tol|min|max} | solids{count} |
     holes{count?,diameter?,through?,tol?} | hole_at{diameter,center:[x,y,z|null],tol?} |
-    min_wall{min} | no_interference{objects:[...]} | valid{}."""
-    return _run("_out = spec.require(_a['target'], _a['kind'], note=_a['note'], **_a['params'])",
-                target=target, kind=kind, params=params or {}, note=note)
+    min_wall{min} | no_interference{objects:[...]} | valid{}.
+    The user changed a requirement: replaces="S3" swaps it in one step;
+    kind="remove" with replaces="S3" only deletes it."""
+    return _run("""
+_r = _a['replaces']
+if _a['kind'] == 'remove':
+    if not _r:
+        raise ValueError("kind 'remove' needs replaces='S<n>', the requirement to delete")
+    spec.remove(_r)
+    _out = f"removed {_r}"
+else:
+    if _r and not any(x.get('id') == _r for x in spec.list_specs()):
+        raise ValueError(f"no requirement {_r!r} to replace; recorded: "
+                         f"{[x.get('id') for x in spec.list_specs()] or 'none'}")
+    _out = spec.require(_a['target'], _a['kind'], note=_a['note'], **_a['params'])
+    if _r:
+        spec.remove(_r)
+        _out += f" (replaces {_r})"
+""", target=target, kind=kind, params=params or {}, note=note, replaces=replaces)
 
 
 @mcp.tool()
@@ -308,6 +327,8 @@ def record_step(feature: str, ftype: str, params: dict | None = None,
                 decision: str = "") -> str:
     """After a validated step: record it in project memory and autosave the document."""
     return _run("""
+if not _a['feature'].strip() or not _a['ftype'].strip():
+    raise ValueError("feature and ftype must name the step (e.g. 'Pad', 'PartDesign::Pad')")
 state.record_feature(_a['feature'], _a['ftype'], _a['params'])
 if _a['decision']:
     state.add_decision(_a['decision'])
@@ -342,6 +363,8 @@ def recover(action: str = "list", doc: str = "") -> str:
     return _run("""
 if _a['action'] == 'open':
     _out = f"opened {recovery.open_latest(_a['doc']).Name}"
+elif _a['action'] != 'list':
+    raise ValueError("action must be list or open")
 else:
     _out = [dict(e, file=os.path.basename(e['file'])) for e in recovery.list_recovery(_a['doc'] or None)][:20]
 """, action=action, doc=doc)
@@ -379,9 +402,10 @@ _out = drawing.sheet_for(_o, dxf_path=_a['dxf'] or None, views=tuple(_a['views']
 @_safe
 def pd_hole(body: str, diameter: float, x: float, y: float, through: bool = True,
             depth: float = 0.0, name: str = "Hole") -> str:
-    """Real PartDesign hole INSIDE a Body (vertical, Z axis) at (x, y): through, or
-    blind `depth` mm from the top. Use this instead of partdesign_operations hole,
-    which builds a Part::Cut outside the Body."""
+    """Real PartDesign hole INSIDE a Body, vertical along the Body's Z, at (x, y) in the
+    Body's own coordinates (the global ones unless the Body was moved): through, or
+    blind `depth` mm from the top. A hole that cuts nothing or breaks the part is
+    not kept (FAIL, Body unchanged)."""
     return _run("""
 _doc = FreeCAD.ActiveDocument
 _b = _doc.getObject(_a['body'])
@@ -389,7 +413,13 @@ if _b is None or _b.TypeId != 'PartDesign::Body':
     raise ValueError(f"{_a['body']!r} is not a PartDesign::Body")
 if _a['diameter'] <= 0 or (not _a['through'] and _a['depth'] <= 0):
     raise ValueError('diameter (and depth for a blind hole) must be > 0')
-_bb = _b.Shape.BoundBox
+if _b.Shape.isNull() or not _b.Shape.Solids:
+    raise ValueError(f"{_b.Name} has no solid to drill yet (add a Pad or a primitive first)")
+# feature placements are relative to the Body: measure it in its own frame
+_local = _b.Shape.copy()
+_local.Placement = _b.Placement.inverse().multiply(_local.Placement)
+_bb = _local.BoundBox
+_v0 = _b.Shape.Volume
 _c = _b.newObject('PartDesign::SubtractiveCylinder', _a['name'])
 _c.Radius = _a['diameter'] / 2.0
 if _a['through']:
@@ -399,7 +429,20 @@ else:
     _c.Height = _a['depth'] + 1.0
     _c.Placement.Base = FreeCAD.Vector(_a['x'], _a['y'], _bb.ZMax - _a['depth'])
 _doc.recompute()
-_out = verify.verdict(_b)
+_v = verify.verdict(_b)
+_why = None
+if not _v.startswith('OK'):
+    _why = f"the part would be broken ({_v[:200]})"
+elif _v0 - _b.Shape.Volume <= 1e-9 * max(_v0, 1.0):
+    _why = (f"it cuts no material at ({_a['x']:g}, {_a['y']:g}); the body spans "
+            f"x {_bb.XMin:g}..{_bb.XMax:g}, y {_bb.YMin:g}..{_bb.YMax:g}")
+if _why:
+    _b.removeObject(_c)
+    _doc.removeObject(_c.Name)
+    _doc.recompute()
+    _out = f"FAIL pd_hole: {_why}; hole not kept, {_b.Name} unchanged"
+else:
+    _out = _v
 """, body=body, diameter=diameter, x=x, y=y, through=through, depth=depth, name=name)
 
 

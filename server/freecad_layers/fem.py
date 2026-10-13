@@ -301,8 +301,16 @@ def static(target, fixed: Sequence[str], loads: Sequence[Dict[str, Any]],
             raise ValueError(f"each load needs 'faces' and 'force_N': {load}")
         for spec in ([load["faces"]] if isinstance(load["faces"], str) else load["faces"]):
             faces(obj.Shape, spec)
-        float(load["force_N"])
-        if math.sqrt(sum(float(c) ** 2 for c in load.get("direction", (0, 0, -1)))) < 1e-12:
+        try:
+            float(load["force_N"])
+        except (TypeError, ValueError):
+            raise ValueError(f"force_N must be a number in newtons (got {load['force_N']!r})") from None
+        d = load.get("direction", (0, 0, -1))
+        if (not isinstance(d, (list, tuple)) or len(d) != 3
+                or not all(isinstance(c, (int, float)) and not isinstance(c, bool) for c in d)):
+            # a 2-number direction used to be read as (x, y, 0) without a word
+            raise ValueError(f"load direction must be [x, y, z] (got {d!r})")
+        if math.sqrt(sum(float(c) ** 2 for c in d)) < 1e-12:
             raise ValueError("load direction must be a non-zero vector")
     size = float(mesh_size_mm or default_mesh_size(obj.Shape))
     if size <= 0:

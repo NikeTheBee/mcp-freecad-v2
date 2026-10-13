@@ -264,6 +264,12 @@ def printability(obj_or_name, bed_mm: Sequence[float] = (220, 220, 250),
     Returns {status, issues, advisories, measures}. Overhangs are FAIL only if
     their area exceeds `max_overhang_area_mm2` (supports are often fine).
     """
+    if (not isinstance(bed_mm, (list, tuple)) or len(bed_mm) != 3
+            or not all(isinstance(b, (int, float)) and not isinstance(b, bool) and b > 0
+                       for b in bed_mm)):
+        raise ValueError(f"bed_mm must be [x, y, z] in mm, all > 0 (got {bed_mm!r})")
+    if not isinstance(min_wall_mm, (int, float)) or min_wall_mm < 0:
+        raise ValueError(f"min_wall_mm must be a number >= 0 (got {min_wall_mm!r})")
     r = verify.check(obj_or_name)
     issues = [f"verify: {i}" for i in r["issues"]]
     advisories: List[str] = []

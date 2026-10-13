@@ -9,7 +9,7 @@
 | `project_init(name, intent)` | create a NEW project (own memory, contract, checkpoints); never overwrites |
 | `project_switch(name)` | reopen a project (`default` = the original one) |
 | `recipe(save/list/show)` | keep a verified design (refused unless the contract is OK) / reuse its steps |
-| `require(target, kind, params)` | record a user requirement (bbox, holes, hole_at, volume, mass, solids, min_wall, no_interference, valid) |
+| `require(target, kind, params)` | record a user requirement (bbox, holes, hole_at, volume, mass, solids, min_wall, no_interference, valid); unknown or malformed params are refused. The user changed it: `replaces="S3"` swaps it; `kind="remove", replaces="S3"` deletes it |
 | `check(target)` | geometry verdict + the target's requirements; autosaves when all OK |
 | `analyze(target)` | holes (Ø, position, through/blind), min wall estimate |
 | `check_assembly([...])`, `printability(target)` | overlaps between parts; FDM checks |

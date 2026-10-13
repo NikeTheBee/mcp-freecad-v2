@@ -21,6 +21,12 @@ au lieu de croire la lecture qu'en fait l'IA.
   - `check` ne refait l'analyse OCCT, lente, qu'une fois par version de la forme ;
   - les outils d'analyse attendent FreeCAD jusqu'à 5 minutes au lieu de 2, et un calcul
     encore en cours est expliqué clairement au lieu d'un « no response » brut.
+- **Une entrée invalide reçoit une raison, pas une mauvaise réponse** (les 17 outils passés en
+  revue) : les exigences mal formées sont refusées (une faute de frappe n'affaiblit plus le
+  contrat), une exigence se remplace ou se retire (`replaces="S3"`), et un trou qui ne
+  coupe rien ou casse la pièce est annulé.
+- `fem_static` refuse d'emblée une taille de maille irréaliste (Gmsh moulinait d'abord) et indique
+  la taille qui convient.
 
 ## Nouveautés de la 2.1
 - **Calcul de résistance** (`fem_static`, CalculiX) : déplacement, contrainte de von Mises et
