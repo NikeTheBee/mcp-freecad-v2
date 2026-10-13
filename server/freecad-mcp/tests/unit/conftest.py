@@ -28,6 +28,14 @@ with open(os.path.join(_SANDBOX_HOME, ".freecad-mcp", "windows_auth_token"), "w"
 
 
 @pytest.fixture(autouse=True)
+def _upstream_cam_tools_enabled(monkeypatch):
+    """MCP FREECAD v2 hides the CAM tools unless FREECAD_MCP_ENABLE_CAM=1. Upstream's
+    own tests exercise them, so they run with CAM enabled; the default (hidden and
+    refused) is covered by test_mcp_protocol.py::TestCamDisabledByDefault."""
+    monkeypatch.setenv("FREECAD_MCP_ENABLE_CAM", "1")
+
+
+@pytest.fixture(autouse=True)
 def _bridge_trusts_mocked_freecad(monkeypatch):
     """Protocol tests stand in for FreeCAD with mocked socket replies that do
     not model the listener proof (MCP FREECAD v2) -- on Windows the bridge

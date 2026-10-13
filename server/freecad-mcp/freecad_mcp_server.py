@@ -80,6 +80,37 @@ VERSION_CHECK_TTL_SECONDS = 24 * 60 * 60
 VERSION_CHECK_TIMEOUT_SECONDS = 3
 RELEASES_API_URL = "https://api.github.com/repos/blwfish/freecad-mcp/releases/latest"
 
+# MCP FREECAD v2: the CAM tools produce machine G-code, which this project never
+# emits (audit 2026-10-11: the former CAM layer produced unsafe G-code). They are
+# hidden from the tool list and refused unless FREECAD_MCP_ENABLE_CAM=1.
+_CAM_TOOLS = frozenset({"cam_operations", "cam_tools", "cam_tool_controllers"})
+_CAM_DISABLED = ("CAM tools are disabled in MCP FREECAD: they produce machine G-code, which "
+                 "this project never emits (see skills/skill-cam). Export STEP and program the "
+                 "toolpaths in a CAM tool you control and verify. To enable them anyway, set "
+                 "FREECAD_MCP_ENABLE_CAM=1 in the freecad server's environment.")
+
+
+def _cam_enabled() -> bool:
+    return os.environ.get("FREECAD_MCP_ENABLE_CAM") == "1"
+
+
+# MCP FREECAD v2: on Windows there is one FreeCAD (TCP port, one token file),
+# started and supervised by server/launcher; spawning is Unix-socket only. These
+# tools cannot work there and only cost schema tokens: hidden and refused.
+_UNIX_ONLY_TOOLS = frozenset({"spawn_freecad_instance", "select_freecad_instance",
+                              "stop_freecad_instance"})
+_UNIX_ONLY = ("Not available on Windows: MCP FREECAD runs one FreeCAD there, started and "
+              "restarted by its launcher (server/launcher). Use check_freecad_connection, "
+              "or restart_freecad to restart it.")
+
+
+def _hidden_tools() -> dict[str, str]:
+    """Tool name -> why it is refused, for this platform and settings."""
+    hidden = {} if _cam_enabled() else dict.fromkeys(_CAM_TOOLS, _CAM_DISABLED)
+    if platform.system() == "Windows":
+        hidden.update(dict.fromkeys(_UNIX_ONLY_TOOLS, _UNIX_ONLY))
+    return hidden
+
 
 def _current_version() -> str | None:
     """Read the project version out of pyproject.toml -- the single source
@@ -212,7 +243,12 @@ async def check_for_update() -> dict | None:
     if padded_latest <= padded_current:
         return None
 
-    return {"current": current, "latest": tag.lstrip("vV"), "url": result.get("url", "")}
+    # MCP FREECAD v2: this copy is vendored and modified -- installing the
+    # upstream release over it would drop those changes. Say how to merge it.
+    return {"current": current, "latest": tag.lstrip("vV"), "url": result.get("url", ""),
+            "how_to_update": ("merge it, keeping MCP FREECAD's changes: "
+                              f"python install/bootstrap.py --update-base --base-ref {tag}, "
+                              "then python install/run_all_tests.py")}
 
 
 def _socket_alive(sock_path: str, timeout: float = 0.5) -> bool:
@@ -3002,12 +3038,17 @@ async def main():
 
     async def handle_list_tools() -> list[types.Tool]:
         """List available Phase 1 smart dispatcher tools"""
-        return _base_tools + _smart_dispatcher_tools
+        hidden = _hidden_tools()
+        return [t for t in _base_tools + _smart_dispatcher_tools if t.name not in hidden]
 
     async def handle_call_tool(
         name: str, arguments: dict[str, Any] | None
     ) -> list[types.TextContent]:
         """Handle tool calls with smart dispatcher routing"""
+
+        refusal = _hidden_tools().get(name)
+        if refusal:
+            return [types.TextContent(type="text", text=json.dumps({"error": refusal}))]
 
         if name == "check_freecad_connection":
             # Trigger lazy resolution so available/socket_path reflect discovery.
@@ -3017,7 +3058,13 @@ async def main():
                 "freecad_socket_exists": available,
                 "socket_path": _ctx.socket_path,
                 "status": "FreeCAD running with AICopilot" if available
-                         else (resolve_err or "FreeCAD not running. Start FreeCAD or call spawn_freecad_instance."),
+                         else (resolve_err or (
+                             # MCP FREECAD v2: on Windows the launcher owns FreeCAD
+                             "FreeCAD not running: MCP FREECAD's launcher restarts it "
+                             "automatically; retry in a few seconds (log: "
+                             "~/.freecad-mcp/logs/launcher.log)."
+                             if platform.system() == "Windows" else
+                             "FreeCAD not running. Start FreeCAD or call spawn_freecad_instance.")),
                 "instances": _ctx.list_all(),
             }
             # Cached/throttled -- see check_for_update() docstring. Only

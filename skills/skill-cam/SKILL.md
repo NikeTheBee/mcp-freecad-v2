@@ -8,6 +8,10 @@ cylindrical face (fillets, bosses, the outside of a round bar) as a hole, used a
 whatever the hole size, and posted G-code with **no spindle start (`M3`) and a zero feed (`F0`)**.
 That output can break a tool or a machine.
 
+The base's own CAM tools (`cam_operations`, `cam_tools`, `cam_tool_controllers`) are **hidden and
+refused in code** since v2. Only the user can turn them back on, with `FREECAD_MCP_ENABLE_CAM=1`
+in the `freecad` server's environment. Never set it yourself.
+
 ## What to do instead
 1. **Never** produce G-code meant for a real machine — not with `execute_python`, not with the base
    server's `cam_operations` tool.

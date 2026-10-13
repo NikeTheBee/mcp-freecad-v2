@@ -55,7 +55,8 @@ reliability tools — prefer them over `execute_python`).
 - Holes in a PartDesign Body: `pd_hole` (fixed in v2, the base's `partdesign_operations hole` now also cuts inside the Body).
 - One rollback system: `freecad-layers` `checkpoint` — not the base's `view_control checkpoint/rollback_to_checkpoint`.
 - Sketches: `check(sketch)` before Pad/Pocket (the base's `verify_sketch` now reports DoF/conflicts too since v2).
-- Fabrication outputs: STL only after `printability`/`check` OK; **never G-code** (`skill-cam`).
+- Fabrication outputs: STL only after `printability`/`check` OK; **never G-code** (`skill-cam`; the base's
+  CAM tools are hidden and refused unless the user sets `FREECAD_MCP_ENABLE_CAM=1` — never set it yourself).
 - "Will it hold?": `fem_static` (CalculiX) with the user's supports, loads and material — never guess
   a strength; report the safety factor and its limits (linear elastic only, see `skill-fem`).
 - Text-only feedback by default. Pictures only on request or for a complex part/assembly at a milestone

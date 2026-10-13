@@ -476,3 +476,48 @@ class TestGetUsageGuidance:
         assert "error" in result
         assert "unknown operation" in result
         assert "strategy|tactics|find" in result
+
+
+# ---------------------------------------------------------------------------
+# MCP FREECAD v2: CAM tools (machine G-code) hidden and refused by default
+# ---------------------------------------------------------------------------
+
+_CAM = {"cam_operations", "cam_tools", "cam_tool_controllers"}
+
+
+class TestCamDisabledByDefault:
+    def test_cam_tools_are_hidden(self, monkeypatch):
+        monkeypatch.delenv("FREECAD_MCP_ENABLE_CAM", raising=False)
+        names = {t.name for t in _list_tools()}
+        assert not names & _CAM
+        assert "partdesign_operations" in names
+
+    def test_cam_call_is_refused_before_reaching_freecad(self, monkeypatch):
+        monkeypatch.delenv("FREECAD_MCP_ENABLE_CAM", raising=False)
+        # _record_op is the first thing send_to_freecad does (not socket.socket:
+        # asyncio's own loop bootstrap opens real sockets, see the class above)
+        with patch.object(freecad_mcp_server, "_record_op",
+                          side_effect=AssertionError("CAM call was sent to FreeCAD")):
+            content = _call_tool("cam_operations", {"operation": "create_job"})
+        err = json.loads(content[0].text)["error"]
+        assert "CAM tools are disabled" in err and "FREECAD_MCP_ENABLE_CAM=1" in err
+
+    def test_opt_in_restores_them(self, monkeypatch):
+        monkeypatch.setenv("FREECAD_MCP_ENABLE_CAM", "1")
+        assert _CAM <= {t.name for t in _list_tools()}
+
+
+class TestUnixOnlyToolsHiddenOnWindows:
+    """MCP FREECAD v2: one launcher-managed FreeCAD on Windows; spawn/select/stop
+    cannot work there, so they are hidden and refused (and cost no tokens)."""
+    _UNIX = {"spawn_freecad_instance", "select_freecad_instance", "stop_freecad_instance"}
+
+    def test_hidden_and_refused_on_windows(self, monkeypatch):
+        monkeypatch.setattr(freecad_mcp_server.platform, "system", lambda: "Windows")
+        assert not {t.name for t in _list_tools()} & self._UNIX
+        err = json.loads(_call_tool("spawn_freecad_instance", {})[0].text)["error"]
+        assert "Not available on Windows" in err
+
+    def test_listed_on_posix(self, monkeypatch):
+        monkeypatch.setattr(freecad_mcp_server.platform, "system", lambda: "Linux")
+        assert self._UNIX <= {t.name for t in _list_tools()}

@@ -204,6 +204,8 @@ class TestCheckForUpdate:
         self._set_current(bridge, monkeypatch, "7.0.0")
         with self._mock_fetch(bridge, "v7.0.1"):
             result = _run(bridge.check_for_update())
+        how = result.pop("how_to_update")    # MCP FREECAD v2: merge, never overwrite
+        assert "--update-base --base-ref v7.0.1" in how
         assert result == {"current": "7.0.0", "latest": "7.0.1", "url": "https://x/releases/tag/v7.0.1"}
 
     def test_minor_behind(self, bridge, monkeypatch):
@@ -259,6 +261,7 @@ class TestCheckForUpdate:
         with patch.object(bridge, "_fetch_latest_release") as mock_fetch:
             result = _run(bridge.check_for_update())
         mock_fetch.assert_not_called()
+        assert "--base-ref v7.1.0" in result.pop("how_to_update")
         assert result == {"current": "7.0.0", "latest": "7.1.0", "url": "https://x/cached"}
 
     def test_cache_just_under_ttl_is_fresh(self, bridge, monkeypatch):

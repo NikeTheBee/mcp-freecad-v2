@@ -63,6 +63,17 @@ It runs `git subtree pull --squash` on a clean tree. Then run the base's unit te
 |---|---|---|
 | `tests/unit/test_sketch_isolated_vertices.py` | The `TestVerifySketchSection` fixture sets `DoF = 0`. | That new upstream test expects `VALID` from a mocked sketch without a DoF. With our DoF fix, `VALID` requires a fully constrained sketch, and that is what the fixture stands for. |
 
+## 2026-10-13 (later) — NikeTheBee
+
+| File | Change | Why |
+|---|---|---|
+| `freecad_mcp_server.py` | **CAM tools hidden and refused by default** (`cam_operations`, `cam_tools`, `cam_tool_controllers`). They come back with `FREECAD_MCP_ENABLE_CAM=1`. | They produce machine G-code, which this project never emits (its former CAM layer produced unsafe G-code). The rule is now enforced in code, not only in instructions. |
+| same | **On Windows, `spawn_freecad_instance`, `select_freecad_instance` and `stop_freecad_instance` are hidden and refused**, with a message pointing to the launcher. "FreeCAD not running" also points to the launcher log instead of `spawn_freecad_instance`. | They cannot work there: there is one FreeCAD (TCP port, one token file), supervised by `server/launcher`. Together with the CAM tools, that is 39 → 33 tools, about 2,200 schema tokens saved per session. |
+| same | `check_for_update` adds `how_to_update` (`bootstrap.py --update-base --base-ref <tag>`). | Installing the upstream release over this copy would drop these changes. |
+| `tests/unit/conftest.py` | Upstream tests run with `FREECAD_MCP_ENABLE_CAM=1`. | They exercise the CAM tools. |
+| `tests/unit/test_mcp_protocol.py` | New `TestCamDisabledByDefault` (3 tests) and `TestUnixOnlyToolsHiddenOnWindows` (2 tests). | Cover the defaults. |
+| `tests/unit/test_version_check.py` | Two exact-dict assertions also check `how_to_update`. | Follows the new key. |
+
 ## Test status
 
 Upstream unit tests on Windows, compared with the unmodified upstream version in a sandboxed home:
