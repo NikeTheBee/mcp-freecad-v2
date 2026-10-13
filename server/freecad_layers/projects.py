@@ -80,3 +80,14 @@ def listing() -> str:
     """One line: every project, the selected one starred."""
     cur = current_project()
     return "Projects: " + ", ".join(n + ("*" if n == cur else "") for n in names())
+
+
+def documents_line() -> str:
+    """'Open documents: Plate (active), Gear'. Documents stay open across a
+    project switch and every check uses the ACTIVE one: say which it is."""
+    import FreeCAD
+    docs = list(FreeCAD.listDocuments())
+    if not docs:
+        return "Open documents: none"
+    active = FreeCAD.ActiveDocument.Name if FreeCAD.ActiveDocument is not None else None
+    return "Open documents: " + ", ".join(f"{d} (active)" if d == active else d for d in docs)

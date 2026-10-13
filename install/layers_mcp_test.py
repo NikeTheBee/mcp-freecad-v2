@@ -122,6 +122,8 @@ async def run(inst: Instance, project: str, out: str) -> None:
             assert txt.startswith("ERROR") and "already exists" in txt, txt
             txt = await call("project_switch", name="Plate")
             assert "Project: Plate" in txt and "Projects: default, Gear, Plate*" in txt, txt
+            # documents stay open across a switch and checks use the active one: say which
+            assert "Open documents: " in txt and "(active)" in txt, txt
             assert "Design contract" in await call("project_status")
 
             # FreeCAD outlives sessions: an updated layer file is reloaded without a restart

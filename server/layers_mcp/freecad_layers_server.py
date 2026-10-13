@@ -188,8 +188,7 @@ def project_status() -> str:
 _lines = [state.summary(), projects.listing(), recovery.summary()]
 if state.load()["specs"]:
     _lines.append(spec.verdict())
-_docs = list(FreeCAD.listDocuments())
-_lines.append("Open documents: " + (", ".join(_docs) if _docs else "none"))
+_lines.append(projects.documents_line())
 _out = "\\n".join(_lines)
 """)
 
@@ -225,9 +224,10 @@ else:
 @mcp.tool()
 @_safe
 def project_switch(name: str) -> str:
-    """Select an existing project ("default" = the original one). Open FreeCAD documents stay open."""
-    return _run("projects.switch(_a['name']); _out = state.summary() + chr(10) + projects.listing()",
-                name=name)
+    """Select an existing project ("default" = the original one). Open FreeCAD documents stay
+    open, and checks use the ACTIVE one: the reply says which it is."""
+    return _run("projects.switch(_a['name']); _out = chr(10).join((state.summary(), "
+                "projects.listing(), projects.documents_line()))", name=name)
 
 
 @mcp.tool()
