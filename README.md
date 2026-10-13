@@ -13,6 +13,14 @@ trusting the AI's reading of it.
 > records your requirements as checks, verifies geometry and requirements after every step,
 > autosaves, and lets you roll back.
 
+## Since 2.1 (unreleased)
+- **Heavy parts** (measured on a plate with 1,600 holes):
+  - wall thickness: 73 s → 0.7 s, and now exact (rays meet the real surfaces, no mesh);
+  - `printability`: 129 s → 1.6 s; `analyze`: 132 s → 1.7 s; `render_views`: 48 s → 13 s;
+  - hole detection: 2.7 s → 0.2 s (same result, without comparing every pair);
+  - `check` runs the slow OCCT analysis once per shape version, and no longer stops at
+    30 s with a false "timeout".
+
 ## What's new in 2.1
 - **Stress analysis** (`fem_static`, CalculiX): displacement, von Mises stress and safety factor,
   with a verdict. A cantilever comes within 0.3 % of F·L³/3EI.

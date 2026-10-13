@@ -140,18 +140,20 @@ def _eval(spec: Dict[str, Any], doc=None) -> Dict[str, Any]:
     if kind == "hole_at":
         tol = p.get("tol", 0.05)
         c = p["center"]
-        hs = [h for h in analysis.holes(obj)
-              if abs(h["diameter"] - p["diameter"]) <= tol
-              and all(abs(h["center"][i] - c[i]) <= tol
-                      for i in range(3) if c[i] is not None)]
+        same_d = [h for h in analysis.holes(obj) if abs(h["diameter"] - p["diameter"]) <= tol]
+        hs = [h for h in same_d
+              if all(abs(h["center"][i] - c[i]) <= tol for i in range(3) if c[i] is not None)]
         return {**res, "status": OK if hs else FAIL,
-                "measured": [h["center"] for h in analysis.holes(obj)
-                             if abs(h["diameter"] - p["diameter"]) <= tol],
+                "measured": [h["center"] for h in same_d],
                 "expected": f"D{p['diameter']} at {c}+/-{tol}"}
     if kind == "min_wall":
         w = analysis.min_wall(obj)
         if w["min_mm"] is None:
             return {**res, "status": UNKNOWN, "measured": None, "expected": f">= {p['min']}"}
+        if w["min_mm"] >= p["min"] and w.get("unchecked"):
+            # some faces could not be ray-cast: a thinner wall may hide there
+            return {**res, "status": UNKNOWN, "measured": w["min_mm"],
+                    "expected": f">= {p['min']} (estimate; {w['unchecked']})"}
         return {**res, "status": OK if w["min_mm"] >= p["min"] else FAIL,
                 "measured": w["min_mm"], "expected": f">= {p['min']} (estimate)"}
     return {**res, "status": UNKNOWN, "measured": None, "expected": "?"}

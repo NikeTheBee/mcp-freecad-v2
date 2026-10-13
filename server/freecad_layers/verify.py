@@ -29,6 +29,31 @@ MAX_INTERFERENCE_SOLIDS = 200
 
 _BAD_STATES = ("Invalid", "Touched", "Error")
 
+# Last shapes given to the OCCT check, with its outcome. The analysis can take
+# 30 s on a heavy part and printability/analyze re-check a part `check` just
+# passed. A hit needs the SAME OCCT data (isEqual: same TShape, placement and
+# orientation): any edit or recompute makes a new TShape. Holding the shape
+# here keeps its TShape alive, so its address cannot be reused by another.
+_SHAPE_CHECKS: List[tuple] = []
+_SHAPE_CHECKS_SIZE = 4
+
+
+def _occt_check(s) -> Optional[str]:
+    """shape.check(True): None when clean, else the problems it raised."""
+    # tolerances can be changed in place (setTolerance/fixTolerance): part of the key
+    tols = (s.getTolerance(1), s.getTolerance(0))
+    for cached, cached_tols, err in _SHAPE_CHECKS:
+        if cached_tols == tols and cached.isEqual(s):
+            return err
+    try:
+        s.check(True)
+        err = None
+    except Exception as e:  # noqa: BLE001 — the message IS the finding
+        err = " ".join(str(e).split())[:160]
+    _SHAPE_CHECKS.append((s, tols, err))
+    del _SHAPE_CHECKS[:-_SHAPE_CHECKS_SIZE]
+    return err
+
 
 def _resolve(obj_or_name, doc=None):
     if isinstance(obj_or_name, str):
@@ -71,8 +96,9 @@ def interference(shapes: Iterable, tol: float = 1e-6,
     shapes = list(shapes)
     names = names or [f"solid{i + 1}" for i in range(len(shapes))]
     hits = []
+    boxes = [s.BoundBox for s in shapes]      # computed per access by OCCT: once each
     for (i, a), (j, b) in combinations(enumerate(shapes), 2):
-        if not a.BoundBox.intersect(b.BoundBox):
+        if not boxes[i].intersect(boxes[j]):
             continue
         v = float(a.common(b).Volume)
         if v > tol:
@@ -101,8 +127,27 @@ def check(obj_or_name, doc=None, min_volume: float = 1e-6,
         res["issues"].append("no shape / null shape")
         return _finish(res)
 
-    valid = bool(shp.isValid())
     solids = list(shp.Solids)
+    # OCCT BOP check. It RAISES with the list of problems when the shape is
+    # bad and returns None when clean — the old code swallowed the exception,
+    # so self-intersections were never reported. Run it per solid: on a
+    # compound it also flags solids that merely TOUCH; real overlaps between
+    # solids are measured by the interference test below.
+    parts = [(f"solid{i + 1} ", s) for i, s in enumerate(solids)] if len(solids) > 1 \
+        else [("", shp)]
+    bop_issues = []
+    for label, s in parts:
+        err = _occt_check(s)
+        if err is not None:
+            bop_issues.append(f"{label}topology/self-intersection: {err}")
+    # check(True) starts with the same BRepCheck analysis as isValid() and
+    # raises when it fails, so a clean pass proves validity: isValid() (as
+    # slow as that analysis, 15 s on a 1600-hole plate) only runs when needed
+    # — after a failure, or when the shape holds more than its solids.
+    solids_only = len(solids) <= 1 or all(
+        sum(len(getattr(s, k)) for s in solids) == len(getattr(shp, k))
+        for k in ("Faces", "Edges", "Vertexes"))
+    valid = True if (not bop_issues and solids_only) else bool(shp.isValid())
     volume = float(shp.Volume)
     closed = (all(s.isClosed() for s in solids) if solids else bool(shp.isClosed()))
     bb = shp.BoundBox
@@ -128,19 +173,7 @@ def check(obj_or_name, doc=None, min_volume: float = 1e-6,
     if len(solids) > 1 and str(res["type"]).startswith("PartDesign::"):
         res["issues"].append(f"PartDesign result has {len(solids)} solids (must be 1)")
 
-    # OCCT BOP check. It RAISES with the list of problems when the shape is
-    # bad and returns None when clean — the old code swallowed the exception,
-    # so self-intersections were never reported. Run it per solid: on a
-    # compound it also flags solids that merely TOUCH; real overlaps between
-    # solids are measured by the interference test below.
-    parts = [(f"solid{i + 1} ", s) for i, s in enumerate(solids)] if len(solids) > 1 \
-        else [("", shp)]
-    for label, s in parts:
-        try:
-            s.check(True)
-        except Exception as e:  # noqa: BLE001 — the message IS the finding
-            res["issues"].append(f"{label}topology/self-intersection: "
-                                 + " ".join(str(e).split())[:160])
+    res["issues"] += bop_issues
 
     if len(solids) > 1:
         if len(solids) > MAX_INTERFERENCE_SOLIDS:

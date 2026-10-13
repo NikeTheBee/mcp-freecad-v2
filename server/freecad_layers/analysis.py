@@ -58,24 +58,45 @@ def holes(obj_or_shape, tol: float = 1e-4) -> List[Dict[str, Any]]:
     """
     shp = _shape(obj_or_shape)
     groups: List[Dict[str, Any]] = []
-    for f in shp.Faces:
-        if f.Surface.TypeId != "Part::GeomCylinder" or not _is_concave(f):
-            continue
+    bores = [f for f in shp.Faces
+             if f.Surface.TypeId == "Part::GeomCylinder" and _is_concave(f)]
+    # Groups are indexed by the cell of their axis line's foot (its point
+    # nearest the origin, the same for +axis and -axis). Two lines that pass
+    # the test below (within `tol` of each other, directions within ~1.5 mrad)
+    # have feet at most 2*tol + 2*R*1.5e-3 apart (R: distance of the bores
+    # from the origin), less than one cell, so the 27 cells around a face
+    # hold every candidate: the same test as against all groups, without the
+    # n² cost (1600 holes: 2.7 s).
+    reach = max((f.Surface.Center.Length for f in bores), default=0.0)
+    cell = max(1.0, 4 * tol + 4 * reach * 1.5e-3)
+    buckets: Dict[tuple, List[Dict[str, Any]]] = {}
+    for f in bores:
         s = f.Surface
         axis = App.Vector(s.Axis).normalize()
         u0, u1, v0, v1 = f.ParameterRange
-        for g in groups:
-            same_r = abs(g["radius"] - s.Radius) < tol
-            parallel = abs(abs(g["axis"].dot(axis)) - 1.0) < 1e-6
-            d = s.Center - g["origin"]
-            on_line = (d - g["axis"] * d.dot(g["axis"])).Length < tol
-            if same_r and parallel and on_line:
-                g["span"] += (u1 - u0)
-                g["faces"].append(f)
-                break
+        foot = s.Center - axis * s.Center.dot(axis)
+        key = tuple(math.floor(c / cell) for c in (foot.x, foot.y, foot.z))
+        match = None
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                for dz in (-1, 0, 1):
+                    for g in buckets.get((key[0] + dx, key[1] + dy, key[2] + dz), ()):
+                        if match is not None and g["index"] > match["index"]:
+                            continue            # first-created match wins, as before
+                        same_r = abs(g["radius"] - s.Radius) < tol
+                        parallel = abs(abs(g["axis"].dot(axis)) - 1.0) < 1e-6
+                        d = s.Center - g["origin"]
+                        on_line = (d - g["axis"] * d.dot(g["axis"])).Length < tol
+                        if same_r and parallel and on_line:
+                            match = g
+        if match is not None:
+            match["span"] += (u1 - u0)
+            match["faces"].append(f)
         else:
-            groups.append({"radius": s.Radius, "axis": axis, "origin": App.Vector(s.Center),
-                           "span": (u1 - u0), "faces": [f]})
+            g = {"radius": s.Radius, "axis": axis, "origin": App.Vector(s.Center),
+                 "span": (u1 - u0), "faces": [f], "index": len(groups)}
+            groups.append(g)
+            buckets.setdefault(key, []).append(g)
     out = []
     bb = shp.BoundBox
     for g in groups:
@@ -110,58 +131,102 @@ def _face_samples(face, n: int):
                 yield p, face.normalAt(u, v)
 
 
+def _exit_distance(p, d, surfs, faces, lo, hi, limit, eps, tol):
+    """Distance from p along unit direction d to the nearest face the ray
+    LEAVES the material through, if nearer than `limit` (else `limit`).
+    Returns (distance, number of faces whose intersection raised)."""
+    import numpy as np
+
+    o = np.array((p.x, p.y, p.z))
+    dv = np.array((d.x, d.y, d.z))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        t1 = (lo - o) / dv
+        t2 = (hi - o) / dv
+    tn, tf = np.fmin(t1, t2), np.fmax(t1, t2)
+    for ax in range(3):                       # ray parallel to a slab: in it or never
+        if dv[ax] == 0.0:
+            inside = (lo[:, ax] <= o[ax]) & (o[ax] <= hi[:, ax])
+            tn[:, ax] = np.where(inside, -np.inf, np.inf)
+            tf[:, ax] = np.where(inside, np.inf, -np.inf)
+    tnear, tfar = tn.max(axis=1), tf.min(axis=1)
+    cand = np.nonzero((tnear <= tfar) & (tfar > eps) & (tnear < limit))[0]
+    errors = 0
+    if not len(cand):
+        return limit, errors
+    line = Part.Line(p, p + d)
+    for j in cand[np.argsort(tnear[cand], kind="stable")]:
+        if tnear[j] >= limit:
+            break                             # bounding boxes sorted: nothing nearer left
+        try:
+            pts, _curves = line.intersectCS(surfs[j])
+            for pt in pts:
+                q = App.Vector(pt.X, pt.Y, pt.Z)
+                t = (q - p).dot(d)
+                if not (eps < t < limit) or not faces[j].isInside(q, tol, True):
+                    continue
+                u, v = surfs[j].parameter(q)
+                if faces[j].normalAt(u, v).dot(d) > 1e-9:   # leaving, not entering or grazing
+                    limit = t
+        except Exception:  # noqa: BLE001 — counted and reported, never silent
+            errors += 1
+    return limit, errors
+
+
 def min_wall(obj_or_shape, per_face: Optional[int] = None, max_samples: int = 2000) -> Dict[str, Any]:
     """Estimated minimum wall thickness by inward ray-casting (sampled).
 
-    Rays start just inside each face and go along the inward normal. The
-    first wall they leave through (a facet of a fine mesh of the solid,
-    facing along the ray) gives the thickness there. It is an ESTIMATE:
-    thin spots between sample points can be missed, so say so to the user.
+    Rays start on each face and go along the inward normal. The nearest face
+    they LEAVE the solid through gives the thickness there, intersected on
+    the exact B-rep surfaces (no mesh: no chord error, and no meshing time,
+    which reached 40 s on a 1600-hole plate). It is still an ESTIMATE: thin
+    spots between sample points can be missed, so say so to the user.
 
     Samples are spread over ALL faces (per_face x per_face each, sized from
-    max_samples). The former version stopped after the first `max_samples`
-    points, so the faces listed last were never checked, and it ran one
-    boolean op per ray (about 15 ms each). Returns
-    {min_mm, at, samples, faces_sampled, faces, method}.
+    max_samples; on huge models every k-th face). Faces are pre-filtered by
+    bounding box, nearest first, and only walls thinner than the thinnest
+    found so far are searched. Returns
+    {min_mm, at, samples, faces_sampled, faces, method[, unchecked]}.
     """
-    import MeshPart
+    import numpy as np
 
     shp = _shape(obj_or_shape)
     solids = shp.Solids
     if not solids:
         return {"min_mm": None, "samples": 0, "method": "no solid"}
     diag = shp.BoundBox.DiagonalLength
-    defl = max(diag * 2e-4, 1e-3)            # mesh chord error: ~0.02 % of the part size
     eps = max(diag * 1e-7, 1e-7)
-    faces = [(s, f) for s in solids for f in s.Faces]
-    n = per_face or max(1, min(6, int(math.sqrt(max_samples / max(len(faces), 1)))))
-    stride = max(1, math.ceil(len(faces) * n * n / max_samples))   # huge models: every k-th face
-    best, where, count, sampled = math.inf, None, 0, 0
-    meshes = {}
-    for k, (solid, face) in enumerate(faces):
-        if k % stride:
-            continue
-        sampled += 1
-        mesh = meshes.get(id(solid))
-        if mesh is None:
-            mesh = meshes[id(solid)] = MeshPart.meshFromShape(
-                Shape=solid, LinearDeflection=defl, AngularDeflection=0.2)
-        for p, nrm in _face_samples(face, n):
-            count += 1
-            start = p - nrm * eps
-            # angle < 90 deg: only facets facing along the ray (the wall it exits
-            # through), never the face it starts from
-            hits = mesh.nearestFacetOnRay((start.x, start.y, start.z),
-                                          (-nrm.x, -nrm.y, -nrm.z), 1.5)
-            for q in hits.values():
-                t = (App.Vector(*q) - start).dot(-nrm) + eps
-                if 0 < t < best:
+    tol = max(diag * 1e-6, 1e-6)
+    n_faces = sum(len(s.Faces) for s in solids)
+    n = per_face or max(1, min(6, int(math.sqrt(max_samples / max(n_faces, 1)))))
+    stride = max(1, math.ceil(n_faces * n * n / max_samples))   # huge models: every k-th face
+    best, where, count, sampled, errors, k = math.inf, None, 0, 0, 0, -1
+    for solid in solids:
+        faces = solid.Faces
+        surfs = [f.Surface for f in faces]
+        bbs = [f.BoundBox for f in faces]
+        lo = np.array([(b.XMin, b.YMin, b.ZMin) for b in bbs]) - tol
+        hi = np.array([(b.XMax, b.YMax, b.ZMax) for b in bbs]) + tol
+        for face in faces:
+            k += 1
+            if k % stride:
+                continue
+            sampled += 1
+            for p, nrm in _face_samples(face, n):
+                if nrm.Length < 1e-12:
+                    continue
+                count += 1
+                t, err = _exit_distance(p, -nrm, surfs, faces, lo, hi, best, eps, tol)
+                errors += err
+                if t < best:
                     best, where = t, p
-    return {"min_mm": None if best is math.inf else round(best, 4),
-            "at": None if where is None else [round(x, 3) for x in (where.x, where.y, where.z)],
-            "samples": count, "faces_sampled": sampled, "faces": len(faces),
-            "method": f"mesh ray-cast ({n}x{n}/face"
-                      + (f", every {stride}th face)" if stride > 1 else ", all faces)")}
+    out = {"min_mm": None if best is math.inf else round(best, 4),
+           "at": None if where is None else [round(x, 3) for x in (where.x, where.y, where.z)],
+           "samples": count, "faces_sampled": sampled, "faces": n_faces,
+           "method": f"exact ray-cast ({n}x{n}/face"
+                     + (f", every {stride}th face)" if stride > 1 else ", all faces)")}
+    if errors:
+        out["unchecked"] = f"{errors} ray/face intersection(s) failed (those faces were skipped)"
+    return out
 
 
 def overhangs(obj_or_shape, max_angle_deg: float = 45.0,
@@ -215,6 +280,8 @@ def printability(obj_or_name, bed_mm: Sequence[float] = (220, 220, 250),
     measures["min_wall"] = w
     if w["min_mm"] is not None and w["min_mm"] < min_wall_mm:
         issues.append(f"wall {w['min_mm']} mm < {min_wall_mm} mm at {w['at']} (estimate)")
+    elif w.get("unchecked"):
+        advisories.append(f"wall thickness only partly checked: {w['unchecked']}")
     ov = overhangs(shp, max_overhang_deg)
     measures["overhang_area_mm2"] = ov["area_mm2"]
     if ov["area_mm2"] > max_overhang_area_mm2:

@@ -12,6 +12,15 @@ au lieu de croire la lecture qu'en fait l'IA.
 > modélise, enregistre vos exigences comme des contrôles, vérifie la géométrie et les exigences après
 > chaque étape, sauvegarde automatiquement, et permet de revenir en arrière.
 
+## Depuis la 2.1 (non publié)
+- **Pièces lourdes** (mesuré sur une plaque percée de 1 600 trous) :
+  - épaisseur de paroi : 73 s → 0,7 s, et désormais exacte (les rayons rencontrent les vraies
+    surfaces, sans maillage) ;
+  - `printability` : 129 s → 1,6 s ; `analyze` : 132 s → 1,7 s ; `render_views` : 48 s → 13 s ;
+  - détection des trous : 2,7 s → 0,2 s (même résultat, sans comparer chaque paire) ;
+  - `check` ne refait l'analyse OCCT, lente, qu'une fois par version de la forme, et ne
+    s'arrête plus à 30 s sur un faux « timeout ».
+
 ## Nouveautés de la 2.1
 - **Calcul de résistance** (`fem_static`, CalculiX) : déplacement, contrainte de von Mises et
   coefficient de sécurité, avec un verdict. Une poutre encastrée tombe à 0,3 % de F·L³/3EI.

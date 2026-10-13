@@ -56,7 +56,13 @@ def _frame(view: str):
 
 
 def _mesh(shape, tol: float):
-    pts, tris = shape.tessellate(tol)
+    # MeshPart with a 0.5 rad angular step: on parts with many small round
+    # features it is 4-5x faster than shape.tessellate(tol) (1600-hole plate:
+    # 8.7 s vs 41 s, 173k vs 582k triangles) for the same picture. Triangles
+    # are outward-oriented like tessellate's (back faces are culled below).
+    import MeshPart
+    m = MeshPart.meshFromShape(Shape=shape, LinearDeflection=tol, AngularDeflection=0.5)
+    pts, tris = m.Topology
     P = [(p.x, p.y, p.z) for p in pts]
     return P, tris
 

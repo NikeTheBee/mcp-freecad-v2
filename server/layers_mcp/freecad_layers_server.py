@@ -34,6 +34,10 @@ import mcp_freecad_launch as launcher  # noqa: E402
 from mcp_bridge_framing import receive_message, send_message, verify_listener  # noqa: E402
 
 MAX_OUT = 8000
+# check/analyze/printability/drawing_sheet on a heavy part (an imported STEP, a plate with
+# 1600 holes) can outlast FreeCAD's 30 s default; past it the reply is a
+# misleading "timeout" while FreeCAD keeps computing and refuses other calls.
+_ANALYSIS_TIMEOUT = 300.0
 TOKEN_PATH = Path.home() / ".freecad-mcp" / "windows_auth_token"
 
 # FreeCAD outlives Claude sessions: reload the layers when any of their files
@@ -101,7 +105,11 @@ def _run(template: str, /, _timeout: float = 30.0, **args: Any) -> Any:
         raw = receive_message(s, timeout=wait)
     resp = json.loads(raw) if raw else {"error": "no response from FreeCAD"}
     if "error" in resp:
-        raise FreeCADError(str(resp["error"])[:2000])
+        err = str(resp["error"])
+        if err.startswith("Operation timeout"):
+            err = (f"FreeCAD needed more than {_timeout:.0f} s for this and is still working on it "
+                   f"(a very heavy model?). Wait a minute before the next call. ({err[:120]})")
+        raise FreeCADError(err[:2000])
     result = resp.get("result")
     if isinstance(result, str) and "\n" in result.strip():
         # FreeCAD returns captured stdout first (e.g. CalculiX's own prints),
@@ -204,21 +212,22 @@ def check(target: str, expect_solid: bool = True) -> str:
     requirements on it. Autosaves the document when everything is OK. For a sketch:
     constraint health (conflicts, redundancy, DoF) and open wires."""
     return _run("_out = gate.check_target(_a['target'], _a['expect_solid'])['text']",
-                target=target, expect_solid=expect_solid)
+                _timeout=_ANALYSIS_TIMEOUT, target=target, expect_solid=expect_solid)
 
 
 @mcp.tool()
 @_safe
 def analyze(target: str) -> str:
     """Measured facts: verdict, holes (diameter, position, through/blind), min wall estimate."""
-    return _run("_out = analysis.report(_a['target'])", target=target)
+    return _run("_out = analysis.report(_a['target'])", _timeout=_ANALYSIS_TIMEOUT, target=target)
 
 
 @mcp.tool()
 @_safe
 def check_assembly(objects: list[str]) -> str:
     """Overlap volume between separate parts (touching is fine)."""
-    return _run("_out = verify.check_assembly(_a['objects'])", objects=objects)
+    return _run("_out = verify.check_assembly(_a['objects'])", _timeout=_ANALYSIS_TIMEOUT,
+                objects=objects)
 
 
 @mcp.tool()
@@ -232,7 +241,7 @@ _out = {k: _r[k] for k in ('status', 'issues', 'advisories')}
 _out['bbox'] = _r['measures']['bbox']
 _out['min_wall_mm'] = _r['measures']['min_wall']['min_mm']
 _out['overhang_area_mm2'] = _r['measures']['overhang_area_mm2']
-""", target=target, bed=bed_mm or [220, 220, 250], w=min_wall_mm)
+""", _timeout=_ANALYSIS_TIMEOUT, target=target, bed=bed_mm or [220, 220, 250], w=min_wall_mm)
 
 
 @mcp.tool()
@@ -344,7 +353,8 @@ if _o is None:
     raise ValueError(f"no object {_a['target']!r}")
 _out = drawing.sheet_for(_o, dxf_path=_a['dxf'] or None, views=tuple(_a['views']),
                          template=_a['tpl'], overwrite=_a['ow'])
-""", target=target, dxf=dxf_path, views=views or ["front", "top", "right"],
+""", _timeout=_ANALYSIS_TIMEOUT, target=target, dxf=dxf_path,
+                views=views or ["front", "top", "right"],
                 tpl=template, ow=overwrite)
 
 

@@ -100,6 +100,34 @@ def main() -> int:
     finally:
         verify.MAX_INTERFERENCE_SOLIDS = old
 
+    # isValid() is skipped after a clean OCCT check (same analysis): a broken
+    # shape must still be reported invalid
+    op = doc.addObject("Part::Feature", "OpenShell")
+    op.Shape = Part.Solid(Part.Shell(Part.makeBox(10, 10, 10).Faces[:5]))
+    doc.recompute()
+    r = expect("OpenShell", verify.FAIL)
+    assert r["valid"] is False and "shape.isValid() is False" in r["issues"], r
+    print("broken shape still reported invalid: OK")
+
+    # the OCCT check is remembered per shape: an unchanged shape is not
+    # re-analysed, a changed one always is (never a stale verdict)
+    verify.check("Box")
+    n = len(verify._SHAPE_CHECKS)
+    verify.check("Box")
+    assert len(verify._SHAPE_CHECKS) == n, "unchanged shape analysed twice"
+    sw = doc.addObject("Part::Feature", "Swap")
+    sw.Shape = Part.makeBox(10, 10, 5)
+    doc.recompute()
+    expect("Swap", verify.OK)
+    sw.Shape = bow                       # same object, now the bow-tie
+    doc.recompute()
+    expect("Swap", verify.FAIL)
+    sw.Shape = Part.makeBox(10, 10, 5)
+    doc.recompute()
+    expect("Swap", verify.OK)
+    assert len(verify._SHAPE_CHECKS) <= verify._SHAPE_CHECKS_SIZE
+    print("OCCT check cache: no stale verdict: OK")
+
     # assembly-level interference between separate parts
     a = doc.addObject("Part::Box", "PartA")
     b = doc.addObject("Part::Box", "PartB")

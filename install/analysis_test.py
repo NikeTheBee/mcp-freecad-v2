@@ -52,15 +52,41 @@ def main() -> int:
     print("fillets and the outside of a rod are not holes: OK")
     th = analysis.holes(doc.Tube)
     assert len(th) == 1 and th[0]["diameter"] == 16 and th[0]["through"], th
+    # a bore made of two half-cylinders, 5 m from the origin: still ONE hole
+    half = Part.makeCylinder(4, 20, V(10, 10, 0), V(0, 0, 1), 180)
+    other = half.copy()
+    other.rotate(V(10, 10, 0), V(0, 0, 1), 180)
+    split = Part.makeBox(20, 20, 20).cut(half).cut(other)
+    split.translate(V(5000, -3000, 2000))
+    sh = analysis.holes(split)
+    assert len(sh) == 1 and sh[0]["diameter"] == 8 and sh[0]["through"], sh
+    assert sh[0]["center"] == [5010, -2990, 2010], sh
+    print("split bore far from the origin is one hole: OK")
 
     # walls: tube wall is 2 mm; a 20 mm cube with a 17 mm pocket leaves 1.5 mm
+    # (exact B-rep intersections: no mesh chord error, so a tight tolerance)
     w = analysis.min_wall(doc.Tube)
     print("tube min wall:", w)
-    assert abs(w["min_mm"] - 2.0) < 0.05, w
+    assert abs(w["min_mm"] - 2.0) < 1e-3, w
     cup = Part.makeBox(20, 20, 20).cut(Part.makeBox(17, 17, 30, V(1.5, 1.5, 1.5)))
     wc = analysis.min_wall(cup)
     print("cup min wall:", wc)
-    assert abs(wc["min_mm"] - 1.5) < 0.05, wc
+    assert abs(wc["min_mm"] - 1.5) < 1e-3, wc
+    for label, shell, expected in (
+            ("sphere shell", Part.makeSphere(10).cut(Part.makeSphere(9)), 1.0),
+            ("torus shell", Part.makeTorus(30, 5).cut(Part.makeTorus(30, 4)), 1.0)):
+        ws = analysis.min_wall(shell)
+        assert abs(ws["min_mm"] - expected) < 1e-3 and "unchecked" not in ws, (label, ws)
+    print("curved shells (sphere, torus) 1.0 mm: OK")
+    # a thin spot on the LAST faces of a many-faced part is still found (the
+    # old version stopped sampling after the first faces)
+    grid = Part.makeBox(120, 120, 10)
+    grid = grid.cut(Part.makeCompound([Part.makeCylinder(3, 10, V(10 + i * 20, 10 + j * 20, 0))
+                                       for i in range(6) for j in range(6)])).removeSplitter()
+    grid = grid.cut(Part.makeBox(5, 20, 10, V(119.2 - 5, 90, 0)))   # 0.8 mm to the x=120 edge
+    wg = analysis.min_wall(grid)
+    print("grid with a thin spot:", wg)
+    assert abs(wg["min_mm"] - 0.8) < 1e-3 and wg["faces_sampled"] == wg["faces"], wg
 
     # overhangs: a T (bar on a post) overhangs; the plain plate does not
     tee = Part.makeBox(10, 10, 20, V(15, 0, 0)).fuse(Part.makeBox(40, 10, 5, V(0, 0, 20)))
