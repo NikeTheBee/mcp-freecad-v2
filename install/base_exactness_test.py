@@ -34,6 +34,38 @@ d.recompute()
 """
 
 
+# PartDesign: a Body with a 10x10 rectangle on XY ("Base"), a D4 circle centred
+# at (5, 5) on a plane 5 mm up ("Hole"), and a 2x10 rectangle on XZ at x = 5..7 ("Ring").
+PD_SETUP = r"""
+import FreeCAD, Part, Sketcher
+for _n in list(FreeCAD.listDocuments()):
+    FreeCAD.closeDocument(_n)
+d = FreeCAD.newDocument("PD")
+body = d.addObject("PartDesign::Body", "Body")
+xy = body.Origin.OriginFeatures[3]; xz = body.Origin.OriginFeatures[4]
+def rect(name, x0, y0, x1, y1, support):
+    s = body.newObject("Sketcher::SketchObject", name)
+    s.AttachmentSupport = [(support, "")]; s.MapMode = "FlatFace"
+    P = [FreeCAD.Vector(x0, y0, 0), FreeCAD.Vector(x1, y0, 0), FreeCAD.Vector(x1, y1, 0), FreeCAD.Vector(x0, y1, 0)]
+    for i in range(4):
+        s.addGeometry(Part.LineSegment(P[i], P[(i + 1) % 4]))
+    for i in range(4):
+        s.addConstraint(Sketcher.Constraint("Coincident", i, 2, (i + 1) % 4, 1))
+rect("Base", 0, 0, 10, 10, xy)
+c = body.newObject("Sketcher::SketchObject", "Hole")
+c.AttachmentSupport = [(xy, "")]; c.MapMode = "FlatFace"
+c.AttachmentOffset = FreeCAD.Placement(FreeCAD.Vector(0, 0, 5), FreeCAD.Rotation())
+c.addGeometry(Part.Circle(FreeCAD.Vector(5, 5, 0), FreeCAD.Vector(0, 0, 1), 2))
+rect("Ring", 5, 0, 7, 10, xz)
+d.recompute()
+'ok'
+"""
+
+
+def body_volume(inst):
+    return float(py(inst, "import FreeCAD\nround(FreeCAD.ActiveDocument.getObject('Body').Shape.Volume, 6)"))
+
+
 def op(inst, tool, args, wait=60.0):
     r = inst.call(tool, args)
     t0 = time.monotonic()
@@ -128,7 +160,29 @@ def main() -> int:
         assert all(k in txt for k in ("5", "10", "15")), txt
         print("measurements: volume 6000, area 2200, centre (5, 10, 15) OK")
 
+        # PartDesign through the base's tool, volume after each step
+        py(inst, PD_SETUP)
+        seg = 4 * math.acos(0.5) - math.sqrt(3)             # D4 circle cut 1 mm from its centre
+        pocket = PI9 * 4 / 9 * 5                             # pi * 2^2 * 5
+        steps = (
+            ({"operation": "pad", "sketch_name": "Base", "length": 5}, 500.0),
+            ({"operation": "pocket", "sketch_name": "Hole", "length": 5}, 500.0 - pocket),
+            # 2nd copy at x = 9: part of the circle (x > 10) lies outside the block
+            ({"operation": "linear_pattern", "feature_name": "Pocket", "axis": "x", "count": 2,
+              "spacing": 4}, 500.0 - pocket - (math.pi * 4 - seg) * 5),
+            ({"operation": "mirror", "feature_name": "Pad", "plane": "YZ"},
+             1000.0 - pocket - (math.pi * 4 - seg) * 5),
+        )
+        for args, want in steps:
+            r = op(inst, "partdesign_operations", args)
+            close(body_volume(inst), want, f"partdesign {args['operation']} ({str(r)[:30]}...)", rel=1e-5)
+        py(inst, PD_SETUP)
+        op(inst, "partdesign_operations", {"operation": "revolution", "sketch_name": "Ring",
+                                           "angle": 360, "axis": "y"})
+        close(body_volume(inst), math.pi * (7 ** 2 - 5 ** 2) * 10, "partdesign revolution (ring)", rel=1e-5)
+
         # spatial query: the cylinder really pierces the box
+        py(inst, SETUP)
         txt = str(op(inst, "spatial_query", {"operation": "interference_check",
                                              "object1": "Box", "object2": "Cyl"}))
         print("interference:", txt[:160])
