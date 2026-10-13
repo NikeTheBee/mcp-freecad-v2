@@ -34,6 +34,10 @@ au lieu de croire la lecture qu'en fait l'IA.
 - **Un FreeCAD bloqué peut être redémarré par l'assistant** (`restart_freecad`, aussi sans
   interface) : il enregistre ce qui peut l'être sans risque, quitte, et le lanceur en démarre un
   neuf. Avant, seul un arrêt manuel du processus en venait à bout.
+- **Assemblages mesurés pièce par pièce** : la nomenclature compte une seule fois les pièces
+  identiques quelle que soit leur orientation ; trous, porte-à-faux et imprimabilité jugent
+  chaque pièce seule ; un plan ne met jamais de cote d'encombrement sur une vue iso (une
+  longueur projetée n'est pas une dimension).
 
 ## Nouveautés de la 2.1
 - **Calcul de résistance** (`fem_static`, CalculiX) : déplacement, contrainte de von Mises et
