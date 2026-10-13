@@ -813,6 +813,7 @@ class FreeCADSocketServer:
         # holding the lock: under the bridge's 35 s answer wait, so the caller
         # gets "busy" instead of a false crash report.
         self._headless_busy_wait = 25.0
+        self._started_at = time.time()      # see _unknown_job
 
         # Stamped every _process_gui_tasks tick (every ~100ms) as long as the
         # Qt event loop is alive and pumping. Lets a request be rejected
@@ -1387,6 +1388,16 @@ class FreeCADSocketServer:
                     return json.dumps({"result": result["result"]})
             return json.dumps({"result": str(result)})
 
+    def _unknown_job(self, job_id: str) -> str:
+        """MCP FREECAD v2: a job also goes missing when FreeCAD stopped and was
+        restarted (the supervisor does it within seconds): say how long this
+        FreeCAD has run, so a job submitted before that reads as lost."""
+        up = time.time() - self._started_at
+        return json.dumps({"error": f"Unknown job_id: {job_id!r}. Already retrieved, never "
+                                    f"submitted, or lost: this FreeCAD has been running for "
+                                    f"{up:.0f} s, and a job submitted before that was lost when "
+                                    f"FreeCAD stopped (with any unsaved changes)."})
+
     def _busy_error(self) -> str:
         """JSON error for a call that found headless FreeCAD busy on a long job."""
         now = time.time()
@@ -1519,7 +1530,7 @@ class FreeCADSocketServer:
         if not job_id:
             return json.dumps({"error": "job_id required"})
         if job_id not in self._async_jobs:
-            return json.dumps({"error": f"Unknown job_id: {job_id!r}. Already retrieved or never submitted."})
+            return self._unknown_job(job_id)
 
         job = self._async_jobs[job_id]
         elapsed = round(time.time() - job["started"], 1)
@@ -1578,7 +1589,7 @@ class FreeCADSocketServer:
         if not job_id:
             return json.dumps({"error": "job_id required"})
         if job_id not in self._async_jobs:
-            return json.dumps({"error": f"Unknown job_id: {job_id!r}. Already retrieved or never submitted."})
+            return self._unknown_job(job_id)
 
         job = self._async_jobs[job_id]
         if job["status"] != "running":

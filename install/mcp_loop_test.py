@@ -52,6 +52,17 @@ async def run(inst: Instance) -> int:
             txt = _text(r)
             print("40 s operation:", txt[:120])
             assert "slept 40" in txt and "Crash" not in txt, txt
+
+            # LAST (FreeCAD dies here): killed mid-operation, it is restarted by the
+            # supervisor within seconds; the new one does not know the job, which used
+            # to come back as "Unknown job_id ... Already retrieved" (read as success)
+            pending = asyncio.ensure_future(session.call_tool(
+                "execute_python", {"code": "import time\ntime.sleep(20)\n'never'"}))
+            await asyncio.sleep(4)
+            inst.kill()
+            txt = _text(await pending)
+            print("killed mid-operation:", txt[:160])
+            assert "FreeCAD stopped while" in txt and "lost" in txt, txt
     return 0
 
 

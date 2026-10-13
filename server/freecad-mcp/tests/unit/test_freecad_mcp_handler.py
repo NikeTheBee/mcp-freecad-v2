@@ -1368,6 +1368,15 @@ class TestHeadlessAsyncThread:
         t.join(5)
         assert done and "Doc" in done[0], done
 
+    def test_unknown_job_says_how_long_this_freecad_has_run(self):
+        """After a crash the supervisor restarts FreeCAD within seconds: the
+        new one does not know the job, and "already retrieved" read as success."""
+        self.server._started_at = time.time() - 7
+        for reply in (self.server._poll_job({"job_id": "deadbeef"}),
+                      self.server._cancel_job({"job_id": "deadbeef"})):
+            err = json.loads(reply)["error"]
+            assert err.startswith("Unknown job_id: 'deadbeef'") and "running for 7 s" in err, err
+
     def test_job_cancelled_before_it_starts_never_runs(self):
         ran = []
         with self.server._headless_exec_lock:      # FreeCAD busy with something else

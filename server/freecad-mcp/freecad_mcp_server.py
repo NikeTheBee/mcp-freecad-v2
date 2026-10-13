@@ -3006,6 +3006,21 @@ async def main():
             status = poll_resp.get("status")
             if status in ("done", "error"):
                 return poll_resp
+            if status is None and str(poll_resp.get("error", "")).startswith("Unknown job_id"):
+                # MCP FREECAD v2: this loop submitted the job and has not
+                # collected it, and a running job is never cleaned up, so
+                # FreeCAD lost it: it stopped and the supervisor restarted it.
+                # Read as-is ("Already retrieved...") it sounded like success.
+                return {
+                    "status": "error",
+                    "error": (
+                        f"FreeCAD stopped while {context} was running (job {job_id}) "
+                        "and was restarted: that operation and any unsaved changes "
+                        "are lost. Reopen the last saved or recovered copy "
+                        "(freecad-layers recover), then redo the step."
+                    ),
+                    "job_id": job_id,
+                }
             if status is None and "error" in poll_resp:
                 # send_to_freecad itself failed (auth/target-resolution/
                 # send failure) rather than returning a real poll_job
