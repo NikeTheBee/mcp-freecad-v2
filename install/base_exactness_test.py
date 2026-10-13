@@ -163,6 +163,19 @@ def main() -> int:
         py(inst, "import FreeCAD\nFreeCAD.ActiveDocument.recompute()\n'ok'")
         close(shape_of(inst, "Box")[0], 40 * 20 * 30, "varset Len=40 drives Box again")
 
+        # meshes: a meshed box keeps its exact volume/area, is watertight, and goes back to a solid
+        py(inst, SETUP + "\nimport MeshPart\nm = d.addObject('Mesh::Feature', 'BoxMesh')\n"
+                 "m.Mesh = MeshPart.meshFromShape(Shape=b.Shape, LinearDeflection=0.1)\nd.recompute()\n'ok'")
+        txt = str(op(inst, "mesh_operations", {"operation": "get_mesh_info", "object_name": "BoxMesh"}))
+        assert "Volume: 6000.00" in txt and "Area: 2200.00" in txt and "Is watertight: True" in txt, txt
+        txt = str(op(inst, "mesh_operations", {"operation": "validate_mesh", "object_name": "BoxMesh"}))
+        assert "Status: VALID" in txt, txt
+        op(inst, "mesh_operations", {"operation": "mesh_to_solid", "object_name": "BoxMesh"})
+        v, _, area, name, valid = shape_of(inst, "BoxMesh_Solid")
+        assert valid, name
+        close(v, V_BOX, "mesh -> solid volume")
+        close(area, 2200.0, "mesh -> solid area")
+
         # distance / clearance to a separate sphere: 30 - 5 - 10 = 15 mm
         py(inst, SETUP + "\ns = d.addObject('Part::Sphere', 'Sph'); s.Radius = 5\n"
                  "s.Placement.Base = FreeCAD.Vector(30, 10, 15)\nd.recompute()\n'ok'")
