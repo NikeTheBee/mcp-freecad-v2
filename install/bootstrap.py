@@ -22,7 +22,7 @@ atomically; an unreadable config is never overwritten.
 Usage:
     python install/bootstrap.py [--with-grafts] [--client {auto,code,desktop,both,none}]
                                 [--freecad-bin PATH] [--python PATH] [--skip-tests] [--dry-run]
-    python install/bootstrap.py --update-base [--dry-run]
+    python install/bootstrap.py --update-base [--base-ref TAG] [--dry-run]
         Merges upstream blwfish/freecad-mcp changes into server/freecad-mcp
         (git subtree pull --squash; our changes are kept, conflicts are shown by git).
 """
@@ -163,15 +163,15 @@ def check_base() -> None:
     log(f"base server: {BASE_DIR} (vendored, see CHANGES-NikeTheBee.md)")
 
 
-def update_base(dry: bool) -> None:
+def update_base(dry: bool, ref: str = BASE_BRANCH) -> None:
     """Merge upstream blwfish/freecad-mcp into the vendored copy (keeps our changes)."""
     dirty = run(["git", "-C", REPO, "status", "--porcelain", "--untracked-files=no"],
                 capture_output=True, text=True).stdout.strip()
     if dirty:
         raise InstallError(f"commit or stash your changes first:\n{dirty}")
     cmd = ["git", "-C", REPO, "subtree", "pull", f"--prefix={BASE_PREFIX}",
-           BASE_REPO_URL, BASE_BRANCH, "--squash", "-m",
-           f"Update {BASE_PREFIX} from upstream {BASE_REPO_URL}"]
+           BASE_REPO_URL, ref, "--squash", "-m",
+           f"Update {BASE_PREFIX} to upstream {ref} ({BASE_REPO_URL})"]
     if dry:
         log("DRY: " + " ".join(map(str, cmd)))
         return
@@ -326,6 +326,8 @@ def main() -> int:
                     help="interpreter used to create the venv (3.10+)")
     ap.add_argument("--skip-tests", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--base-ref", default=BASE_BRANCH,
+                    help="upstream branch or release tag for --update-base (e.g. v8.3.0)")
     ap.add_argument("--update-base", action="store_true",
                     help="merge upstream blwfish/freecad-mcp changes, then stop")
     args = ap.parse_args()
@@ -333,7 +335,7 @@ def main() -> int:
 
     if args.update_base:
         try:
-            update_base(dry)
+            update_base(dry, args.base_ref)
         except InstallError as e:
             log(f"STOPPED: {e}")
             return 1
