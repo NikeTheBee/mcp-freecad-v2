@@ -139,6 +139,30 @@ def main() -> int:
         py(inst, "import FreeCAD\nFreeCAD.ActiveDocument.recompute()\n'ok'")
         close(shape_of(inst, "Box")[0], 40 * 20 * 30, "spreadsheet len=40 drives Box again")
 
+        # Draft array: count/spacing from the schema (ignored before v2: always 2 x 100 mm)
+        py(inst, SETUP)
+        op(inst, "draft_operations", {"operation": "array", "object_name": "Box", "count": 3, "spacing": 15})
+        v, xmin, _, name, _ = shape_of(inst, "Array")
+        close(v, 3 * V_BOX, f"draft array count=3 ({name})")
+        span = float(py(inst, "import FreeCAD\nround(FreeCAD.ActiveDocument.getObject('Array').Shape.BoundBox.XLength, 6)"))
+        close(span, 2 * 15 + 10, "draft array spacing=15: overall X length")
+
+        # VarSet: initial value given with add_property drives the box at once
+        py(inst, SETUP)
+        for args in ({"operation": "create_varset", "name": "Vars"},
+                     {"operation": "add_property", "varset_name": "Vars", "name": "Len",
+                      "type": "App::PropertyLength", "value": 25},
+                     {"operation": "bind_property", "varset_name": "Vars", "varset_property": "Len",
+                      "object_name": "Box", "property_name": "Length"}):
+            r = op(inst, "varset_operations", args)
+            assert "rror" not in str(r), r
+        py(inst, "import FreeCAD\nFreeCAD.ActiveDocument.recompute()\n'ok'")
+        close(shape_of(inst, "Box")[0], 25 * 20 * 30, "varset Len=25 (set at creation) drives Box")
+        op(inst, "varset_operations", {"operation": "set_property", "varset_name": "Vars",
+                                       "name": "Len", "value": 40})
+        py(inst, "import FreeCAD\nFreeCAD.ActiveDocument.recompute()\n'ok'")
+        close(shape_of(inst, "Box")[0], 40 * 20 * 30, "varset Len=40 drives Box again")
+
         # distance / clearance to a separate sphere: 30 - 5 - 10 = 15 mm
         py(inst, SETUP + "\ns = d.addObject('Part::Sphere', 'Sph'); s.Radius = 5\n"
                  "s.Placement.Base = FreeCAD.Vector(30, 10, 15)\nd.recompute()\n'ok'")

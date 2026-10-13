@@ -46,10 +46,13 @@ class DraftOpsHandler(BaseHandler):
         """Create a Draft rectangular/ortho array."""
         try:
             object_name = args.get('object_name', '')
-            count_x = args.get('count_x', 2)
+            # MCP FREECAD v2: the tool schema only exposes `count` and `spacing`;
+            # they were never read, so every array came out 2 x 100 mm whatever
+            # was asked. They now drive the X direction (count_x/interval_x win).
+            count_x = args.get('count_x', args.get('count', 2))
             count_y = args.get('count_y', 1)
             count_z = args.get('count_z', 1)
-            interval_x = args.get('interval_x', 100)
+            interval_x = args.get('interval_x', args.get('spacing', 100))
             interval_y = args.get('interval_y', 100)
             interval_z = args.get('interval_z', 100)
 

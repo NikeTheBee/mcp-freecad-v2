@@ -197,6 +197,14 @@ class VarSetOpsHandler(BaseHandler):
                 read_only=False, hidden=False, locked=locked,
                 enum_vals=list(enum_vals) if enum_vals is not None else [],
             )
+            # MCP FREECAD v2: an initial value given with add_property used to be
+            # ignored, so binding the new property right away set the bound
+            # dimension to 0 (an invalid part). Apply it through set_property.
+            value = args.get('value')
+            if value is not None and type_ != 'App::PropertyEnumeration':
+                set_msg = self.set_property({'varset_name': varset_name, 'name': name,
+                                             'value': value})
+                return f"Added property {varset_name}.{name} ({type_}); {set_msg}"
             self.recompute(doc)
 
             return f"Added property {varset_name}.{name} ({type_})"
