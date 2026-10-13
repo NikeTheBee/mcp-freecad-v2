@@ -12,6 +12,28 @@ au lieu de croire la lecture qu'en fait l'IA.
 > modélise, enregistre vos exigences comme des contrôles, vérifie la géométrie et les exigences après
 > chaque étape, sauvegarde automatiquement, et permet de revenir en arrière.
 
+## Nouveautés de la 2.1
+- **Calcul de résistance** (`fem_static`, CalculiX) : déplacement, contrainte de von Mises et
+  coefficient de sécurité, avec un verdict. Une poutre encastrée tombe à 0,3 % de F·L³/3EI.
+- **Images sans interface** (`render_views`) : vues face, dessus, droite et iso ombrées, en une
+  image.
+- **Plusieurs projets en parallèle** (`project_init` n'écrase jamais, `project_switch`) et
+  **recettes vérifiées** (`recipe`) : une conception n'est gardée que si son contrat est OK.
+- **Plus sûr par construction** :
+  - FreeCAD prouve qu'il connaît la clé avant tout envoi (défi HMAC) ;
+  - les outils CAM (G-code machine) sont coupés sauf activation explicite ;
+  - les outils inutilisables sous Windows sont masqués (environ 2 200 tokens économisés par
+    session).
+- **Base mise à jour en v8.3.0 de blwfish**, nos corrections conservées. Aussi corrigés dans la
+  base :
+  - congés et chanfreins sans interface, avec arêtes nommées ;
+  - tous les chanfreins hors Body ;
+  - suivi des crashs sous Windows ;
+  - messages clairs au lieu d'erreurs Python sans interface, trouvés en passant en revue les 190
+    opérations.
+- **CI Windows** : à chaque envoi, installation du FreeCAD 1.1.1 officiel et passage des 36 tests,
+  aucun ignoré.
+
 ## Nouveautés de la 2.0
 - **Le serveur de base fait partie du projet.** blwfish/freecad-mcp v8.3.0 est intégré dans
   `server/freecad-mcp/` (git subtree) : corrigé ici, et toujours capable de récupérer les mises à

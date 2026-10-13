@@ -13,6 +13,25 @@ trusting the AI's reading of it.
 > records your requirements as checks, verifies geometry and requirements after every step,
 > autosaves, and lets you roll back.
 
+## What's new in 2.1
+- **Stress analysis** (`fem_static`, CalculiX): displacement, von Mises stress and safety factor,
+  with a verdict. A cantilever comes within 0.3 % of F·L³/3EI.
+- **Pictures without the GUI** (`render_views`): shaded front, top, right and iso views in one
+  image.
+- **Several projects side by side** (`project_init` never overwrites, `project_switch`) and
+  **verified recipes** (`recipe`): a design is kept only when its contract is OK.
+- **Safer by construction**:
+  - FreeCAD proves it knows the token before anything is sent (HMAC challenge);
+  - the CAM tools (machine G-code) are off unless you opt in;
+  - the tools that cannot work on Windows are hidden (about 2,200 tokens saved per session).
+- **Base updated to blwfish v8.3.0**, our changes kept. Also fixed in the base:
+  - headless fillet and chamfer with named edges;
+  - every non-Body chamfer;
+  - crash tracking on Windows;
+  - clear headless messages instead of Python errors, found by a sweep of all 190 operations.
+- **Windows CI**: every push installs the official FreeCAD 1.1.1 and runs all 36 tests,
+  nothing skipped.
+
 ## What's new in 2.0
 - **The base server is part of the project.** blwfish/freecad-mcp v8.3.0 is vendored in
   `server/freecad-mcp/` (git subtree): fixed here, and still able to pull upstream updates
