@@ -562,6 +562,94 @@ def server_proof(token: str, nonce: str) -> str:
                     hashlib.sha256).hexdigest()
 
 
+class TrackedArgs(dict):
+    """MCP FREECAD v2: an args dict that records which keys an operation reads.
+
+    An argument the operation never reads used to be dropped silently. For
+    example, a circle given center_x/center_y (the arc's names) was drawn at
+    (0,0), the AI was told "Added circle", and the part was wrong. Any bulk
+    access (iteration, items(), copy, **unpacking) counts as reading
+    everything: never claim an argument was ignored when it may have been used.
+    """
+
+    def __init__(self, *a, **kw):
+        super().__init__(*a, **kw)
+        self._read: set = set()
+        self._all = False
+
+    def get(self, key, default=None):
+        self._read.add(key)
+        return super().get(key, default)
+
+    def __getitem__(self, key):
+        self._read.add(key)
+        return super().__getitem__(key)
+
+    def __contains__(self, key):
+        self._read.add(key)
+        return super().__contains__(key)
+
+    def setdefault(self, key, default=None):
+        self._read.add(key)
+        return super().setdefault(key, default)
+
+    def pop(self, key, *default):
+        self._read.add(key)
+        return super().pop(key, *default)
+
+    def _bulk(self):
+        self._all = True
+
+    def __iter__(self):
+        self._bulk()
+        return super().__iter__()
+
+    def keys(self):
+        self._bulk()
+        return super().keys()
+
+    def items(self):
+        self._bulk()
+        return super().items()
+
+    def values(self):
+        self._bulk()
+        return super().values()
+
+    def copy(self):
+        self._bulk()
+        return dict(super().items())
+
+    def ignored(self) -> list:
+        if self._all:
+            return []
+        return sorted(k for k in dict.keys(self) if k not in self._read
+                      and k not in ("operation", "timeout") and not str(k).startswith("_"))
+
+
+def note_ignored_args(result, ignored: list, label: str):
+    """Tell the caller which of its arguments the operation did not use."""
+    if not ignored:
+        return result
+    note = (f"argument(s) not used by {label}: {', '.join(map(str, ignored))} "
+            "-- check their names in the tool schema")
+    if isinstance(result, str):
+        stripped = result.lstrip()
+        if stripped.startswith("{"):
+            try:
+                data = json.loads(result)
+                if isinstance(data, dict):
+                    data["ignored_args"] = ignored
+                    return json.dumps(data)
+            except ValueError:
+                pass
+            return result
+        return f"{result}\n(Note: {note})"
+    if isinstance(result, dict):
+        return {**result, "ignored_args": ignored}
+    return result
+
+
 def auth_challenge_reply(message_str: str, token: str | None) -> str | None:
     """The proof reply if `message_str` is a well-formed challenge, else None
     (then it is an ordinary command)."""
@@ -1970,10 +2058,12 @@ class FreeCADSocketServer:
         the sync timeout and leave the GUI thread stuck.
         """
         def task():
+            tracked = TrackedArgs(args)
             try:
-                result = method(args)
+                result = method(tracked)
             except Exception as e:
                 return {"error": f"{label} error: {e}", "error_id": self.diagnostics_ops.store_traceback(tb_module.format_exc())}
+            result = note_ignored_args(result, tracked.ignored(), label)
             # Most handler methods catch their own exceptions internally and
             # return a plain string starting with "Error" instead of raising
             # -- tests/unit/_freecad_mocks.py's assert_success_contains

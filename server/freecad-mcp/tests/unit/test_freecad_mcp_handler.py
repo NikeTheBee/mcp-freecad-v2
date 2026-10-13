@@ -3087,3 +3087,31 @@ class TestListenerProof:
         assert json.loads(sent[0]) == {"auth_proof": ss_mod.server_proof("secret-token", "cd" * 16)}
         server._process_command.assert_called_once_with(cmd)
         assert sent[1] == '{"result":"ok"}'
+
+
+# ---------------------------------------------------------------------------
+# MCP FREECAD v2: arguments an operation never reads are reported, not dropped
+# ---------------------------------------------------------------------------
+
+class TestIgnoredArgs:
+
+    def test_unread_keys_are_reported(self, ss_module):
+        a = ss_module.TrackedArgs({"operation": "add_circle", "x": 1, "centre_x": 10, "_meta": 1})
+        a.get("x")
+        assert a.ignored() == ["centre_x"]       # operation and _private keys never count
+
+    def test_bulk_access_never_claims_ignored(self, ss_module):
+        for bulk in (lambda d: dict(d), lambda d: {**d}, lambda d: d.copy(),
+                     lambda d: list(d.items()), lambda d: json.dumps(d), lambda d: [k for k in d]):
+            a = ss_module.TrackedArgs({"operation": "x", "a": 1, "b": 2})
+            bulk(a)
+            assert a.ignored() == []
+
+    def test_note_on_text_json_and_dict_results(self, ss_module):
+        note = ss_module.note_ignored_args
+        assert note("Added circle", [], "Sketch add_circle") == "Added circle"
+        txt = note("Added circle", ["centre_x"], "Sketch add_circle")
+        assert txt.startswith("Added circle\n(Note: argument(s) not used by Sketch add_circle: centre_x")
+        js = json.loads(note('{"status": "ok"}', ["foo"], "L"))
+        assert js == {"status": "ok", "ignored_args": ["foo"]}
+        assert note({"a": 1}, ["foo"], "L") == {"a": 1, "ignored_args": ["foo"]}
