@@ -245,14 +245,27 @@ def overhangs(obj_or_shape, max_angle_deg: float = 45.0,
     """Downward-facing area steeper than `max_angle_deg` from vertical.
 
     A face overhangs when its normal is within (90 - max_angle) degrees of
-    straight down. Faces lying on the build plate are ignored.
+    straight down. Faces lying on the build plate are ignored. Several solids
+    (an assembly): each sits on its own plate, as each part is printed (the
+    lowest point of the WHOLE assembly made a plate's bottom an "overhang"
+    as soon as a pin hung below it). Face names are those of the whole shape.
     """
     shp = _shape(obj_or_shape)
     up = App.Vector(*build_dir).normalize()
     limit = math.cos(math.radians(90.0 - max_angle_deg))
+    index = {f.hashCode(): i for i, f in enumerate(shp.Faces)}
+    area, faces = 0.0, []
+    for part in (shp.Solids if len(shp.Solids) > 1 else [shp]):
+        a, names = _overhangs_of(part, up, limit, index)
+        area += a
+        faces += names
+    return {"area_mm2": round(area, 2), "faces": faces, "max_angle_deg": max_angle_deg}
+
+
+def _overhangs_of(shp, up, limit: float, index: Dict[int, int]):
     z_min = min(v.Point.dot(up) for v in shp.Vertexes) if shp.Vertexes else 0.0
     area, faces = 0.0, []
-    for i, f in enumerate(shp.Faces):
+    for f in shp.Faces:
         u0, u1, v0, v1 = f.ParameterRange
         n = f.normalAt((u0 + u1) / 2, (v0 + v1) / 2)
         if -n.dot(up) <= limit:
@@ -262,8 +275,8 @@ def overhangs(obj_or_shape, max_angle_deg: float = 45.0,
         if highest - z_min < 1e-6 and lowest - z_min < 1e-6:
             continue                    # on the bed
         area += f.Area
-        faces.append(f"Face{i + 1}")
-    return {"area_mm2": round(area, 2), "faces": faces, "max_angle_deg": max_angle_deg}
+        faces.append(f"Face{index.get(f.hashCode(), -1) + 1}")
+    return area, faces
 
 
 def printability(obj_or_name, bed_mm: Sequence[float] = (220, 220, 250),

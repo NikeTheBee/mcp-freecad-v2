@@ -102,6 +102,16 @@ def main() -> int:
     print("tee overhang:", ov)
     assert abs(ov["area_mm2"] - 300) < 1e-6, ov
     assert analysis.overhangs(doc.Plate)["area_mm2"] == 0
+    # assembly: each part sits on its own plate (a pin hanging below a plate made the
+    # plate's bottom an "overhang"), and face names stay those of the whole shape
+    plate_pin2 = Part.makeCompound([Part.makeBox(60, 40, 8).cut(Part.makeCylinder(3, 8, V(30, 20, 0))),
+                                    Part.makeCylinder(2.9, 30, V(30, 20, -5))])
+    assert analysis.overhangs(plate_pin2)["area_mm2"] == 0, analysis.overhangs(plate_pin2)
+    cmp = Part.makeCompound([Part.makeBox(5, 5, 5, V(100, 0, 0)), tee])
+    oc = analysis.overhangs(cmp)
+    named = sum(cmp.Faces[int(n[4:]) - 1].Area for n in oc["faces"])
+    assert abs(oc["area_mm2"] - 300) < 1e-6 and abs(named - 300) < 1e-6, oc
+    print("assembly overhangs judged per part, faces named in the whole shape: OK")
 
     # printability: plate OK on a 220x220x250 bed; a 300 mm bar does not fit
     pr = analysis.printability("Plate")
