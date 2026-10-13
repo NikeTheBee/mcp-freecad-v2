@@ -20,6 +20,17 @@ if FreeCAD.GuiUp:
 else:
     FreeCADGui = None
 
+# MCP FREECAD v2: a headless FreeCAD has no 3D view. These operations used to
+# crash with "'NoneType' object has no attribute 'ActiveDocument'"; they now
+# say so and point to the headless renderer of the freecad-layers server.
+_HEADLESS_PICTURE_HINT = ("for a picture of the model use the freecad-layers tool render_views "
+                          "(front/top/right/iso, works headless)")
+
+
+def _headless_view(what: str) -> str:
+    return f"{what} needs FreeCAD's 3D view, which this headless FreeCAD does not have; " \
+           + _HEADLESS_PICTURE_HINT
+
 
 # Complexity thresholds for resolution scaling.
 # saveImage() on complex scenes can block the GUI thread for minutes
@@ -120,6 +131,8 @@ class ViewOpsHandler(BaseHandler):
         (_dispatch_view_control) is responsible for routing it there.
         """
         try:
+            if not FreeCAD.GuiUp:
+                return _headless_view("set_view")
             if not FreeCADGui.ActiveDocument:
                 return NO_ACTIVE_DOCUMENT_ERROR
 
@@ -154,6 +167,8 @@ class ViewOpsHandler(BaseHandler):
         MUST run on the GUI thread (dispatch layer handles this).
         """
         try:
+            if not FreeCAD.GuiUp:
+                return _headless_view("fit_all")
             if not FreeCADGui.ActiveDocument:
                 return NO_ACTIVE_DOCUMENT_ERROR
             FreeCADGui.SendMsgToActiveView("ViewFit")
@@ -164,6 +179,8 @@ class ViewOpsHandler(BaseHandler):
     def zoom_in(self, args: dict[str, Any]) -> str:
         """Zoom in on the view."""
         try:
+            if not FreeCAD.GuiUp:
+                return _headless_view("zoom_in")
             if FreeCADGui.ActiveDocument:
                 FreeCADGui.activeDocument().activeView().zoomIn()
                 return "Zoomed in"
@@ -175,6 +192,8 @@ class ViewOpsHandler(BaseHandler):
     def zoom_out(self, args: dict[str, Any]) -> str:
         """Zoom out on the view."""
         try:
+            if not FreeCAD.GuiUp:
+                return _headless_view("zoom_out")
             if FreeCADGui.ActiveDocument:
                 FreeCADGui.activeDocument().activeView().zoomOut()
                 return "Zoomed out"
@@ -284,12 +303,14 @@ class ViewOpsHandler(BaseHandler):
                 # report success while actually photographing whatever is
                 # on the physical screen — unrelated to FreeCAD entirely.
                 if not FreeCAD.GuiUp:
-                    return json.dumps({"success": False, "error": "Screenshot not available in headless mode"})
+                    return json.dumps({"success": False, "error": "Screenshot not available in headless mode; "
+                                                  + _HEADLESS_PICTURE_HINT})
                 if FreeCAD.ActiveDocument is None:
                     return json.dumps({"success": False, "error": NO_ACTIVE_DOCUMENT_ERROR})
             else:
                 if not FreeCAD.GuiUp:
-                    return json.dumps({"success": False, "error": "Screenshot not available in headless mode"})
+                    return json.dumps({"success": False, "error": "Screenshot not available in headless mode; "
+                                                  + _HEADLESS_PICTURE_HINT})
                 doc = FreeCADGui.activeDocument()
                 if doc is None:
                     return json.dumps({"success": False, "error": NO_ACTIVE_DOCUMENT_ERROR})

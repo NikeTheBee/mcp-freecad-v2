@@ -73,6 +73,8 @@ It runs `git subtree pull --squash` on a clean tree. Then run the base's unit te
 | `tests/unit/conftest.py` | Upstream tests run with `FREECAD_MCP_ENABLE_CAM=1`. | They exercise the CAM tools. |
 | `tests/unit/test_mcp_protocol.py` | New `TestCamDisabledByDefault` (3 tests) and `TestUnixOnlyToolsHiddenOnWindows` (2 tests). | Cover the defaults. |
 | `tests/unit/test_version_check.py` | Two exact-dict assertions also check `how_to_update`. | Follows the new key. |
+| `AICopilot/handlers/view_ops.py` | On a headless FreeCAD, `set_view`, `fit_all`, `zoom_in` and `zoom_out` say that there is no 3D view. The screenshot error adds the same hint. Both point to the `freecad-layers` tool `render_views`. | They crashed with "'NoneType' object has no attribute 'ActiveDocument'" (`FreeCADGui` is `None` headless), which told the AI nothing. |
+| `tests/unit/test_view_ops_screenshot.py` | New `TestHeadlessViewOps` (5 tests). | Covers it. |
 
 ## Test status
 

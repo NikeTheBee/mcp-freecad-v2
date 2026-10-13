@@ -400,3 +400,24 @@ class TestDarwinScreenshot:
         assert result["success"] is False
         assert "bridge process" in result["error"].lower()
         mock_run.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# MCP FREECAD v2: headless FreeCAD has no 3D view -- clear message, no crash
+# ---------------------------------------------------------------------------
+
+class TestHeadlessViewOps:
+    @pytest.mark.parametrize("op", ["set_view", "fit_all", "zoom_in", "zoom_out"])
+    def test_view_op_says_headless_and_points_to_render_views(self, op):
+        with patch(_FREECAD_PATH) as fc, patch(_GUI_PATH, None):
+            fc.GuiUp = False
+            out = getattr(make_handler(), op)({"view_type": "isometric"})
+        assert "headless" in out and "render_views" in out, out
+        assert "NoneType" not in out
+
+    def test_headless_screenshot_points_to_render_views(self):
+        with patch(_FREECAD_PATH) as fc, patch(_PLATFORM_PATH) as plat:
+            fc.GuiUp = False
+            plat.system.return_value = "Windows"
+            out = json.loads(make_handler().take_screenshot({}))
+        assert out["success"] is False and "render_views" in out["error"], out
