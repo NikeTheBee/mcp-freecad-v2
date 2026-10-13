@@ -366,8 +366,14 @@ def static(target, fixed: Sequence[str], loads: Sequence[Dict[str, Any]],
     if mat["name"] in ("pla", "petg", "abs"):
         advisories.append("3D-printed part: layers are weaker across Z than these bulk values")
     m["solve_s"] = round(time.time() - t0, 1)
-    return {"status": verify.FAIL if issues else verify.OK, "issues": issues,
-            "advisories": advisories, "measures": m}
+    # OK means a criterion was met. With no yield strength and no displacement
+    # limit nothing was checked: that is UNKNOWN (it used to say OK).
+    checked = bool(mat["yield"]) or max_displacement_mm is not None
+    if not issues and not checked:
+        advisories.append("nothing to judge against: give the material's yield strength "
+                          "or max_displacement_mm")
+    status = verify.FAIL if issues else verify.OK if checked else verify.UNKNOWN
+    return {"status": status, "issues": issues, "advisories": advisories, "measures": m}
 
 
 def summary(result: Dict[str, Any]) -> str:

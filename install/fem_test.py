@@ -122,6 +122,15 @@ doc.recompute()
 r_u = fem.static("Sheet", ["xmin"], [{"faces": "xmax", "force_N": 1}])
 assert r_u["status"] == verify.UNKNOWN, r_u
 print("non-solid -> UNKNOWN: OK")
+# no yield strength and no displacement limit: solved, but nothing judged -> UNKNOWN
+# (it said OK); a displacement limit that holds is a real criterion -> OK
+no_yield = {"E": 210000, "nu": 0.3}
+r_n = fem.static("Beam", ["xmin"], [{"faces": "xmax", "force_N": F}], material=no_yield)
+assert r_n["status"] == verify.UNKNOWN and any("nothing to judge" in a for a in r_n["advisories"]), r_n
+r_d = fem.static("Beam", ["xmin"], [{"faces": "xmax", "force_N": F}], material=no_yield,
+                 max_displacement_mm=10.0)
+assert r_d["status"] == verify.OK, r_d
+print("no criterion -> UNKNOWN; a displacement limit alone is a criterion -> OK: OK")
 
 # 6. reruns replace the previous analysis instead of piling up results (the Beam was
 #    solved 6 times above, the Bar once): one result object per analysis, no orphans

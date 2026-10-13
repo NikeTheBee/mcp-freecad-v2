@@ -25,8 +25,9 @@ fem_static(target="Bracket", fixed=["xmin"],
 - **Verdict:**
   - FAIL when the safety factor is below `min_safety_factor` (default 2), or when the displacement
     is over `max_displacement_mm`.
-  - UNKNOWN when the part is not a valid solid, or meshing or solving failed. Never treat UNKNOWN
-    as OK.
+  - UNKNOWN when the part is not a valid solid, or meshing or solving failed, or there was nothing
+    to judge against (a custom material without `yield` and no `max_displacement_mm`). Never treat
+    UNKNOWN as OK.
 - **Ask the user** for supports, loads and material before solving. Don't invent them. Record
   them with `record_step`.
 
