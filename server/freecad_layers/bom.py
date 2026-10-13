@@ -10,9 +10,9 @@ What counts as a part (audit 2026-10-11, §2.2 B1):
 - containers (App::Part, groups, Part::Compound, assemblies) are not parts —
   their children are;
 - each App::Link is one more instance of the object it points to.
-Identical parts are grouped by measured geometry (volume, area, sorted
-bounding-box dimensions) AND name stem: a box and a cylinder of equal volume
-are never merged. Limitation: mirror images with the same name stem group
+Identical parts are grouped by measured geometry (volume, area, principal
+moments of inertia: the same wherever and however the part is placed) AND
+name stem: a box and a cylinder of equal volume are never merged. Limitation: mirror images with the same name stem group
 together (equal measurements).
 
 Secure by design: CSV export goes through `safe_out_path` (extension enforced,
@@ -24,6 +24,8 @@ import csv
 import re
 from collections import OrderedDict
 from typing import Any, Dict, List, Optional
+
+import FreeCAD as App
 
 from . import safe_out_path
 
@@ -87,10 +89,23 @@ def _solid_shape(o):
     return shp
 
 
+def _own_size(shp) -> List[float]:
+    """Sorted bounding-box size of the part in its OWN frame (placement
+    removed): the size of the part, not of its envelope once turned."""
+    local = shp.copy()
+    local.Placement = App.Placement()
+    bb = local.BoundBox
+    return sorted(round(x, 2) for x in (bb.XLength, bb.YLength, bb.ZLength))
+
+
 def _signature(shp) -> tuple:
-    bb = shp.BoundBox
-    dims = sorted(round(x, 2) for x in (bb.XLength, bb.YLength, bb.ZLength))
-    return (round(float(shp.Volume), 2), round(float(shp.Area), 2), *dims)
+    """What makes two parts identical, wherever and however they are placed:
+    volume, area and the principal moments of inertia of each solid. The
+    global bounding box used before changed with orientation, so 4 identical
+    screws turned 4 ways came out as 3 different parts."""
+    moments = sorted(float(f"{m:.6g}") for s in shp.Solids
+                     for m in s.PrincipalProperties["Moments"])
+    return (round(float(shp.Volume), 2), round(float(shp.Area), 2), *moments)
 
 
 def _parts(doc, include_hidden: bool):
@@ -132,7 +147,7 @@ def collect(doc, include_hidden: bool = True) -> List[Dict[str, Any]]:
         if g is None:
             groups[key] = {"designation": stem,
                            "volume_mm3": round(float(shp.Volume), 2),
-                           "bbox_mm": list(key[1][2:]),
+                           "bbox_mm": _own_size(shp),
                            "qty": 1, "refs": [inst.Name]}
         else:
             g["qty"] += 1

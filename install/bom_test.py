@@ -12,6 +12,7 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO / "server"))
 
 import FreeCAD as App  # noqa: E402
+import Part  # noqa: E402
 from freecad_layers import bom, safe_out_path  # noqa: E402
 
 
@@ -106,6 +107,22 @@ def main() -> int:
     assert by["Screw"] == [4], rows                    # source + 3 links
     assert sorted(by["Bracket"]) == [1, 1], rows       # equal volume, different parts
     print("links counted as instances; equal-volume parts kept apart: OK")
+
+    # identical parts turned different ways are ONE line (the global bounding box
+    # used to split 4 screws into 3 lines), listed with their own size
+    d3 = App.newDocument("BOMTurned")
+    V, R = App.Vector, App.Rotation
+    bolt = Part.makeCylinder(2, 20).fuse(Part.makeCylinder(3.5, 3, V(0, 0, 20))).removeSplitter()
+    for i, (axis, ang) in enumerate(((V(0, 0, 1), 0), (V(1, 0, 0), 90), (V(1, 1, 0), 30),
+                                     (V(0, 1, 0), 45))):
+        o = d3.addObject("Part::Feature", f"Bolt{i:03d}" if i else "Bolt")
+        o.Shape = bolt
+        o.Placement = App.Placement(V(30 * i, 0, 0), R(axis, ang))
+    d3.recompute()
+    rows = bom.collect(d3)
+    assert [(r["designation"], r["qty"], r["bbox_mm"]) for r in rows] == \
+        [("Bolt", 4, [7.0, 7.0, 23.0])], rows
+    print("identical parts in 4 orientations: one line, own size 7x7x23: OK")
 
     print("BOM_OK")
     return 0
