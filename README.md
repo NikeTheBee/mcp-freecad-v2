@@ -19,7 +19,7 @@ trusting the AI's reading of it.
   (`python install/bootstrap.py --update-base`). Fixed in it: holes in a PartDesign Body, sketch
   "fully constrained" verdict, oversized replies that hung for 2 minutes
   ([`CHANGES-NikeTheBee.md`](server/freecad-mcp/CHANGES-NikeTheBee.md)).
-- **Reliability layer** (`freecad-layers`, 15 tools): OK/FAIL/UNKNOWN verdicts, design contract,
+- **Reliability layer** (`freecad-layers`, 17 tools): OK/FAIL/UNKNOWN verdicts, design contract,
   part analysis, **real FEM stress analysis (CalculiX)**, checkpoints, autosave/recovery,
   supervised FreeCAD restart, anti-squatting, and FreeCAD proves its identity before any command.
 - **New licence**: PolyForm Noncommercial (free to use and modify, not to sell).
@@ -37,10 +37,10 @@ You (natural language)
   → AI client (Claude Code / Claude Desktop / any MCP client)
     ├─ `freecad`         launcher (starts/supervises FreeCAD, refuses a hijacked port)
     │                      → freecad-mcp bridge (blwfish v8.3.0, vendored + fixed, ~39 tools)
-    └─ `freecad-layers`  15 reliability tools: project_status · require · check · analyze · fem_static ·
-                          render_views · check_assembly · printability · record_step ·
-                          checkpoint · recover · bill_of_materials · drawing_sheet · pd_hole ·
-                          project_init
+    └─ `freecad-layers`  17 reliability tools: project_status · project_init · project_switch · recipe ·
+                          require · check · analyze · fem_static · render_views ·
+                          check_assembly · printability · record_step · checkpoint · recover ·
+                          bill_of_materials · drawing_sheet · pd_hole
          → FreeCAD 1.1 headless on localhost:23456 (token auth) + domain workbench grafts
 ```
 - **The code decides, not the AI.** `check` returns `OK`, `FAIL` or `UNKNOWN` (a check that could
@@ -80,6 +80,7 @@ documented. **Experimental** = works on the tested cases only.
 | Area | Capability | Maturity |
 |---|---|---|
 | Reliability | Geometry verdicts (stale recompute, self-intersection, interference), design contract, part analysis (holes, walls), project memory, checkpoints, autosave/recovery | **Stable** |
+| Workflow | Several projects side by side (`project_init` never overwrites, `project_switch`); verified recipes (a design is kept only when its contract is OK) | **Beta** |
 | Core modeling | PartDesign (sketch, Pad/Pocket, real holes in the Body), spreadsheet variants | **Stable** |
 | Fabrication | STL gated on watertight + FDM printability (bed, walls, overhangs) · STEP/IGES · mesh repair | **Stable** |
 | Documentation | Bill of materials (real parts, links, CSV) | **Stable** |

@@ -18,7 +18,7 @@ au lieu de croire la lecture qu'en fait l'IA.
   jour d'origine (`python install/bootstrap.py --update-base`). Corrigés : trous dans un Body
   PartDesign, verdict « entièrement contrainte » des esquisses, réponses trop grosses qui bloquaient
   2 minutes ([`CHANGES-NikeTheBee.md`](server/freecad-mcp/CHANGES-NikeTheBee.md)).
-- **Couche de fiabilité** (`freecad-layers`, 15 outils) : verdicts OK/FAIL/UNKNOWN, contrat de
+- **Couche de fiabilité** (`freecad-layers`, 17 outils) : verdicts OK/FAIL/UNKNOWN, contrat de
   conception, analyse de pièce, **vrai calcul de résistance (CalculiX)**, checkpoints,
   sauvegarde/récupération, relance supervisée de FreeCAD, anti-usurpation du port, et FreeCAD
   prouve son identité avant toute commande.
@@ -37,10 +37,10 @@ Vous (langage naturel)
   → client IA (Claude Code / Claude Desktop / tout client MCP)
     ├─ `freecad`         lanceur (démarre/surveille FreeCAD, refuse un port usurpé)
     │                      → bridge freecad-mcp (blwfish v8.3.0, intégré + corrigé, ~39 outils)
-    └─ `freecad-layers`  15 outils de fiabilité : project_status · require · check · analyze · fem_static ·
-                          render_views · check_assembly · printability · record_step ·
-                          checkpoint · recover · bill_of_materials · drawing_sheet · pd_hole ·
-                          project_init
+    └─ `freecad-layers`  17 outils de fiabilité : project_status · project_init · project_switch · recipe ·
+                          require · check · analyze · fem_static · render_views ·
+                          check_assembly · printability · record_step · checkpoint · recover ·
+                          bill_of_materials · drawing_sheet · pd_hole
          → FreeCAD 1.1 headless sur localhost:23456 (jeton) + ateliers greffés
 ```
 - **Le code décide, pas l'IA.** `check` répond `OK`, `FAIL` ou `UNKNOWN` (un contrôle qui n'a pas pu
@@ -79,6 +79,7 @@ documentées. **Expérimental** = marche sur les cas testés seulement.
 | Domaine | Capacité | Maturité |
 |---|---|---|
 | Fiabilité | Verdicts géométriques (recalcul périmé, auto-intersection, interférence), contrat de conception, analyse de pièce (trous, parois), mémoire projet, checkpoints, sauvegarde auto | **Stable** |
+| Organisation | Plusieurs projets en parallèle (`project_init` n'écrase jamais, `project_switch`) ; recettes vérifiées (une conception n'est gardée que si son contrat est OK) | **Bêta** |
 | Modélisation | PartDesign (esquisse, Pad/Pocket, vrais trous dans le Body), variantes par feuille de calcul | **Stable** |
 | Fabrication | STL conditionné à l'étanchéité + imprimabilité FDM · STEP/IGES · réparation de maillage | **Stable** |
 | Documentation | Nomenclature (vraies pièces, liens, CSV) | **Stable** |

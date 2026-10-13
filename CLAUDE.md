@@ -42,7 +42,10 @@ User (natural language) → Claude Code → MCP `freecad` server (stdio)
 ## Golden rules (reliability first, then tokens)
 Two MCP servers: `freecad` (modeling tools of the base) and `freecad-layers` (this project's
 reliability tools — prefer them over `execute_python`).
-- Session start: `project_status` (memory, contract, recovery copies) before asking the user to re-describe anything.
+- Session start: `project_status` (memory, contract, recovery copies, projects) before asking the user to re-describe anything.
+- One project per design: `project_init(name)` creates a NEW project (never overwrites);
+  `project_switch(name)` reopens one. A similar part already done? `recipe list` / `recipe show`
+  and replay its steps (each still checked). When a part's contract is OK: `recipe save`.
 - When the user states dimensions/requirements, record them once with `require(target, kind, params)`
   (bbox, holes, hole_at, mass, min_wall, no_interference...). They are re-checked automatically.
 - After each modeling step: `check(target)` must say `OK` on the geometry AND the contract.
@@ -66,6 +69,7 @@ reliability tools — prefer them over `execute_python`).
 ## Pointers
 - Full spec: `@docs/CAHIER_DES_CHARGES.md` · Compatibility audit: `@docs/COMPATIBILITY.md` · Security: `@SECURITY.md`
 - Domain knowledge: `/skills/<domain>/SKILL.md` — load on demand. Available: `skill-verify` (reliability layers & tools), `skill-partdesign` (sketch/Pad/Pocket/holes + spreadsheet variants), `skill-assembly` (multi-part assemblies, fits), `skill-print3d` (STL export), `skill-exchange` (STEP/IGES), `skill-techdraw` (2D plans -> DXF), `skill-bom` (nomenclature), `skill-fem` (CalculiX setup), `skill-gear` (involute spur gears), `skill-kinematics` (linkage motion laws), `skill-rocket` (Rocketry WB), `skill-drone` (AirPlaneDesign WB + analytical aero + external CFD), `skill-robotics-ros` (CROSS URDF export + ros2_control/Gazebo), `skill-cam` (DISABLED — never emit machine G-code; read it if CNC is requested).
-- Home-grown layers (§7): `server/freecad_layers/` — `state` (project memory), `spec` (design contract), `verify` (geometry checks), `analysis` (holes, walls, printability), `fem` (CalculiX static stress), `checkpoint` (rollback), `recovery` (autosave), `bom`, `drawing`, `kinematics`, `aero`, `urdf_aug`; exposed as MCP tools by `server/layers_mcp/`. Any NEW file-writing code MUST use the shared gates `safe_out_path`/`safe_under` (SECURITY.md).
-- Project memory data: `/project_state/state.json` · Checkpoints: `/checkpoints/` · Autosaves: `/recovery/` (runtime artifacts, gitignored)
+- Home-grown layers (§7): `server/freecad_layers/` — `state` (project memory), `spec` (design contract), `verify` (geometry checks), `analysis` (holes, walls, printability), `fem` (CalculiX static stress), `checkpoint` (rollback), `recovery` (autosave), `projects` (several designs), `recipes` (verified, reusable), `render` (views), `bom`, `drawing`, `kinematics`, `aero`, `urdf_aug`; exposed as MCP tools by `server/layers_mcp/`. Any NEW file-writing code MUST use the shared gates `safe_out_path`/`safe_under` (SECURITY.md).
+- Project memory data: `/project_state/state.json` · Checkpoints: `/checkpoints/` · Autosaves: `/recovery/`
+  for the default project; named projects under `/projects/<name>/`; recipes in `/recipes/` (all gitignored)
 - Audit & repair plan: `@docs/AUDIT_2026-10-11.md` (§8 final verdict, §9 feature list).

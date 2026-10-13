@@ -6,7 +6,9 @@
 | Tool | Does |
 |---|---|
 | `project_status` | memory + contract + recovery copies + open documents (session start) |
-| `project_init(name, intent)` | start a project memory |
+| `project_init(name, intent)` | create a NEW project (own memory, contract, checkpoints); never overwrites |
+| `project_switch(name)` | reopen a project (`default` = the original one) |
+| `recipe(save/list/show)` | keep a verified design (refused unless the contract is OK) / reuse its steps |
 | `require(target, kind, params)` | record a user requirement (bbox, holes, hole_at, volume, mass, solids, min_wall, no_interference, valid) |
 | `check(target)` | geometry verdict + the target's requirements; autosaves when all OK |
 | `analyze(target)` | holes (Ø, position, through/blind), min wall estimate |

@@ -36,14 +36,24 @@ from mcp_bridge_framing import receive_message, send_message, verify_listener  #
 MAX_OUT = 8000
 TOKEN_PATH = Path.home() / ".freecad-mcp" / "windows_auth_token"
 
+# FreeCAD outlives Claude sessions: reload the layers when any of their files
+# changed since FreeCAD imported them (an update must not need a FreeCAD restart).
 _PRELUDE = f"""
-import json, os, sys
+import glob, json, os, sys
 _p = {str(SERVER_DIR)!r}
 if _p not in sys.path:
     sys.path.insert(0, _p)
+_stamp = hash(tuple(sorted((_f, os.path.getmtime(_f), os.path.getsize(_f))
+                           for _f in glob.glob(os.path.join(_p, 'freecad_layers', '*.py')))))
+_m = sys.modules.get('freecad_layers')
+if _m is not None and getattr(_m, '_mcpfc_stamp', None) != _stamp:   # stale or of unknown age
+    for _k in [k for k in sys.modules if k == 'freecad_layers' or k.startswith('freecad_layers.')]:
+        del sys.modules[_k]
 import FreeCAD
+import freecad_layers as _fl
+_fl._mcpfc_stamp = _stamp
 from freecad_layers import (state, verify, checkpoint, recovery, spec, analysis, bom, drawing, gate,
-                            fem, render)
+                            fem, render, projects, recipes)
 """
 
 mcp = MCPServer(
@@ -130,7 +140,7 @@ if FreeCAD.ActiveDocument is not None:
 def project_status() -> str:
     """Session start: project memory, design contract and recovery copies (compact)."""
     return _run("""
-_lines = [state.summary(), recovery.summary()]
+_lines = [state.summary(), projects.listing(), recovery.summary()]
 if state.load()["specs"]:
     _lines.append(spec.verdict())
 _docs = list(FreeCAD.listDocuments())
@@ -142,9 +152,37 @@ _out = "\\n".join(_lines)
 @mcp.tool()
 @_safe
 def project_init(name: str, intent: str = "") -> str:
-    """Start a new project memory (replaces the current one)."""
-    return _run("state.init_project(_a['name'], _a['intent']); _out = state.summary()",
+    """Create a NEW project (own memory, contract, checkpoints, autosaves) and select it.
+    Never overwrites: an existing name is refused; use project_switch to reopen it."""
+    return _run("projects.create(_a['name'], _a['intent']); _out = state.summary()",
                 name=name, intent=intent)
+
+
+@mcp.tool()
+@_safe
+def recipe(action: str, name: str = "", description: str = "", overwrite: bool = False) -> str:
+    """Verified recipes: reuse a design that already passed its contract.
+    action: save (keep the current project's steps + requirements; refused unless the
+    contract is OK now) | list | show (steps, parameters, requirements to replay)."""
+    return _run("""
+if _a['action'] == 'save':
+    _d = recipes.save(_a['name'], _a['description'], overwrite=_a['overwrite'])
+    _out = f"saved recipe {_d['recipe']}: {len(_d['steps'])} steps, {_d['verified']}"
+elif _a['action'] == 'list':
+    _out = recipes.listing()
+elif _a['action'] == 'show':
+    _out = recipes.show(_a['name'])
+else:
+    raise ValueError("action must be save, list or show")
+""", action=action, name=name, description=description, overwrite=overwrite)
+
+
+@mcp.tool()
+@_safe
+def project_switch(name: str) -> str:
+    """Select an existing project ("default" = the original one). Open FreeCAD documents stay open."""
+    return _run("projects.switch(_a['name']); _out = state.summary() + chr(10) + projects.listing()",
+                name=name)
 
 
 @mcp.tool()

@@ -8,6 +8,7 @@ schema budget. Sentinel: LAYERS_MCP_OK
 """
 import asyncio
 import json
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -87,12 +88,20 @@ async def run(inst: Instance, project: str, out: str) -> None:
             txt = await call("record_step", feature="Hole", ftype="PartDesign::SubtractiveCylinder",
                              params={"d": 6}, decision="through hole via pd_hole")
             assert "autosaved" in txt, txt
+            txt = await call("recipe", action="save", name="plate-hole",
+                             description="plate with a centred through hole")
+            assert txt.startswith("saved recipe plate-hole") and "OK contract 2/2" in txt, txt
+            assert "plate-hole (plate with a centred through hole)" in await call("recipe", action="list")
+            txt = await call("recipe", action="show", name="plate-hole")
+            assert "1. Hole [PartDesign::SubtractiveCylinder]" in txt and "holes on Body" in txt, txt
             txt = await call("recover", action="list")
             assert "Plate" in txt, txt
             txt = await call("checkpoint", action="restore", name="no hole")
             assert "restored no hole" in txt, txt
             txt = await call("check", target="Body")
             assert "FAIL contract" in txt, txt                         # rolled back: hole gone
+            txt = await call("recipe", action="save", name="no-hole")
+            assert txt.startswith("ERROR") and "not verified" in txt, txt  # never keep a failing design
             txt = await call("project_status")
             assert "Design contract" in txt and "Recovery" in txt, txt
             txt = await call("check", target="Nope")
@@ -104,6 +113,35 @@ async def run(inst: Instance, project: str, out: str) -> None:
                 "FreeCAD.ActiveDocument.recompute()\n'ok'")})
             txt = await call("check", target="Open")
             assert txt.startswith("FAIL sketch Open") and "open wire" in txt, txt
+
+            # a second project keeps its own memory; the first is intact after switching back
+            txt = await call("project_init", name="Gear", intent="spur gear")
+            assert "Project: Gear" in txt and "Design contract" not in txt, txt
+            txt = await call("project_init", name="Plate")
+            assert txt.startswith("ERROR") and "already exists" in txt, txt
+            txt = await call("project_switch", name="Plate")
+            assert "Project: Plate" in txt and "Projects: default, Gear, Plate*" in txt, txt
+            assert "Design contract" in await call("project_status")
+
+            # FreeCAD outlives sessions: an updated layer file is reloaded without a restart
+            # (a marker on the module object, not id(): a freed address can be reused)
+            inst.call("execute_python_sync", {"code": (
+                "import sys\nsys.modules['freecad_layers']._test_marker = 1\n'ok'")})
+
+            def marked():
+                return inst.call("execute_python_sync", {"code": (
+                    "import sys\nhasattr(sys.modules['freecad_layers'], '_test_marker')")})["result"]
+            assert "Project: Plate" in await call("project_status")
+            assert marked() == "True"                     # unchanged files: no reload
+            f = REPO / "server" / "freecad_layers" / "render.py"
+            st = f.stat()
+            os.utime(f, (st.st_atime, st.st_mtime + 2))
+            try:
+                assert "Project: Plate" in await call("project_status")
+                assert marked() == "False", "layers not reloaded after a file changed"
+            finally:
+                os.utime(f, (st.st_atime, st.st_mtime))
+            print("layers reloaded after an update, without restarting FreeCAD: OK")
 
 
 def main() -> int:
