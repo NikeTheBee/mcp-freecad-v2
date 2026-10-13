@@ -1506,11 +1506,11 @@ async def main():
                     "x2": {"type": "number", "description": "Line end X", "default": 10},
                     "y2": {"type": "number", "description": "Line end Y", "default": 10},
                     # Circle/arc/polygon parameters
-                    "x": {"type": "number", "description": "Center X / origin X", "default": 0},
-                    "y": {"type": "number", "description": "Center Y / origin Y", "default": 0},
+                    "x": {"type": "number", "description": "Circle/polygon/slot/arc centre X, or rectangle corner X", "default": 0},
+                    "y": {"type": "number", "description": "Circle/polygon/slot/arc centre Y, or rectangle corner Y", "default": 0},
                     "radius": {"type": "number", "description": "Radius for circle/arc/polygon/fillet", "default": 5},
-                    "center_x": {"type": "number", "description": "Arc center X", "default": 0},
-                    "center_y": {"type": "number", "description": "Arc center Y", "default": 0},
+                    "center_x": {"type": "number", "description": "Centre X (arc; also accepted for circle/polygon/slot)", "default": 0},
+                    "center_y": {"type": "number", "description": "Centre Y (arc; also accepted for circle/polygon/slot)", "default": 0},
                     "start_angle": {"type": "number", "description": "Arc start angle (degrees)", "default": 0},
                     "end_angle": {"type": "number", "description": "Arc end angle (degrees)", "default": 90},
                     # Rectangle parameters

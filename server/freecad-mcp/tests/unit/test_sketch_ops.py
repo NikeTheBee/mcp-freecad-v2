@@ -253,6 +253,20 @@ class TestAddCircle(unittest.TestCase):
         # 3 constraint calls: DistanceX, DistanceY, Radius
         self.assertEqual(s.addConstraint.call_count, 3)
 
+    def test_center_x_center_y_are_accepted(self):
+        """MCP FREECAD v2: the schema calls an arc's centre center_x/center_y;
+        a circle given those used to land silently at (0,0)."""
+        s = _make_real_sketch_mock("S")
+        mock_FreeCAD.ActiveDocument = make_mock_doc([s])
+        result = self.handler.add_circle({
+            'sketch_name': 'S', 'center_x': 10, 'center_y': 5, 'radius': 2,
+        })
+        assert_success_contains(self, result, "center (10,5)")
+        result = self.handler.add_circle({
+            'sketch_name': 'S', 'x': 1, 'y': 2, 'center_x': 10, 'center_y': 5, 'radius': 2,
+        })
+        assert_success_contains(self, result, "center (1,2)")   # explicit x/y win
+
 
 class TestAddRectangle(unittest.TestCase):
     def setUp(self):

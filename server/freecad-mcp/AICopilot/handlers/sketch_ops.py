@@ -299,8 +299,10 @@ class SketchOpsHandler(BaseHandler):
         """Add a circle to a sketch."""
         try:
             sketch_name = args.get('sketch_name', '')
-            x = args.get('x', 0)
-            y = args.get('y', 0)
+            # MCP FREECAD v2: the schema names an arc's centre center_x/center_y and a
+            # circle's x/y; accept either, so a centre is never silently ignored.
+            x = args.get('x', args.get('center_x', 0))
+            y = args.get('y', args.get('center_y', 0))
             radius = args.get('radius', 5)
 
             doc = self.get_document()
@@ -400,8 +402,10 @@ class SketchOpsHandler(BaseHandler):
         """Add an arc to a sketch."""
         try:
             sketch_name = args.get('sketch_name', '')
-            center_x = args.get('center_x', 0)
-            center_y = args.get('center_y', 0)
+            # MCP FREECAD v2: the schema names an arc's centre center_x/center_y and a
+            # circle's x/y; accept either, so a centre is never silently ignored.
+            center_x = args.get('center_x', args.get('x', 0))
+            center_y = args.get('center_y', args.get('y', 0))
             radius = args.get('radius', 5)
             start_angle = args.get('start_angle', 0)
             end_angle = args.get('end_angle', 90)
@@ -442,8 +446,10 @@ class SketchOpsHandler(BaseHandler):
         try:
             import Sketcher
             sketch_name = args.get('sketch_name', '')
-            x = args.get('x', 0)
-            y = args.get('y', 0)
+            # MCP FREECAD v2: the schema names an arc's centre center_x/center_y and a
+            # circle's x/y; accept either, so a centre is never silently ignored.
+            x = args.get('x', args.get('center_x', 0))
+            y = args.get('y', args.get('center_y', 0))
             radius = args.get('radius', 10)
             sides = args.get('sides', 6)
             constrain = args.get('constrain', True)
@@ -508,8 +514,10 @@ class SketchOpsHandler(BaseHandler):
         try:
             import Sketcher
             sketch_name = args.get('sketch_name', '')
-            x = args.get('x', 0)
-            y = args.get('y', 0)
+            # MCP FREECAD v2: the schema names an arc's centre center_x/center_y and a
+            # circle's x/y; accept either, so a centre is never silently ignored.
+            x = args.get('x', args.get('center_x', 0))
+            y = args.get('y', args.get('center_y', 0))
             length = args.get('length', 20)
             width = args.get('width', 6)
 

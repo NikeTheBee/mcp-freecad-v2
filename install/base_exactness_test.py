@@ -181,6 +181,21 @@ def main() -> int:
                                            "angle": 360, "axis": "y"})
         close(body_volume(inst), math.pi * (7 ** 2 - 5 ** 2) * 10, "partdesign revolution (ring)", rel=1e-5)
 
+        # sketch tools: 20x10 rectangle + D4 circle at its centre, padded 3 mm
+        py(inst, "import FreeCAD\nfor _n in list(FreeCAD.listDocuments()):\n    FreeCAD.closeDocument(_n)\n"
+                 "d = FreeCAD.newDocument('SK')\nd.addObject('PartDesign::Body', 'Body')\n'ok'")
+        for args in ({"operation": "create_sketch", "name": "S", "plane": "XY"},
+                     {"operation": "add_rectangle", "sketch_name": "S", "x": 0, "y": 0,
+                      "width": 20, "height": 10, "constrain": True},
+                     # center_x/center_y: the arc's names, silently ignored for circles before v2
+                     {"operation": "add_circle", "sketch_name": "S", "center_x": 10, "center_y": 5,
+                      "radius": 2}):
+            op(inst, "sketch_operations", args)
+        txt = str(op(inst, "sketch_operations", {"operation": "verify_sketch", "sketch_name": "S"}))
+        assert "Verdict: VALID" in txt and "Closed wires (valid for extrusion): 2" in txt, txt
+        op(inst, "partdesign_operations", {"operation": "pad", "sketch_name": "S", "length": 3})
+        close(body_volume(inst), 600 - math.pi * 4 * 3, "sketch rect + centred circle, pad 3", rel=1e-5)
+
         # spatial query: the cylinder really pierces the box
         py(inst, SETUP)
         txt = str(op(inst, "spatial_query", {"operation": "interference_check",
