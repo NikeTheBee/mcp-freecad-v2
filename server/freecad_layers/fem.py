@@ -99,11 +99,27 @@ def _mid_uv(face):
 
 
 def _remove_previous(doc, prefix: str) -> None:
-    for o in [o for o in doc.Objects if o.Name.startswith(prefix)]:
-        try:
-            doc.removeObject(o.Name)
-        except Exception:
-            pass
+    """Remove the previous run entirely: our prefixed objects AND everything the
+    solver added to the analysis (CCX_Results, its mesh, pipeline, .dat file),
+    which do not carry our prefix; otherwise every run left them behind."""
+    names = {o.Name for o in doc.Objects if o.Name.startswith(prefix)}
+    old = doc.getObject(prefix + "Analysis")
+    stack = list(getattr(old, "Group", []) or []) if old is not None else []
+    while stack:
+        o = stack.pop()
+        if o is None or o.Name in names:
+            continue
+        names.add(o.Name)
+        stack.extend(getattr(o, "Group", []) or [])
+        mesh = getattr(o, "Mesh", None)            # a result's own mesh object
+        if mesh is not None and hasattr(mesh, "Name"):
+            stack.append(mesh)
+    for name in names:
+        if doc.getObject(name) is not None:
+            try:
+                doc.removeObject(name)
+            except Exception:
+                pass
 
 
 def _direction_helper(doc, name: str, direction: Sequence[float]):
@@ -259,7 +275,21 @@ def static(target, fixed: Sequence[str], loads: Sequence[Dict[str, Any]],
     if not loads:
         raise ValueError("at least one load is needed")
     mat = _material(material)
+    # Validate every input BEFORE touching the document: a bad face name or a zero
+    # direction used to delete the previous valid results, then fail half-built.
+    for spec in fixed:
+        faces(obj.Shape, spec)
+    for load in loads:
+        if "faces" not in load or "force_N" not in load:
+            raise ValueError(f"each load needs 'faces' and 'force_N': {load}")
+        for spec in ([load["faces"]] if isinstance(load["faces"], str) else load["faces"]):
+            faces(obj.Shape, spec)
+        float(load["force_N"])
+        if math.sqrt(sum(float(c) ** 2 for c in load.get("direction", (0, 0, -1)))) < 1e-12:
+            raise ValueError("load direction must be a non-zero vector")
     size = float(mesh_size_mm or default_mesh_size(obj.Shape))
+    if size <= 0:
+        raise ValueError("mesh_size_mm must be > 0")
     prefix = f"FEM_{obj.Name}_"
     _, m = _solve_once(doc, obj, list(fixed), list(loads), mat, size, prefix)
     if "error" in m:

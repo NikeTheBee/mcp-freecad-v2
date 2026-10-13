@@ -104,4 +104,11 @@ doc.recompute()
 r_u = fem.static("Sheet", ["xmin"], [{"faces": "xmax", "force_N": 1}])
 assert r_u["status"] == verify.UNKNOWN, r_u
 print("non-solid -> UNKNOWN: OK")
+
+# 6. reruns replace the previous analysis instead of piling up results (the Beam was
+#    solved 6 times above, the Bar once): one result object per analysis, no orphans
+analyses = [o for o in doc.Objects if o.Name.startswith("FEM_") and o.Name.endswith("_Analysis")]
+results = [o for o in doc.Objects if o.isDerivedFrom("Fem::FemResultObject")]
+assert len(analyses) == 2 and len(results) == 2, ([o.Name for o in analyses], [o.Name for o in results])
+print(f"{len(doc.Objects)} objects after 7 solves, one result per analysis: OK")
 print("FEM_OK")
