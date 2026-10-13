@@ -176,6 +176,24 @@ def main() -> int:
         close(v, V_BOX, "mesh -> solid volume")
         close(area, 2200.0, "mesh -> solid area")
 
+        # assembly: B is mated by a Fixed joint onto A's +X face; parts are named as the
+        # user knows them (A, B), not by their component links (A001, B001)
+        py(inst, "import FreeCAD\nfor _n in list(FreeCAD.listDocuments()):\n    FreeCAD.closeDocument(_n)\n"
+                 "d = FreeCAD.newDocument('ASM')\nd.addObject('Part::Box', 'A')\nb = d.addObject('Part::Box', 'B')\n"
+                 "b.Placement.Base = FreeCAD.Vector(30, 5, 0)\nd.recompute()\n'ok'")
+        for args in ({"operation": "create_assembly", "name": "Asm"},
+                     {"operation": "add_component", "object_name": "A"},
+                     {"operation": "add_component", "object_name": "B", "x": 30, "y": 5},
+                     {"operation": "ground_part", "object_name": "A"},
+                     {"operation": "create_joint", "joint_type": "Fixed", "ref1_object": "A",
+                      "ref1_element": "Face2", "ref2_object": "B", "ref2_element": "Face1"},
+                     {"operation": "solve"}):
+            r = op(inst, "assembly_operations", args)
+            assert "not a component" not in str(r) and "rror" not in str(r), (args, r)
+        txt = str(op(inst, "assembly_operations", {"operation": "get_part_status", "object_name": "B"}))
+        assert "connected_to_ground=True" in txt and "placement=(10.00,0.00,0.00)" in txt, txt
+        print("assembly: B mated against A's +X face, connected to ground: OK")
+
         # distance / clearance to a separate sphere: 30 - 5 - 10 = 15 mm
         py(inst, SETUP + "\ns = d.addObject('Part::Sphere', 'Sph'); s.Radius = 5\n"
                  "s.Placement.Base = FreeCAD.Vector(30, 10, 15)\nd.recompute()\n'ok'")

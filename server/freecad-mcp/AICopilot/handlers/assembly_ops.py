@@ -425,6 +425,30 @@ class AssemblyOpsHandler(BaseHandler):
                            "Create one first with create_assembly.")
         return assembly, None
 
+    @staticmethod
+    def _links_to(obj, assembly) -> list:
+        """Components of `assembly` that are links to `obj`."""
+        out = []
+        for c in getattr(assembly, 'Group', []) or []:
+            try:
+                target = c.getLinkedObject(True) if hasattr(c, 'getLinkedObject') else None
+            except Exception:
+                target = None
+            if c is not obj and target is obj:
+                out.append(c)
+        return out
+
+    def _as_component(self, obj, assembly):
+        """MCP FREECAD v2: add_component links a part in as e.g. 'A001'; the
+        operations that follow were then refused for 'A' with "Add it first
+        with add_component" although it had just been added. Map a part to
+        its component when exactly one link to it exists."""
+        group = getattr(assembly, 'Group', []) or []
+        if obj in group:
+            return obj
+        links = self._links_to(obj, assembly)
+        return links[0] if len(links) == 1 else obj
+
     def _require_component(self, obj, assembly, exempt_types=()) -> "str | None":
         """Return an error string if obj is not a direct component of
         assembly (i.e. not in assembly.Group), else None.
@@ -459,6 +483,10 @@ class AssemblyOpsHandler(BaseHandler):
         group = getattr(assembly, 'Group', []) or []
         if obj in group:
             return None
+        links = self._links_to(obj, assembly)
+        if len(links) > 1:
+            return (f"'{obj.Name}' is in assembly '{assembly.Name}' several times "
+                    f"({', '.join(c.Name for c in links)}): name the component to use.")
         return (f"'{obj.Name}' is not a component of assembly '{assembly.Name}' "
                 f"(not in its Group). Add it first with add_component -- "
                 f"FreeCAD's own grounding/connectivity checks and solver "
@@ -576,6 +604,8 @@ class AssemblyOpsHandler(BaseHandler):
             if not ref2_obj:
                 return f"Object not found: {ref2_object}"
 
+            ref1_obj = self._as_component(ref1_obj, assembly)
+            ref2_obj = self._as_component(ref2_obj, assembly)
             comp_err = (self._require_component(ref1_obj, assembly,
                                                  exempt_types=("App::LocalCoordinateSystem",))
                         or self._require_component(ref2_obj, assembly,
@@ -682,6 +712,7 @@ class AssemblyOpsHandler(BaseHandler):
             if err:
                 return err
 
+            obj = self._as_component(obj, assembly)
             comp_err = self._require_component(obj, assembly)
             if comp_err:
                 return comp_err
@@ -910,6 +941,7 @@ class AssemblyOpsHandler(BaseHandler):
             if err:
                 return err
 
+            obj = self._as_component(obj, assembly)
             comp_err = self._require_component(obj, assembly)
             if comp_err:
                 return comp_err
