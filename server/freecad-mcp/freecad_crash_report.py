@@ -372,9 +372,40 @@ def _parse_crash_report_legacy(content: str, path: str) -> str:
     return summary
 
 
+def _windows_freecad_processes() -> list:
+    """[(pid, name)] of running FreeCAD processes (freecad.exe, freecadcmd.exe)."""
+    try:
+        import psutil
+    except ImportError:
+        psutil = None
+    if psutil is not None:
+        return [(p.info["pid"], p.info["name"]) for p in psutil.process_iter(["pid", "name"])
+                if (p.info["name"] or "").lower().startswith("freecad")]
+    r = subprocess.run(["tasklist", "/FO", "CSV", "/NH"], capture_output=True, text=True,
+                       timeout=5)
+    procs = []
+    for line in r.stdout.splitlines():
+        cols = [c.strip().strip('"') for c in line.split('","')]
+        if len(cols) > 1 and cols[0].lower().startswith("freecad") and cols[1].isdigit():
+            procs.append((int(cols[1]), cols[0]))
+    return procs
+
+
 def _fc_process_info() -> dict:
     """Check whether any FreeCAD process is running (interactive mode)."""
     info = {"running": False, "pid": None, "processes": []}
+    if os.name == "nt":
+        # MCP FREECAD v2: pgrep does not exist on Windows, so every timeout
+        # read "not found — crashed and exited", even with FreeCAD (GUI or
+        # headless freecadcmd) still busy on a long operation.
+        try:
+            procs = _windows_freecad_processes()
+            if procs:
+                info.update(running=True, pid=procs[0][0],
+                            processes=[f"{pid} {name}" for pid, name in procs])
+        except Exception:
+            pass
+        return info
     try:
         r = subprocess.run(
             ["pgrep", "-lf", "FreeCAD"],

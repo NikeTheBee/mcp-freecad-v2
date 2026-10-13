@@ -254,3 +254,41 @@ class TestReadLastOp:
             path = self._op_file(0)
             if os.path.exists(path):
                 os.unlink(path)
+
+
+class TestWindowsProcessInfo:
+    """MCP FREECAD v2: on Windows the crash report looked for FreeCAD with pgrep,
+    which does not exist there, so every timeout said "crashed and exited"
+    even with FreeCAD (GUI or headless freecadcmd) still computing."""
+
+    def test_psutil_finds_headless_freecadcmd(self, monkeypatch):
+        class _P:
+            def __init__(self, pid, name):
+                self.info = {"pid": pid, "name": name}
+        fake = type(sys)("psutil")
+        fake.process_iter = lambda attrs: [_P(4, "python.exe"), _P(42, "freecadcmd.exe"),
+                                           _P(7, "FreeCAD.exe")]
+        monkeypatch.setitem(sys.modules, "psutil", fake)
+        monkeypatch.setattr(cr.os, "name", "nt")
+        info = cr._fc_process_info()
+        assert info["running"] is True and info["pid"] == 42
+        assert info["processes"] == ["42 freecadcmd.exe", "7 FreeCAD.exe"]
+
+    def test_tasklist_fallback_without_psutil(self, monkeypatch):
+        monkeypatch.setitem(sys.modules, "psutil", None)      # import psutil -> ImportError
+        monkeypatch.setattr(cr.os, "name", "nt")
+        out = ('"System Idle Process","0","Services","0","8 K"\n'
+               '"freecadcmd.exe","5120","Console","1","310,000 K"\n')
+
+        class _R:
+            stdout = out
+        monkeypatch.setattr(cr.subprocess, "run", lambda *a, **k: _R())
+        info = cr._fc_process_info()
+        assert info["running"] is True and info["pid"] == 5120
+
+    def test_no_freecad_running_is_reported_as_such(self, monkeypatch):
+        fake = type(sys)("psutil")
+        fake.process_iter = lambda attrs: []
+        monkeypatch.setitem(sys.modules, "psutil", fake)
+        monkeypatch.setattr(cr.os, "name", "nt")
+        assert cr._fc_process_info()["running"] is False

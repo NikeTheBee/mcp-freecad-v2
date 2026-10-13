@@ -43,6 +43,15 @@ async def run(inst: Instance) -> int:
             vol = _text(r)
             print("volume:", vol[:120])
             assert "6000" in vol, f"unexpected volume: {vol}"
+
+            # a long operation (40 s, past the bridge's 35 s answer wait) returns its
+            # result: headless jobs used to run inline on the submitting socket, so
+            # the bridge reported a crash ("FreeCAD process not found") mid-computation
+            r = await session.call_tool("execute_python",
+                                        {"code": "import time\ntime.sleep(40)\n'slept 40'"})
+            txt = _text(r)
+            print("40 s operation:", txt[:120])
+            assert "slept 40" in txt and "Crash" not in txt, txt
     return 0
 
 

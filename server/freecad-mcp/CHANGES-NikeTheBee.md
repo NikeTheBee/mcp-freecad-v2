@@ -86,6 +86,14 @@ It runs `git subtree pull --squash` on a clean tree. Then run the base's unit te
 | `AICopilot/handlers/varset_ops.py` | `add_property` applies an optional initial `value`, through `set_property`. | The value was ignored, so binding the new property right away set the bound dimension to 0, giving an invalid part. |
 | tests | `TestEdgeIndices`, `TestHeadlessFilletChamfer`, and 2 more headless view tests. Two upstream "awaiting selection" tests now set `GuiUp = True`, since they model the GUI. | Coverage; the live check is in `install/base_fixes_test.py`. |
 
+## 2026-10-13 (evening) — NikeTheBee
+
+| File | Change | Why |
+|---|---|---|
+| `AICopilot/freecad_mcp_handler.py` | **Headless async jobs run on their own thread** (still under `_headless_exec_lock`): the submission answers at once with the job id, the bridge polls. A job cancelled before it starts is skipped, as in the GUI path. `_headless_async_inline = True` restores the inline behaviour (set by the unit-test fixture). | Headless jobs ran inline on the submitting socket thread, so the submission only answered when the job was DONE. The bridge waits 35 s for that answer: any operation longer than that came back as a crash report ("FreeCAD process: not found — crashed and exited") while FreeCAD was still computing, and the next call waited behind it. |
+| `freecad_crash_report.py` | `_fc_process_info` finds FreeCAD on Windows (psutil, else `tasklist`): `freecad.exe` or the headless `freecadcmd.exe`. | It used `pgrep`, which does not exist on Windows, so every timeout said "crashed and exited". |
+| tests | `TestHeadlessAsyncThread` (answers before the job ends, jobs still serialised, errors recorded, cancel before start), `TestWindowsProcessInfo`. The `server` fixture sets `_headless_async_inline = True` for the upstream tests that inspect a job right after submitting it. | The live check is `install/mcp_loop_test.py` (a 40 s operation through the real bridge returns its result). |
+
 ## Test status
 
 Upstream unit tests on Windows, compared with the unmodified upstream version in a sandboxed home:

@@ -27,6 +27,9 @@ au lieu de croire la lecture qu'en fait l'IA.
   coupe rien ou casse la pièce est annulé.
 - `fem_static` refuse d'emblée une taille de maille irréaliste (Gmsh moulinait d'abord) et indique
   la taille qui convient.
+- **Une opération longue ne passe plus pour un plantage** : au-delà de 35 s, la base annonçait
+  « FreeCAD a planté » alors que FreeCAD headless calculait encore. Elle rend maintenant le
+  résultat (ou, au-delà de 2 minutes, un identifiant de tâche à interroger).
 
 ## Nouveautés de la 2.1
 - **Calcul de résistance** (`fem_static`, CalculiX) : déplacement, contrainte de von Mises et

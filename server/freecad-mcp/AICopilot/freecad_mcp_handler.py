@@ -798,6 +798,14 @@ class FreeCADSocketServer:
         # lock serializes headless inline execution the same way the GUI
         # thread naturally serializes Qt-queued tasks.
         self._headless_exec_lock = threading.Lock()
+        # MCP FREECAD v2: a headless "async" job used to run inline on the
+        # submitting socket thread, so the submission only answered once the
+        # job was DONE. The bridge waits 35 s for that answer, then reported
+        # a crash ("FreeCAD process not found") while FreeCAD was still
+        # computing. Jobs now run on their own thread under the same lock:
+        # the submission answers at once and the bridge polls, as designed.
+        # Unit tests that inspect a job right after submitting set this True.
+        self._headless_async_inline = False
 
         # Stamped every _process_gui_tasks tick (every ~100ms) as long as the
         # Qt event loop is alive and pumping. Lets a request be rejected
@@ -1387,27 +1395,37 @@ class FreeCADSocketServer:
             # Tag the request so _process_gui_tasks routes it to the job dict
             self._gui_task_queue.put((f"async:{job_id}", task_fn))
         else:
-            # Console mode: no event loop, run inline. Locked against
-            # concurrent client threads -- see _headless_exec_lock's
-            # definition for why (same rationale as _run_on_gui_thread's
-            # sync headless path).
-            try:
-                with self._headless_exec_lock:
-                    result = task_fn()
-                self._async_jobs[job_id].update({
-                    "status": "done",
-                    "result": result,
-                    "elapsed": time.time() - self._async_jobs[job_id]["started"],
-                    "finished": time.time(),
-                })
-            except Exception as e:
-                self._async_jobs[job_id].update({
-                    "status": "error",
-                    "error": str(e),
-                    "error_id": self.diagnostics_ops.store_traceback(tb_module.format_exc()),
-                    "elapsed": time.time() - self._async_jobs[job_id]["started"],
-                    "finished": time.time(),
-                })
+            # Console mode: no event loop. Locked against concurrent client
+            # threads -- see _headless_exec_lock's definition for why (same
+            # rationale as _run_on_gui_thread's sync headless path) -- and run
+            # on a job thread (see _headless_async_inline).
+            def work():
+                try:
+                    with self._headless_exec_lock:
+                        job = self._async_jobs.get(job_id)
+                        if job is None or job.get("status") != "running":
+                            return      # cancelled before it started: skip, as the GUI path does
+                        result = task_fn()
+                    job.update({
+                        "status": "done",
+                        "result": result,
+                        "elapsed": time.time() - job["started"],
+                        "finished": time.time(),
+                    })
+                except Exception as e:
+                    job = self._async_jobs.get(job_id)
+                    if job is not None:
+                        job.update({
+                            "status": "error",
+                            "error": str(e),
+                            "error_id": self.diagnostics_ops.store_traceback(tb_module.format_exc()),
+                            "elapsed": time.time() - job["started"],
+                            "finished": time.time(),
+                        })
+            if self._headless_async_inline:
+                work()
+            else:
+                threading.Thread(target=work, name=f"mcp-job-{job_id}", daemon=True).start()
 
     def _cleanup_stale_async_jobs(self):
         """Remove completed async jobs older than ASYNC_JOB_TTL seconds."""

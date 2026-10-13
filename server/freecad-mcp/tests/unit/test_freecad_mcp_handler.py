@@ -80,6 +80,10 @@ def server(mock_freecad, mock_handlers):
 
     import freecad_mcp_handler as ss_mod
     server = ss_mod.FreeCADSocketServer()
+    # MCP FREECAD v2: headless jobs run on their own thread in production;
+    # these tests inspect a job right after submitting it (see
+    # TestHeadlessAsyncThread for the threaded behaviour itself).
+    server._headless_async_inline = True
     return server
 
 
@@ -1257,6 +1261,68 @@ class TestRunOnGuiThreadAsync:
             assert req_id == f"async:{job_id}"
         finally:
             ss_mod.QtCore = None
+
+
+class TestHeadlessAsyncThread:
+    """MCP FREECAD v2: a headless job runs on its own thread, so the submission
+    answers at once. It used to answer only when the job was done, after the
+    bridge's 35 s wait had already reported a false crash."""
+
+    @pytest.fixture(autouse=True)
+    def _threaded(self, server):
+        import freecad_mcp_handler as ss_mod
+        ss_mod.QtCore = None
+        server._headless_async_inline = False
+        self.server = server
+
+    def _wait(self, job_id, timeout=5.0):
+        end = time.time() + timeout
+        while self.server._async_jobs[job_id]["status"] == "running" and time.time() < end:
+            time.sleep(0.01)
+        return self.server._async_jobs[job_id]
+
+    def test_submission_answers_before_the_job_ends(self):
+        gate = threading.Event()
+
+        def task():
+            gate.wait(5)
+            return {"result": "late"}
+        job_id = json.loads(self.server._submit_async_job("t", task))["job_id"]
+        assert self.server._async_jobs[job_id]["status"] == "running"
+        gate.set()
+        job = self._wait(job_id)
+        assert job["status"] == "done" and job["result"] == {"result": "late"}
+
+    def test_jobs_are_still_serialised_by_the_lock(self):
+        events = []
+
+        def make(n):
+            def task():
+                events.append(("start", n))
+                time.sleep(0.05)
+                events.append(("end", n))
+                return n
+            return task
+        ids = [json.loads(self.server._submit_async_job("t", make(n)))["job_id"] for n in (1, 2, 3)]
+        for job_id in ids:
+            assert self._wait(job_id)["status"] == "done"
+        for i in range(0, len(events), 2):     # never two jobs inside FreeCAD at once
+            assert events[i][0] == "start" and events[i + 1] == ("end", events[i][1]), events
+
+    def test_error_is_recorded(self):
+        def task():
+            raise RuntimeError("boom")
+        job_id = json.loads(self.server._submit_async_job("t", task))["job_id"]
+        job = self._wait(job_id)
+        assert job["status"] == "error" and "boom" in job["error"]
+
+    def test_job_cancelled_before_it_starts_never_runs(self):
+        ran = []
+        with self.server._headless_exec_lock:      # FreeCAD busy with something else
+            job_id = json.loads(self.server._submit_async_job("t", lambda: ran.append(1)))["job_id"]
+            self.server._cancel_job({"job_id": job_id})
+        time.sleep(0.2)
+        assert ran == [] and "Cancelled" in self.server._async_jobs[job_id]["error"]
 
 
 # ---------------------------------------------------------------------------
