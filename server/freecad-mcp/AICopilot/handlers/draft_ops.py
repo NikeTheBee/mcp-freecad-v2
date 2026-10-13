@@ -265,11 +265,22 @@ class DraftOpsHandler(BaseHandler):
             t = Draft.make_text(lines, placement=placement)
             if name:
                 t.Label = name
+            # MCP FREECAD v2: `size` ("Text size in mm" in the schema) was never
+            # applied. It is a display property, so it needs the 3D view.
+            size = args.get('size')
+            size_note = ""
+            if size is not None:
+                vo = getattr(t, 'ViewObject', None)
+                if vo is not None and hasattr(vo, 'FontSize'):
+                    vo.FontSize = float(size)
+                    size_note = f", font size {float(size)} mm"
+                else:
+                    size_note = " (size not applied: text size is a 3D-view setting, absent headless)"
 
             self.recompute(doc)
 
             preview = text_content if isinstance(text_content, str) else ' / '.join(text_content)
-            return f"Created Draft Text '{preview}' ({t.Name}) at ({x},{y},{z})"
+            return f"Created Draft Text '{preview}' ({t.Name}) at ({x},{y},{z}){size_note}"
 
         except ImportError:
             return "Error: Draft module not available"
