@@ -38,8 +38,12 @@ assert not m.hasNonManifolds() and m.isSolid()   # clean + watertight before exp
 Checks: `hasNonManifolds()`, `hasSelfIntersections()`, `isSolid()`. Example: `install/mesh_repair_test.py`.
 
 ## Via the MCP tools (AI-driven)
-`mesh_operations` (export/convert) and `measurement_operations` → `check_solid` / `get_volume` for the
-pre-export sanity check. Always run the watertight/`check_solid` gate first.
+1. **`printability(target, bed_mm, min_wall_mm)`** (`freecad-layers`) first: watertight valid solid,
+   fits the bed (any 90° turn), walls ≥ the minimum (exact ray-cast, still sampled: say "estimate"),
+   overhang area. Export only on `OK`.
+   - An assembly (several solids) is judged as parts printed **one by one**; the advisory says
+     whether they would fit printed together. Print-in-place: check the assembled overhangs too.
+2. `mesh_operations` (export/convert); `measurement_operations` `get_volume` for a last sanity check.
 
 ## Checklist before sending to a slicer
 - `verify.watertight(obj)` is True (closed solid, valid).

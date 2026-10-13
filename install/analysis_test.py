@@ -126,6 +126,21 @@ def main() -> int:
     pt = analysis.printability("Thin")
     assert pt["status"] == verify.FAIL and any("wall" in i for i in pt["issues"]), pt
     print("printability verdicts: OK")
+    # an assembly: two 150 mm parts side by side, 310 mm in all. Printed one by one they
+    # fit a 220 bed (OK); the advisory says that together they would not
+    feat(doc, "Pair", Part.makeCompound([Part.makeBox(150, 20, 10),
+                                         Part.makeBox(150, 20, 10, V(160, 0, 0))]))
+    doc.recompute()
+    pp = analysis.printability("Pair")
+    assert pp["status"] == verify.OK, pp
+    assert any("each judged as printed on its own" in a and "do NOT fit" in a
+               for a in pp["advisories"]), pp
+    feat(doc, "PairBig", Part.makeCompound([Part.makeBox(150, 20, 10),
+                                            Part.makeBox(300, 20, 10, V(0, 40, 0))]))
+    doc.recompute()
+    pq = analysis.printability("PairBig")
+    assert pq["status"] == verify.FAIL and any("solid2 does not fit" in i for i in pq["issues"]), pq
+    print("assembly printability: per part, with the print-together advisory: OK")
 
     print(analysis.report("Plate"))
     print("ANALYSIS_OK")

@@ -283,7 +283,9 @@ def printability(obj_or_name, bed_mm: Sequence[float] = (220, 220, 250),
                  min_wall_mm: float = 0.8, max_overhang_deg: float = 45.0,
                  max_overhang_area_mm2: float = 0.0) -> Dict[str, Any]:
     """FDM printability verdict: watertight solid, fits the bed (any 90° turn
-    on the plate), walls >= nozzle-friendly minimum, overhang area.
+    on the plate), walls >= nozzle-friendly minimum, overhang area. Several
+    solids (an assembly) are judged as parts printed one by one; an advisory
+    says what printing them together would need.
 
     Returns {status, issues, advisories, measures}. Overhangs are FAIL only if
     their area exceeds `max_overhang_area_mm2` (supports are often fine).
@@ -301,11 +303,24 @@ def printability(obj_or_name, bed_mm: Sequence[float] = (220, 220, 250),
     if r["status"] != verify.OK or not r["closed"]:
         issues.append("not a watertight valid solid")
     shp = _shape(obj_or_name)
-    if r.get("bbox"):
-        x, y, z = r["bbox"]
-        bx, by, bz = bed_mm
-        if not ((x <= bx and y <= by) or (y <= bx and x <= by)) or z > bz:
-            issues.append(f"does not fit the {bx}x{by}x{bz} mm build volume")
+    bx, by, bz = bed_mm
+
+    def fits(bb) -> bool:
+        x, y, z = bb.XLength, bb.YLength, bb.ZLength
+        return ((x <= bx and y <= by) or (y <= bx and x <= by)) and z <= bz
+    solids = shp.Solids
+    if len(solids) > 1:
+        # an assembly: judged as parts printed one by one (bed size, overhangs),
+        # the usual case; print-in-place needs the combined check, said below
+        too_big = [f"solid{i + 1}" for i, s in enumerate(solids) if not fits(s.BoundBox)]
+        if too_big:
+            issues.append(f"{', '.join(too_big)} does not fit the {bx}x{by}x{bz} mm build volume")
+        advisories.append(
+            f"{len(solids)} separate solids, each judged as printed on its own (bed, overhangs); "
+            f"printed together (print-in-place) they {'fit' if fits(shp.BoundBox) else 'do NOT fit'}"
+            " the bed and the overhangs must be checked with them assembled")
+    elif r.get("bbox") and not fits(shp.BoundBox):
+        issues.append(f"does not fit the {bx}x{by}x{bz} mm build volume")
     w = min_wall(shp)
     measures["min_wall"] = w
     if w["min_mm"] is not None and w["min_mm"] < min_wall_mm:
