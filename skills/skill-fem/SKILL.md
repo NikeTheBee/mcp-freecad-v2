@@ -37,7 +37,8 @@ fem_static(target="Bracket", fixed=["xmin"],
   so. If that region matters, model the real fixture: bolts, a contact face.
 - `refine=True` solves again on a 1.6× finer mesh and reports how much the results moved. More
   than 5 % on displacement or 10 % on stress means the result is not converged: refine further,
-  or pass `mesh_size_mm`.
+  or pass `mesh_size_mm`. A size too small for the 150,000-node limit is refused at once with the
+  smallest size that fits; past that limit, a finer local study is out of scope (say so).
 - Scope is linear elastic with small displacements. It does **not** cover buckling (slender parts
   in compression), plasticity, contact, fatigue or vibration. Say so when the question needs one
   of these.

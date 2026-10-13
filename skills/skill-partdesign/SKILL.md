@@ -50,6 +50,8 @@ Pick edge ids from `pad.Shape.Edges` / `measurement_operations list_faces`.
   the `freecad-layers` server — a real feature inside the Body. Since v2 the base tool
   `partdesign_operations hole` (no `face_index`) also cuts inside the Body (it used to build a
   `Part::Cut` *outside* it, audit 2026-10-11 §2.4); `pd_hole` stays the preferred, tested path.
+  (x, y) are in the Body's own frame (= global unless the Body was moved). A hole that cuts
+  nothing or would break the part is not kept: `FAIL pd_hole: ...; hole not kept` — fix x/y/Ø.
 - Counterbore/countersink/threaded: `PartDesign::Hole` (`.HoleCutType`, `.Threaded`) on a circle sketch.
 - After any hole, `check(body)`; record the expected holes once with
   `require(body, "holes", {"count": n, "diameter": d})` so a missing hole FAILs.
