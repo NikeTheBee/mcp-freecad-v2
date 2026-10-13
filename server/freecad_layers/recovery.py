@@ -51,6 +51,11 @@ def autosave(doc=None, keep: int = KEEP, reason: str = "") -> str:
     else:
         raise FileExistsError(f"100 autosaves of {doc.Name} in the same millisecond")
     doc.saveCopy(str(path))
+    # safe_out_path reserved the name with an empty file; FreeCAD "backs up"
+    # that empty file as <name>.<time>.FCBak on every save. Our copies are the
+    # backups here: drop those, or one more piles up per autosave.
+    for bak in d.glob("*.FCBak"):
+        bak.unlink(missing_ok=True)
     for old in sorted(d.glob("*.FCStd"), reverse=True)[max(keep, 1):]:
         old.unlink(missing_ok=True)
     return str(path)

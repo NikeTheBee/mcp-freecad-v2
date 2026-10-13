@@ -57,6 +57,10 @@ def save(name: str, note: str = "", doc=None) -> str:
     fname = _file_for(name)
     path = safe_out_path(_ckpt_dir() / fname, {".fcstd"}, overwrite=True)
     doc.saveCopy(str(path))
+    # replacing a checkpoint makes FreeCAD keep the old one as <name>.<time>.FCBak:
+    # the replacement is explicit, so that copy is only clutter (and disk)
+    for bak in path.parent.glob(f"{path.stem}.*.FCBak"):
+        bak.unlink(missing_ok=True)
 
     try:
         fc_version = ".".join(str(p) for p in FreeCAD.Version()[:3])

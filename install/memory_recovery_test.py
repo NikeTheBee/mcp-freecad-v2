@@ -62,4 +62,15 @@ restored = checkpoint.restore("after_hull")
 assert any(o.Name == "Hull" for o in restored.Objects), "geometry not recovered"
 print("CRASH RECOVERY: restored 'Hull' from checkpoint after doc loss")
 
+# --- No FreeCAD backup files pile up: autosaves reserve an empty file that FreeCAD
+#     used to "back up" as a .FCBak on each save; a replaced checkpoint left one too ---
+from pathlib import Path  # noqa: E402
+from freecad_layers import recovery  # noqa: E402
+for _ in range(3):
+    recovery.autosave(restored)
+checkpoint.save("after_hull", note="replaced", doc=restored)
+baks = sorted(p.name for p in Path(_tmp).rglob("*.FCBak"))
+assert not baks, f"FreeCAD backup files left behind: {baks}"
+print("autosaves and a replaced checkpoint leave no .FCBak behind: OK")
+
 print("MEMORY_RECOVERY_OK")
