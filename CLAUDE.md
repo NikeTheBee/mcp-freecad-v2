@@ -4,10 +4,10 @@ AI-piloted FreeCAD (natural language → parametric CAD/robotics), via MCP, on W
 
 ## Stack
 - FreeCAD 1.1.1 at `A:\FreeCAD\bin\` (`freecad.exe` GUI, `freecadcmd.exe` headless, bundled Python 3.11).
-- MCP base: `blwfish/freecad-mcp` v8.2.3, **vendored and modified** in `/server/freecad-mcp`
+- MCP base: `blwfish/freecad-mcp` v8.3.0, **vendored and modified** in `/server/freecad-mcp`
   (git subtree, stays LGPL). Edit it like our own code, log every change in
   `server/freecad-mcp/CHANGES-NikeTheBee.md`, and pull upstream with
-  `python install/bootstrap.py --update-base`. Its unit tests: `pytest tests/unit` from that folder
+  `python install/bootstrap.py --update-base --base-ref <tag>`. Its unit tests: `pytest tests/unit` from that folder
   (venv Python; deselect `test_headless_server.py::TestMainStartupSuccess`, it hangs on Windows;
   ~132 POSIX-only failures pre-exist — compare against the previous run, never expect 0).
   - Entry point registered as user-scoped MCP server `freecad`: the supervised launcher

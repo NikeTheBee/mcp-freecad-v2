@@ -10,7 +10,7 @@ The other projects are installed separately (FreeCAD by the user, the workbenche
 | Project | Author(s) | License | Role here |
 |---|---|---|---|
 | [FreeCAD](https://www.freecad.org) | FreeCAD contributors | LGPL-2.1-or-later | CAD kernel & application being driven (v1.1.1) |
-| [freecad-mcp](https://github.com/blwfish/freecad-mcp) | Brian L. Wong (blwfish) | LGPL-2.1-or-later | Base MCP server bridging an AI client to FreeCAD — vendored v8.2.3, modified (hole in Body, sketch DoF, oversized replies) |
+| [freecad-mcp](https://github.com/blwfish/freecad-mcp) | Brian L. Wong (blwfish) | LGPL-2.1-or-later | Base MCP server bridging an AI client to FreeCAD — vendored v8.3.0, modified (hole in Body, sketch DoF, oversized replies, listener proof, Windows crash tracking) |
 | [Rocket Workbench](https://github.com/davesrocketshop/Rocket) | David Carter (davesrocketshop) | LGPL-2.1-or-later · MIT (PyAtmos) | Rocketry domain graft (nose/body/fins) |
 | [AirPlaneDesign Workbench](https://github.com/FredsFactory/FreeCAD_AirPlaneDesign) | FredsFactory | LGPL-2.1 | Aero domain graft (NACA airfoils, fuselage profiles) |
 | [CROSS Workbench](https://github.com/galou/freecad.cross) | Gaël Écorchard (galou) | LGPL-2.1-or-later | Robotics domain graft (URDF/xacro generation) |

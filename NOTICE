@@ -20,7 +20,7 @@ Exception — the vendored base server
 ------------------------------------
 
 The folder server/freecad-mcp/ is a modified copy of freecad-mcp by
-Brian L Wong (https://github.com/blwfish/freecad-mcp, v8.2.3), imported as a
+Brian L Wong (https://github.com/blwfish/freecad-mcp, v8.3.0), imported as a
 git subtree. It is NOT covered by the PolyForm licence: it stays under its
 own licence, the GNU Lesser General Public License v2.1 or later (see
 server/freecad-mcp/LICENSE). The modifications are listed, with their dates,

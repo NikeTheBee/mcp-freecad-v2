@@ -16,7 +16,7 @@ grafts). That is powerful **by design** (it's how natural-language CAD works) an
 - The FreeCAD socket server binds **`localhost:23456` only** (Windows TCP) / a **filesystem Unix socket**
   (macOS/Linux). It is **not** reachable from the network. Verified: `WINDOWS_HOST = "localhost"` in
   `freecad_mcp_handler.py`; there is **no** `0.0.0.0` bind.
-- **Token authentication (from the base, v8.2.3):** the FreeCAD side writes a fresh
+- **Token authentication (from the base):** the FreeCAD side writes a fresh
   shared secret to `~/.freecad-mcp/windows_auth_token` at each launch (ACL restricted to the user
   with `icacls`, best effort); every command must carry it (constant-time comparison). The bridge
   reads and attaches it. Our former home-made token patch was removed: it no longer applied to the
@@ -65,7 +65,7 @@ The policy lives in ONE place; extend it there, not locally. Tests must exercise
   ```
 
 ## Third-party code (supply chain)
-- The base server `blwfish/freecad-mcp` v8.2.3 is **vendored** in `server/freecad-mcp/`
+- The base server `blwfish/freecad-mcp` (v8.3.0) is **vendored** in `server/freecad-mcp/`
   (git subtree): what runs is exactly what is reviewed in this repository. Our changes are listed
   in `server/freecad-mcp/CHANGES-NikeTheBee.md`. Upstream updates come in only through
   `python install/bootstrap.py --update-base` (a reviewable merge commit), then the full suite.

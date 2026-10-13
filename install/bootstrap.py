@@ -3,7 +3,7 @@
 
 What it does:
   1. Finds FreeCAD (freecadcmd) and its REAL version-specific user Mod dir.
-  2. Checks the base server: a modified copy of `blwfish/freecad-mcp` v8.2.3 is part of
+  2. Checks the base server: a modified copy of `blwfish/freecad-mcp` (v8.3.0) is part of
      this repository (server/freecad-mcp, git subtree, LGPL — see its
      CHANGES-NikeTheBee.md). Nothing is downloaded for it.
   3. Creates a dedicated venv (~/.freecad-mcp/venv) with pinned dependencies:

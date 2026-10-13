@@ -13,7 +13,7 @@ au lieu de croire la lecture qu'en fait l'IA.
 > chaque étape, sauvegarde automatiquement, et permet de revenir en arrière.
 
 ## Nouveautés de la 2.0
-- **Le serveur de base fait partie du projet.** blwfish/freecad-mcp v8.2.3 est intégré dans
+- **Le serveur de base fait partie du projet.** blwfish/freecad-mcp v8.3.0 est intégré dans
   `server/freecad-mcp/` (git subtree) : corrigé ici, et toujours capable de récupérer les mises à
   jour d'origine (`python install/bootstrap.py --update-base`). Corrigés : trous dans un Body
   PartDesign, verdict « entièrement contrainte » des esquisses, réponses trop grosses qui bloquaient
@@ -36,7 +36,7 @@ Code) servent de client de référence en attendant.
 Vous (langage naturel)
   → client IA (Claude Code / Claude Desktop / tout client MCP)
     ├─ `freecad`         lanceur (démarre/surveille FreeCAD, refuse un port usurpé)
-    │                      → bridge freecad-mcp (blwfish v8.2.3, intégré + corrigé, ~39 outils)
+    │                      → bridge freecad-mcp (blwfish v8.3.0, intégré + corrigé, ~39 outils)
     └─ `freecad-layers`  15 outils de fiabilité : project_status · require · check · analyze · fem_static ·
                           render_views · check_assembly · printability · record_step ·
                           checkpoint · recover · bill_of_materials · drawing_sheet · pd_hole ·

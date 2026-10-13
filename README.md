@@ -14,7 +14,7 @@ trusting the AI's reading of it.
 > autosaves, and lets you roll back.
 
 ## What's new in 2.0
-- **The base server is part of the project.** blwfish/freecad-mcp v8.2.3 is vendored in
+- **The base server is part of the project.** blwfish/freecad-mcp v8.3.0 is vendored in
   `server/freecad-mcp/` (git subtree): fixed here, and still able to pull upstream updates
   (`python install/bootstrap.py --update-base`). Fixed in it: holes in a PartDesign Body, sketch
   "fully constrained" verdict, oversized replies that hung for 2 minutes
@@ -36,7 +36,7 @@ reference client in the meantime.
 You (natural language)
   → AI client (Claude Code / Claude Desktop / any MCP client)
     ├─ `freecad`         launcher (starts/supervises FreeCAD, refuses a hijacked port)
-    │                      → freecad-mcp bridge (blwfish v8.2.3, vendored + fixed, ~39 tools)
+    │                      → freecad-mcp bridge (blwfish v8.3.0, vendored + fixed, ~39 tools)
     └─ `freecad-layers`  15 reliability tools: project_status · require · check · analyze · fem_static ·
                           render_views · check_assembly · printability · record_step ·
                           checkpoint · recover · bill_of_materials · drawing_sheet · pd_hole ·

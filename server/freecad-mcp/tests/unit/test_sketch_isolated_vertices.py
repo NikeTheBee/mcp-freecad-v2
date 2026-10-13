@@ -397,6 +397,9 @@ class TestVerifySketchSection:
         s = _sketch(_closed([WIRE, _vtx(99.3228, 59.5586)]),
                     external=[(MASTER, ("Vertex16",))])
         s.Shape.Wires = [c for c in s.Shape._children if c.ShapeType == 'Wire']
+        # MCP FREECAD v2: verify_sketch reads the real DoF (VALID needs DoF == 0);
+        # this fixture stands for a fully constrained profile.
+        s.DoF = 0
         return s
 
     def test_mixed_shape_gets_isolated_vertices_section(self):
