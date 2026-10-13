@@ -55,8 +55,19 @@ def holes(obj_or_shape, tol: float = 1e-4) -> List[Dict[str, Any]]:
     Faces sharing the same axis line and radius are merged (OCCT often splits
     a bore in two half-cylinders); only groups covering a full turn count.
     `center` is the axis point at the middle of the hole depth.
+    Several solids (an assembly): each is measured on its own, so "through"
+    means through THAT part (against the whole assembly, a through hole in a
+    plate read "blind" as soon as a pin stood in it).
     """
     shp = _shape(obj_or_shape)
+    solids = shp.Solids
+    if len(solids) > 1:
+        out = [h for s in solids for h in _holes_of(s, tol)]
+        return sorted(out, key=lambda h: (h["diameter"], h["center"]))
+    return _holes_of(shp, tol)
+
+
+def _holes_of(shp, tol: float) -> List[Dict[str, Any]]:
     groups: List[Dict[str, Any]] = []
     bores = [f for f in shp.Faces
              if f.Surface.TypeId == "Part::GeomCylinder" and _is_concave(f)]

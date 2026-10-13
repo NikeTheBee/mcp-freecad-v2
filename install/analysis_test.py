@@ -62,6 +62,13 @@ def main() -> int:
     assert len(sh) == 1 and sh[0]["diameter"] == 8 and sh[0]["through"], sh
     assert sh[0]["center"] == [5010, -2990, 2010], sh
     print("split bore far from the origin is one hole: OK")
+    # in an assembly, "through" is judged per part: a pin standing in a plate's through
+    # hole made the compound taller, and the hole used to read "blind"
+    plate_pin = Part.makeCompound([Part.makeBox(60, 40, 8).cut(Part.makeCylinder(3, 8, V(30, 20, 0))),
+                                   Part.makeCylinder(2.9, 30, V(30, 20, -5))])
+    ah = analysis.holes(plate_pin)
+    assert len(ah) == 1 and ah[0]["through"] and ah[0]["depth"] == 8, ah
+    print("assembly: a plate's hole stays through with a pin in it: OK")
 
     # walls: tube wall is 2 mm; a 20 mm cube with a 17 mm pocket leaves 1.5 mm
     # (exact B-rep intersections: no mesh chord error, so a tight tolerance)
