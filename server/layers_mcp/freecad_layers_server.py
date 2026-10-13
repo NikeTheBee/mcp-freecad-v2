@@ -34,10 +34,31 @@ import mcp_freecad_launch as launcher  # noqa: E402
 from mcp_bridge_framing import receive_message, send_message, verify_listener  # noqa: E402
 
 MAX_OUT = 8000
-# check/analyze/printability/drawing_sheet on a heavy part (an imported STEP, a plate with
-# 1600 holes) can outlast FreeCAD's 30 s default; past it the reply is a
-# misleading "timeout" while FreeCAD keeps computing and refuses other calls.
+# check/analyze/printability/drawing_sheet on a heavy part (an imported STEP, a
+# plate with 1600 holes) can take minutes. Headless FreeCAD runs a call to the
+# end whatever its timeout, so the limit that bit was our own socket wait
+# (120 s: printability took 129 s); the GUI addon does stop waiting at the
+# timeout (30 s by default) while FreeCAD keeps computing.
 _ANALYSIS_TIMEOUT = 300.0
+
+
+def _socket_wait(timeout: float) -> float:
+    """How long we wait for FreeCAD's answer to a call given `timeout`."""
+    return max(120.0, timeout + 15.0)
+
+
+def _explain(err: str, timeout: float) -> str:
+    """FreeCAD's replies for a long call, said for the person waiting on it."""
+    if err.startswith("Operation timeout"):         # GUI addon
+        return (f"FreeCAD needed more than {timeout:.0f} s for this and is still working on it "
+                f"(a very heavy model?). Wait a minute before the next call. ({err[:120]})")
+    if err.startswith("GUI thread is busy"):         # GUI addon, after such a timeout
+        return ("FreeCAD is still busy with a previous long call (it keeps computing after a "
+                "timeout). Wait a minute, then retry this call.")
+    if err == "no response from FreeCAD":           # our socket wait ran out
+        return (f"no answer from FreeCAD within {_socket_wait(timeout):.0f} s: it may "
+                "still be computing (a very heavy model?). Wait, then retry this call.")
+    return err
 TOKEN_PATH = Path.home() / ".freecad-mcp" / "windows_auth_token"
 
 # FreeCAD outlives Claude sessions: reload the layers when any of their files
@@ -96,7 +117,7 @@ def _run(template: str, /, _timeout: float = 30.0, **args: Any) -> Any:
     token = TOKEN_PATH.read_text(encoding="ascii").strip()
     payload = {"tool": "execute_python_sync", "args": {"code": code, "timeout": _timeout},
                "token": token}
-    wait = max(120.0, _timeout + 15.0)
+    wait = _socket_wait(_timeout)
     with socket.create_connection(("127.0.0.1", launcher.PORT), timeout=wait) as s:
         refusal = verify_listener(s, token)   # FreeCAD proves itself before the token leaves
         if refusal:
@@ -105,11 +126,7 @@ def _run(template: str, /, _timeout: float = 30.0, **args: Any) -> Any:
         raw = receive_message(s, timeout=wait)
     resp = json.loads(raw) if raw else {"error": "no response from FreeCAD"}
     if "error" in resp:
-        err = str(resp["error"])
-        if err.startswith("Operation timeout"):
-            err = (f"FreeCAD needed more than {_timeout:.0f} s for this and is still working on it "
-                   f"(a very heavy model?). Wait a minute before the next call. ({err[:120]})")
-        raise FreeCADError(err[:2000])
+        raise FreeCADError(_explain(str(resp["error"]), _timeout)[:2000])
     result = resp.get("result")
     if isinstance(result, str) and "\n" in result.strip():
         # FreeCAD returns captured stdout first (e.g. CalculiX's own prints),

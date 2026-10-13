@@ -11,6 +11,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 from mcp import ClientSession, StdioServerParameters
@@ -142,6 +143,24 @@ async def run(inst: Instance, project: str, out: str) -> None:
             finally:
                 os.utime(f, (st.st_atime, st.st_mtime))
             print("layers reloaded after an update, without restarting FreeCAD: OK")
+
+            # headless FreeCAD runs a call to the end whatever its timeout: what limits a
+            # heavy check is our socket wait (hence 300 s for the analysis tools)
+            t0 = time.time()
+            r = inst.call("execute_python_sync", {"code": "import time\ntime.sleep(2)\n'slept'",
+                                                  "timeout": 1})
+            assert r.get("result") == "'slept'" and time.time() - t0 >= 2, r
+    # long calls are explained to the person waiting, not as raw bridge errors
+    sys.path.insert(0, str(SERVER.parent))
+    import freecad_layers_server as srv
+    msg = srv._explain("Operation timeout (300s) - GUI thread may be busy. Use "
+                       "execute_python_async for long operations.", 300.0)
+    assert "still working on it" in msg and "300 s" in msg, msg
+    assert "still busy" in srv._explain("GUI thread is busy with a previous operation. "
+                                        "Wait for it to complete or use execute_python_async.", 30.0)
+    assert "within 315 s" in srv._explain("no response from FreeCAD", 300.0)
+    assert srv._explain("No object named 'Nope'", 30.0) == "No object named 'Nope'"
+    print("long calls: headless runs them to the end; timeouts explained plainly: OK")
 
 
 def main() -> int:

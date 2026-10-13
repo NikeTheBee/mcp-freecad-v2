@@ -18,8 +18,9 @@ trusting the AI's reading of it.
   - wall thickness: 73 s → 0.7 s, and now exact (rays meet the real surfaces, no mesh);
   - `printability`: 129 s → 1.6 s; `analyze`: 132 s → 1.7 s; `render_views`: 48 s → 13 s;
   - hole detection: 2.7 s → 0.2 s (same result, without comparing every pair);
-  - `check` runs the slow OCCT analysis once per shape version, and no longer stops at
-    30 s with a false "timeout".
+  - `check` runs the slow OCCT analysis once per shape version;
+  - the analysis tools wait up to 5 minutes for FreeCAD instead of 2, and a call that is
+    still running is explained plainly instead of a raw "no response".
 
 ## What's new in 2.1
 - **Stress analysis** (`fem_static`, CalculiX): displacement, von Mises stress and safety factor,

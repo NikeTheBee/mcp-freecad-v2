@@ -18,8 +18,9 @@ au lieu de croire la lecture qu'en fait l'IA.
     surfaces, sans maillage) ;
   - `printability` : 129 s → 1,6 s ; `analyze` : 132 s → 1,7 s ; `render_views` : 48 s → 13 s ;
   - détection des trous : 2,7 s → 0,2 s (même résultat, sans comparer chaque paire) ;
-  - `check` ne refait l'analyse OCCT, lente, qu'une fois par version de la forme, et ne
-    s'arrête plus à 30 s sur un faux « timeout ».
+  - `check` ne refait l'analyse OCCT, lente, qu'une fois par version de la forme ;
+  - les outils d'analyse attendent FreeCAD jusqu'à 5 minutes au lieu de 2, et un calcul
+    encore en cours est expliqué clairement au lieu d'un « no response » brut.
 
 ## Nouveautés de la 2.1
 - **Calcul de résistance** (`fem_static`, CalculiX) : déplacement, contrainte de von Mises et
