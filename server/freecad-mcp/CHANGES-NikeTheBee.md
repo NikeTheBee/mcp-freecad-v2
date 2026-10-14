@@ -134,6 +134,7 @@ Upstream unit tests on Windows, compared with the unmodified upstream version in
 |---|---|---|---|
 | v8.2.3 + changes | 2118 | 0 | 9 (instance registry writes) |
 | v8.3.0 + changes | 2191 | 0 | 9 |
+| v8.3.0 + changes (2026-10-14) | 2241 | 0 | 9 |
 
 - The remaining ~123 failures and 39 errors also exist on the unmodified upstream version: those
   tests use AF_UNIX sockets, `/tmp` and POSIX paths. On Linux, CI runs them all green.
@@ -143,4 +144,6 @@ Upstream unit tests on Windows, compared with the unmodified upstream version in
 These fixes are also checked live against a real FreeCAD by `install/base_fixes_test.py` in the
 parent project. `install/base_exactness_test.py` compares the base's geometry operations with
 known values: booleans, move, scale, spreadsheet-driven parameters, measurements, interference,
-distance and clearance. It is the guard to run after every upstream update (34/34 project tests, including the Windows CI job `windows-full`).
+distance and clearance. It is the guard to run after every upstream update: since 2026-10-14 it also checks volumes of
+PartDesign holes, dress-ups, loft, sweep, helix, rib, Part extrude/section against exact values
+(37/37 project tests, including the Windows CI job `windows-full`).
