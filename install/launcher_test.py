@@ -38,6 +38,17 @@ def main() -> int:
         cwd = Path(psutil.Process(pid).cwd()).resolve()
         assert cwd == LAUNCHER.parents[2].resolve(), cwd
         print(f"2a. FreeCAD works in the workspace ({cwd.name}), not among the server's code: OK")
+        # a second FreeCAD started on the same port (supervisor + ensure() during a restart)
+        # loses the port and exits: it must not overwrite the running one's token (it did,
+        # and every client was refused "did not prove it is your FreeCAD" until a restart)
+        from _fc_instance import BASE, freecadcmd
+        tok = inst.token()
+        second = subprocess.run([freecadcmd(), str(BASE / "AICopilot" / "headless_server.py")],
+                                env=inst.env, capture_output=True, timeout=120)
+        assert second.returncode != 0 and inst.token() == tok, (second.returncode, inst.token() == tok)
+        r = inst.call("execute_python_sync", {"code": "3+3"})
+        assert r and r.get("result") == "6", r
+        print("2c. a second FreeCAD that loses the port leaves the token alone: OK")
 
         # trust rule: the configured exe's folder, or its bin\ (portable build's root stub)
         sys.path.insert(0, str(LAUNCHER.parent))

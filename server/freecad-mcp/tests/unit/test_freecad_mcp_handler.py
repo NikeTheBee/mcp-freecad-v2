@@ -2911,6 +2911,45 @@ class TestInitWindowsAuthToken:
 
         assert token_path.read_text() == token
 
+    def test_given_token_replaces_the_file_atomically(self, server, monkeypatch, tmp_path):
+        import freecad_mcp_handler as ss_mod
+        token_path = tmp_path / "windows_auth_token"
+        token_path.write_text("old")
+        monkeypatch.setattr(ss_mod, "WINDOWS_AUTH_TOKEN_DIR", str(tmp_path))
+        monkeypatch.setattr(ss_mod, "WINDOWS_AUTH_TOKEN_PATH", str(token_path))
+        restrict = MagicMock(return_value=True)
+        monkeypatch.setattr(ss_mod, "_restrict_token_file_to_current_user_windows", restrict)
+
+        assert server._init_windows_auth_token("abc123") == "abc123"
+
+        assert token_path.read_text() == "abc123"
+        assert [p.name for p in tmp_path.iterdir()] == ["windows_auth_token"]   # no temp left
+        assert restrict.call_args.args[0].endswith(".tmp")      # restricted BEFORE it is in place
+
+    def test_a_freecad_that_loses_the_port_keeps_the_winners_token(self, server, monkeypatch, tmp_path):
+        """MCP FREECAD v2: two FreeCADs starting together (the launcher's
+        supervisor and an ensure() during a restart): the one that lost the
+        port used to overwrite the winner's token before failing to bind, and
+        every client was then refused until the next restart."""
+        import freecad_mcp_handler as ss_mod
+        token_path = tmp_path / "windows_auth_token"
+        token_path.write_text("winner-token")
+        monkeypatch.setattr(ss_mod, "WINDOWS_AUTH_TOKEN_DIR", str(tmp_path))
+        monkeypatch.setattr(ss_mod, "WINDOWS_AUTH_TOKEN_PATH", str(token_path))
+        monkeypatch.setattr(ss_mod, "IS_WINDOWS", True)
+        monkeypatch.setattr(ss_mod.socket, "SO_EXCLUSIVEADDRUSE", 0xFFFB, raising=False)
+        sock = MagicMock()
+        sock.bind.side_effect = OSError(10048, "address already in use")
+        monkeypatch.setattr(ss_mod.socket, "socket", MagicMock(return_value=sock))
+        monkeypatch.setattr(ss_mod.threading, "Thread", MagicMock(return_value=MagicMock()))
+
+        try:
+            server.start_server()
+        except OSError:
+            pass
+
+        assert token_path.read_text() == "winner-token"
+
 
 class TestRestrictTokenFileToCurrentUserWindows:
     """Best-effort icacls hardening -- no pywin32/win32security dependency

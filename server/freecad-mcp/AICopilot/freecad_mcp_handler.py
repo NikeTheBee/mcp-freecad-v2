@@ -924,12 +924,18 @@ class FreeCADSocketServer:
     # Server lifecycle
     # -----------------------------------------------------------------
 
-    def _init_windows_auth_token(self) -> str:
-        """Generate a fresh per-launch shared secret and persist it to
-        WINDOWS_AUTH_TOKEN_PATH for the bridge to read. Called once from
-        start_server()'s Windows branch, before the socket is bound, so the
-        token exists on disk before any client could possibly connect."""
-        token = secrets.token_hex(32)
+    def _init_windows_auth_token(self, token: str | None = None) -> str:
+        """Persist this launch's shared secret (a fresh one if not given) to
+        WINDOWS_AUTH_TOKEN_PATH for the bridge to read.
+
+        MCP FREECAD v2 (2026-10-14): start_server() calls this AFTER bind()
+        and BEFORE listen(). It used to run before bind(): when two FreeCADs
+        started together (the launcher's supervisor and an ensure() during a
+        restart), the one that lost the port exited -- after overwriting the
+        winner's token, so every client was refused ("did not prove it is
+        your FreeCAD") until the next restart. The file is replaced
+        atomically: a reader never sees it empty or half written."""
+        token = token or secrets.token_hex(32)
         os.makedirs(WINDOWS_AUTH_TOKEN_DIR, mode=0o700, exist_ok=True)
         # O_CREAT|O_WRONLY|O_TRUNC with mode 0o600: on POSIX this would be
         # owner-only; on Windows the mode argument only toggles the
@@ -937,12 +943,15 @@ class FreeCADSocketServer:
         # kept for cross-platform code-path parity, not as the real access
         # boundary on Windows. _restrict_token_file_to_current_user_windows
         # below is the actual best-effort attempt at that.
-        fd = os.open(WINDOWS_AUTH_TOKEN_PATH, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600)
+        tmp = f"{WINDOWS_AUTH_TOKEN_PATH}.{os.getpid()}.tmp"
+        fd = os.open(tmp, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600)
         try:
             os.write(fd, token.encode("ascii"))
         finally:
             os.close(fd)
-        if not _restrict_token_file_to_current_user_windows(WINDOWS_AUTH_TOKEN_PATH):
+        restricted = _restrict_token_file_to_current_user_windows(tmp)
+        os.replace(tmp, WINDOWS_AUTH_TOKEN_PATH)   # keeps the restricted ACL
+        if not restricted:
             FreeCAD.Console.PrintWarning(
                 "Could not restrict the Windows auth token file "
                 f"({WINDOWS_AUTH_TOKEN_PATH}) to the current user via icacls; "
@@ -982,7 +991,7 @@ class FreeCADSocketServer:
 
             if IS_WINDOWS:
                 self.socket_path = None
-                self._windows_auth_token = self._init_windows_auth_token()
+                token = secrets.token_hex(32)       # on disk once the port is ours
                 self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 # SO_EXCLUSIVEADDRUSE, not SO_REUSEADDR: on Windows (unlike
                 # POSIX) SO_REUSEADDR lets a second, unrelated process bind a
@@ -999,6 +1008,10 @@ class FreeCADSocketServer:
                 # there.)
                 self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
                 self.server_socket.bind((WINDOWS_HOST, WINDOWS_PORT))
+                # the port is ours (exclusive bind) and nobody can connect
+                # before listen(): only now publish the token -- see
+                # _init_windows_auth_token
+                self._windows_auth_token = self._init_windows_auth_token(token)
                 FreeCAD.Console.PrintMessage(
                     f"Socket server started on {WINDOWS_HOST}:{WINDOWS_PORT} "
                     "(Windows TCP, token-authenticated)\n"

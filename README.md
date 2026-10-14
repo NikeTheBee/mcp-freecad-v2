@@ -72,6 +72,10 @@ trusting the AI's reading of it.
   crashed" while headless FreeCAD was still computing. It now returns the result (or, past
   2 minutes, a job id to poll). A real crash during a layers call is reported as one, with the
   way back (`recover`).
+- **A restart can no longer lock you out**: when two FreeCADs started at once during a restart,
+  the one that could not get the port overwrote the other's access key before quitting, and
+  every call was then refused ("did not prove it is your FreeCAD") until the next restart. The
+  key is now written only by the FreeCAD that holds the port.
 - **A stuck FreeCAD can be restarted by the assistant** (`restart_freecad`, headless too): it saves
   what it safely can, exits, and the launcher starts a fresh one. Before, only killing the
   process by hand helped.

@@ -77,6 +77,10 @@ au lieu de croire la lecture qu'en fait l'IA.
   « FreeCAD a planté » alors que FreeCAD headless calculait encore. Elle rend maintenant le
   résultat (ou, au-delà de 2 minutes, un identifiant de tâche à interroger). Un vrai plantage
   pendant un appel des couches est signalé comme tel, avec le moyen de s'en remettre (`recover`).
+- **Un redémarrage ne peut plus vous bloquer dehors** : quand deux FreeCAD démarraient en même temps
+  pendant un redémarrage, celui qui n'obtenait pas le port écrasait la clé d'accès de l'autre avant
+  de quitter, et tous les appels étaient ensuite refusés (« did not prove it is your FreeCAD »)
+  jusqu'au redémarrage suivant. La clé n'est plus écrite que par le FreeCAD qui tient le port.
 - **Un FreeCAD bloqué peut être redémarré par l'assistant** (`restart_freecad`, aussi sans
   interface) : il enregistre ce qui peut l'être sans risque, quitte, et le lanceur en démarre un
   neuf. Avant, seul un arrêt manuel du processus en venait à bout.
