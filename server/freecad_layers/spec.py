@@ -15,7 +15,8 @@ Kinds (all lengths mm, volumes mm³, masses g):
   mass        density_g_cm3, value+tol | min | max
   solids      count
   holes       count, diameter (+tol), through (bool, optional)
-  hole_at     diameter, center=[x, y, z] (+tol): one hole there
+  hole_at     diameter, center=[x, y, z] (+tol): one hole whose axis passes there,
+              between its ends (null = any value: [x, y, null] for a vertical hole)
   min_wall    min (estimated by analysis.min_wall)
   no_interference  objects=[names]  (+ the target when it is an object)
   valid       (verify.check must be OK)
@@ -160,6 +161,27 @@ def _expect_txt(p: Dict[str, Any], default_tol: float) -> str:
     return f"[{p.get('min', '-inf')}, {p.get('max', 'inf')}]"
 
 
+def _on_axis(h: Dict[str, Any], c, tol: float) -> bool:
+    """True when the hole's axis, between its two ends, passes through the point
+    c (None = any value) within tol on each given coordinate. It compared the
+    axis MIDPOINT: a D5 hole "at (10, 10, 20)", z being the top face it is
+    drilled from, failed on a correct part."""
+    m, a, half = h["center"], h["axis"], h["depth"] / 2.0
+    lo, hi = -half - tol, half + tol          # position along the axis from the midpoint
+    for i in range(3):
+        if c[i] is None:
+            continue
+        if abs(a[i]) < 1e-9:                  # the axis keeps this coordinate
+            if abs(m[i] - c[i]) > tol:
+                return False
+            continue
+        s1, s2 = (c[i] - tol - m[i]) / a[i], (c[i] + tol - m[i]) / a[i]
+        lo, hi = max(lo, min(s1, s2)), min(hi, max(s1, s2))
+        if lo > hi:
+            return False
+    return True
+
+
 def _eval(spec: Dict[str, Any], doc=None) -> Dict[str, Any]:
     """Evaluate one spec. One that cannot be evaluated (e.g. saved with bad
     parameters before they were validated) is UNKNOWN for itself — it used to
@@ -240,11 +262,12 @@ def _eval_spec(spec: Dict[str, Any], doc=None) -> Dict[str, Any]:
         tol = p.get("tol", 0.05)
         c = p["center"]
         same_d = [h for h in analysis.holes(obj) if abs(h["diameter"] - p["diameter"]) <= tol]
-        hs = [h for h in same_d
-              if all(abs(h["center"][i] - c[i]) <= tol for i in range(3) if c[i] is not None)]
+        hs = [h for h in same_d if _on_axis(h, c, tol)]
         return {**res, "status": OK if hs else FAIL,
-                "measured": [h["center"] for h in same_d],
-                "expected": f"D{p['diameter']} at {c}+/-{tol}"}
+                # where each hole of that diameter is: its axis midpoint, direction, depth
+                "measured": [f"mid {h['center']} axis {h['axis']} depth {h['depth']}"
+                             for h in same_d],
+                "expected": f"D{p['diameter']} with its axis through {c}+/-{tol}"}
     if kind == "min_wall":
         w = analysis.min_wall(obj)
         if w["min_mm"] is None:

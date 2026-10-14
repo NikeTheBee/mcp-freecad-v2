@@ -60,6 +60,17 @@ def main() -> int:
     print(spec.verdict("Body"))
     assert r["status"] == verify.OK and r["checked"] == 4, r
 
+    # hole_at: any point of the hole's axis between its ends -- the top face it is
+    # drilled from included (it compared the axis midpoint: z = 8 failed on this part)
+    def hole_at(center, d=6):
+        return spec._eval_spec({"id": "T", "kind": "hole_at", "target": "Body",
+                                "params": {"diameter": d, "center": center}})["status"]
+    assert hole_at([0, 0, 8]) == verify.OK and hole_at([0, 0, 0]) == verify.OK
+    assert hole_at([0, 0, 4]) == verify.OK and hole_at([0, 0, None]) == verify.OK
+    assert hole_at([0, 0, 12]) == verify.FAIL      # above the part: not on the hole
+    assert hole_at([1, 0, 8]) == verify.FAIL and hole_at([0, 0, 8], d=5) == verify.FAIL
+    print("hole_at: entry face, exit face and middle all on the axis; off it: FAIL: OK")
+
     # requirements survive a "new session" (they live in state.json)
     assert len(spec.list_specs()) == 4
     # unknown target -> FAIL, never silently skipped
