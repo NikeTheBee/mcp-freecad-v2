@@ -21,6 +21,10 @@ grafts). That is powerful **by design** (it's how natural-language CAD works) an
   with `icacls`, best effort); every command must carry it (constant-time comparison). The bridge
   reads and attaches it. Our former home-made token patch was removed: it no longer applied to the
   current base and failed open when its module was missing (audit 2026-10-11, §2.6, §3.1).
+  Since 2026-10-14 the file is written only once the exclusive bind of the port succeeded, and
+  before `listen()`, through a restricted temp file then an atomic replace: a FreeCAD that loses
+  the port can no longer overwrite the running one's secret (which locked every client out), and
+  no reader sees the file empty or half written. Test: `install/launcher_test.py` (2c, 3b).
 - **The client side is protected too (anti-squatting).** A token only proves the *client* to the
   server. If another process grabs port 23456 first, a bare bridge would send it the token and
   every command, and relay its answers to the AI. The launcher
