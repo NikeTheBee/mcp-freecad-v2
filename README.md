@@ -59,8 +59,9 @@ trusting the AI's reading of it.
 - **Files land in the project**: a file named without a folder (`plan.dxf`, `part.stl`) used to land
   among the server's code; it now goes to the project folder.
 - **Heavy parts** (measured on a plate with 1,600 holes):
-  - wall thickness: 73 s → 0.7 s, and now exact (rays meet the real surfaces, no mesh);
-  - `printability`: 129 s → 1.6 s; `analyze`: 132 s → 1.7 s; `render_views`: 48 s → 13 s;
+  - wall thickness: 73 s → 1.1 s, and now exact (rays meet the real surfaces, no mesh; faces
+    closer than the rays found are measured two by two: a hole 0.3 mm from an edge read 0.81 mm);
+  - `printability`: 129 s → 2 s; `analyze`: 132 s → 2 s; `render_views`: 48 s → 13 s;
   - hole detection: 2.7 s → 0.2 s (same result, without comparing every pair);
   - `check` runs the slow OCCT analysis once per shape version;
   - the analysis tools wait up to 5 minutes for FreeCAD instead of 2, and a call that is

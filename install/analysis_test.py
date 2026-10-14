@@ -115,6 +115,14 @@ def main() -> int:
         ws = analysis.min_wall(shell)
         assert abs(ws["min_mm"] - expected) < 1e-3 and "unchecked" not in ws, (label, ws)
     print("curved shells (sphere, torus) 1.0 mm: OK")
+    # a hole close to an edge: the thin wall lies between sample points (0.3 mm read
+    # 0.81, above the 0.8 printing minimum); the closest faces are measured exactly
+    for wall in (0.3, 0.5):
+        edge = Part.makeBox(100, 60, 5).cut(Part.makeCylinder(3, 5, V(3 + wall, 30, 0)))
+        we = analysis.min_wall(edge)
+        assert abs(we["min_mm"] - wall) < 1e-6, (wall, we)
+    assert analysis.printability(edge.copy())["status"] == "FAIL"     # 0.5 < 0.8 mm
+    print("thin wall between a hole and an edge: exact (0.3, 0.5 mm), printability FAIL: OK")
     # a thin spot on the LAST faces of a many-faced part is still found (the
     # old version stopped sampling after the first faces)
     grid = Part.makeBox(120, 120, 10)

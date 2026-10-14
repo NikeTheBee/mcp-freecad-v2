@@ -8,7 +8,8 @@ FreeCAD 1.1 today. The golden rule (cahier des charges §7.2): **never export a 
 
 ## Use the MCP tools (the code decides)
 1. **`printability(target, bed_mm, min_wall_mm)`** (`freecad-layers`) first: watertight valid solid,
-   fits the bed (any 90° turn), walls ≥ the minimum (exact ray-cast, still sampled: say "estimate"),
+   fits the bed (any 90° turn), walls ≥ the minimum (rays on exact surfaces + the closest faces
+   measured two by two; a wall between two faces meeting at an edge is still sampled: say "estimate"),
    overhang area (curved faces measured over the face: the ceiling of a horizontal hole counts; a
    wall exactly at 45° does not). Overhangs are an advisory unless you set `max_overhang_area_mm2`.
    - An assembly (several solids) is judged as parts printed **one by one**; the advisory says

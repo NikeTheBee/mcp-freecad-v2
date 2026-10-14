@@ -345,6 +345,41 @@ def _exit_distance(p, d, surfs, faces, lo, hi, limit, eps, tol):
     return limit, errors
 
 
+def _closest_walls(faces, lo, hi, limit: float, tol: float):
+    """(thickness, point) of the thinnest wall between two faces that do not
+    share an edge, closer than `limit`, with the MATERIAL between them (each
+    face's outward normal at its closest point faces away from the other);
+    (limit, None) if there is none. Boxes first: only the few pairs closer
+    than the sampled minimum are measured."""
+    import numpy as np
+
+    n = len(faces)
+    by_edge: Dict[int, List[int]] = {}
+    for i, f in enumerate(faces):
+        for e in f.Edges:
+            by_edge.setdefault(e.hashCode(), []).append(i)
+    adjacent = {(a, b) for fs in by_edge.values() for a in fs for b in fs if a < b}
+    best, where = limit, None
+    for i in range(n - 1):
+        gap = np.maximum(0.0, np.maximum(lo[i + 1:] - hi[i], lo[i] - hi[i + 1:]))
+        for j in (np.nonzero(np.sqrt((gap * gap).sum(axis=1)) < best)[0] + i + 1):
+            if (i, int(j)) in adjacent:
+                continue
+            fi, fj = faces[i], faces[int(j)]
+            try:
+                d, pts, _info = fi.distToShape(fj)
+                if not (tol < d < best) or not pts:
+                    continue
+                p1, p2 = pts[0]
+                n1 = fi.normalAt(*fi.Surface.parameter(p1))
+                n2 = fj.normalAt(*fj.Surface.parameter(p2))
+            except Exception:  # noqa: BLE001 — the sampled value stands
+                continue
+            if (p2 - p1).dot(n1) < 0 and (p1 - p2).dot(n2) < 0:     # material in between
+                best, where = d, (p1 + p2) * 0.5
+    return best, where
+
+
 def min_wall(obj_or_shape, per_face: Optional[int] = None, max_samples: int = 2000) -> Dict[str, Any]:
     """Estimated minimum wall thickness by inward ray-casting (sampled).
 
@@ -373,12 +408,14 @@ def min_wall(obj_or_shape, per_face: Optional[int] = None, max_samples: int = 20
     n = per_face or max(1, min(6, int(math.sqrt(max_samples / max(n_faces, 1)))))
     stride = max(1, math.ceil(n_faces * n * n / max_samples))   # huge models: every k-th face
     best, where, count, sampled, errors, k = math.inf, None, 0, 0, 0, -1
+    per_solid = []
     for solid in solids:
         faces = solid.Faces
         surfs = [f.Surface for f in faces]
         bbs = [verify.box(f) for f in faces]     # never too small: no face skipped
         lo = np.array([(b.XMin, b.YMin, b.ZMin) for b in bbs]) - tol
         hi = np.array([(b.XMax, b.YMax, b.ZMax) for b in bbs]) + tol
+        per_solid.append((faces, lo, hi))
         for face in faces:
             k += 1
             if k % stride:
@@ -392,11 +429,18 @@ def min_wall(obj_or_shape, per_face: Optional[int] = None, max_samples: int = 20
                 errors += err
                 if t < best:
                     best, where = t, p
+    # the rays only see walls under their sample points: a hole 0.3 mm from an edge
+    # read 0.81 mm. Faces closer than that are measured exactly, two by two.
+    for faces, lo, hi in per_solid:
+        t, p = _closest_walls(faces, lo, hi, best if best < math.inf else diag, tol)
+        if p is not None and t < best:
+            best, where = t, p
     out = {"min_mm": None if best is math.inf else round(best, 4),
            "at": None if where is None else [round(x, 3) for x in (where.x, where.y, where.z)],
            "samples": count, "faces_sampled": sampled, "faces": n_faces,
            "method": f"exact ray-cast ({n}x{n}/face"
-                     + (f", every {stride}th face)" if stride > 1 else ", all faces)")}
+                     + (f", every {stride}th face)" if stride > 1 else ", all faces)")
+                     + " + closest faces"}
     if errors:
         out["unchecked"] = f"{errors} ray/face intersection(s) failed (those faces were skipped)"
     return out

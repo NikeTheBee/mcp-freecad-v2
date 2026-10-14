@@ -64,9 +64,10 @@ au lieu de croire la lecture qu'en fait l'IA.
 - **Les fichiers arrivent dans le projet** : un fichier nommé sans dossier (`plan.dxf`,
   `piece.stl`) atterrissait parmi le code du serveur ; il va maintenant dans le dossier du projet.
 - **Pièces lourdes** (mesuré sur une plaque percée de 1 600 trous) :
-  - épaisseur de paroi : 73 s → 0,7 s, et désormais exacte (les rayons rencontrent les vraies
-    surfaces, sans maillage) ;
-  - `printability` : 129 s → 1,6 s ; `analyze` : 132 s → 1,7 s ; `render_views` : 48 s → 13 s ;
+  - épaisseur de paroi : 73 s → 1,1 s, et désormais exacte (les rayons rencontrent les vraies
+    surfaces, sans maillage ; les faces plus proches que ce qu'ont trouvé les rayons sont mesurées
+    deux à deux : un trou à 0,3 mm d'un bord était lu 0,81 mm) ;
+  - `printability` : 129 s → 2 s ; `analyze` : 132 s → 2 s ; `render_views` : 48 s → 13 s ;
   - détection des trous : 2,7 s → 0,2 s (même résultat, sans comparer chaque paire) ;
   - `check` ne refait l'analyse OCCT, lente, qu'une fois par version de la forme ;
   - les outils d'analyse attendent FreeCAD jusqu'à 5 minutes au lieu de 2, et un calcul
