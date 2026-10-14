@@ -13,6 +13,12 @@ au lieu de croire la lecture qu'en fait l'IA.
 > chaque étape, sauvegarde automatiquement, et permet de revenir en arrière.
 
 ## Depuis la 2.1 (non publié)
+- **Export vérifié** (`export`, nouvel outil) : STL ou 3MF pour l'impression, STEP, BREP ou IGES
+  pour une autre CAO, écrit seulement pour une pièce que `check` valide. Le fichier est ensuite
+  relu et comparé au solide (volume, dimensions, position, maillage fermé). Un fichier qui ne
+  correspond pas n'est jamais livré, et ne remplace jamais un bon fichier.
+- **Les fichiers arrivent dans le projet** : un fichier nommé sans dossier (`plan.dxf`,
+  `piece.stl`) atterrissait parmi le code du serveur ; il va maintenant dans le dossier du projet.
 - **Pièces lourdes** (mesuré sur une plaque percée de 1 600 trous) :
   - épaisseur de paroi : 73 s → 0,7 s, et désormais exacte (les rayons rencontrent les vraies
     surfaces, sans maillage) ;
@@ -89,10 +95,10 @@ Vous (langage naturel)
   → client IA (Claude Code / Claude Desktop / tout client MCP)
     ├─ `freecad`         lanceur (démarre/surveille FreeCAD, refuse un port usurpé)
     │                      → bridge freecad-mcp (blwfish v8.3.0, intégré + corrigé, ~39 outils)
-    └─ `freecad-layers`  17 outils de fiabilité : project_status · project_init · project_switch · recipe ·
+    └─ `freecad-layers`  18 outils de fiabilité : project_status · project_init · project_switch · recipe ·
                           require · check · analyze · fem_static · render_views ·
-                          check_assembly · printability · record_step · checkpoint · recover ·
-                          bill_of_materials · drawing_sheet · pd_hole
+                          check_assembly · printability · export · record_step · checkpoint ·
+                          recover · bill_of_materials · drawing_sheet · pd_hole
          → FreeCAD 1.1 headless sur localhost:23456 (jeton) + ateliers greffés
 ```
 - **Le code décide, pas l'IA.** `check` répond `OK`, `FAIL` ou `UNKNOWN` (un contrôle qui n'a pas pu
@@ -101,7 +107,7 @@ Vous (langage naturel)
 - **Rien ne se perd.** Mémoire projet robuste aux sessions et aux écritures simultanées, copie de
   secours après chaque étape validée, checkpoints rechargés depuis le disque, FreeCAD relancé
   immédiatement après un crash.
-- **Sobre en tokens.** Les outils de fiabilité coûtent ~2 000 tokens de schéma ; réponses en texte
+- **Sobre en tokens.** Les outils de fiabilité coûtent ~3 300 tokens de schéma ; réponses en texte
   court ; pas de capture d'écran par défaut.
 
 ## Installation (une commande, Windows)
@@ -133,7 +139,7 @@ documentées. **Expérimental** = marche sur les cas testés seulement.
 | Fiabilité | Verdicts géométriques (recalcul périmé, auto-intersection, interférence), contrat de conception, analyse de pièce (trous, parois), mémoire projet, checkpoints, sauvegarde auto | **Stable** |
 | Organisation | Plusieurs projets en parallèle (`project_init` n'écrase jamais, `project_switch`) ; recettes vérifiées (une conception n'est gardée que si son contrat est OK) | **Bêta** |
 | Modélisation | PartDesign (esquisse, Pad/Pocket, vrais trous dans le Body), variantes par feuille de calcul | **Stable** |
-| Fabrication | STL conditionné à l'étanchéité + imprimabilité FDM · STEP/IGES · réparation de maillage | **Stable** |
+| Fabrication | Export STL/3MF/STEP/IGES seulement après `check` OK, fichier relu et comparé au solide · imprimabilité FDM (plateau, parois, porte-à-faux) · réparation de maillage | **Stable** |
 | Documentation | Nomenclature (vraies pièces, liens, CSV) | **Stable** |
 | Contrôle visuel | `render_views` : vues face/dessus/droite/iso ombrées en une image, sans interface, à la demande | **Bêta** |
 | Plans 2D | Vues TechDraw, échelle ISO auto, contrôle de mise en page, cotes d'encombrement → DXF | **Bêta** (PDF via l'interface) |

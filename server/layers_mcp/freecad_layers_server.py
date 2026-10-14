@@ -96,7 +96,7 @@ import FreeCAD
 import freecad_layers as _fl
 _fl._mcpfc_stamp = _stamp
 from freecad_layers import (state, verify, checkpoint, recovery, spec, analysis, bom, drawing, gate,
-                            fem, render, projects, recipes)
+                            fem, render, projects, recipes, export)
 """
 # FreeCAD's working folder follows the selected project: a relative file name
 # (an STL export, a saved copy) lands in the project the user is working on
@@ -305,6 +305,19 @@ _out['bbox'] = _r['measures']['bbox']
 _out['min_wall_mm'] = _r['measures']['min_wall']['min_mm']
 _out['overhang_area_mm2'] = _r['measures']['overhang_area_mm2']
 """, _timeout=_ANALYSIS_TIMEOUT, target=target, bed=bed_mm or [220, 220, 250], w=min_wall_mm)
+
+
+@mcp.tool()
+@_safe
+def export(target: str, format: str = "stl", path: str = "", overwrite: bool = False) -> str:
+    """Write a part to a file only if `check` is OK, then read the file back and compare it with
+    the solid (volume, size, position, closed mesh). format: stl|3mf (printing), step|stp|brep
+    (other CAD, exact), iges|igs (surfaces). path: optional, relative = the project folder,
+    default <project>/exports/<target>.<format>; its extension wins over format."""
+    return _run("""
+_out = export.summary(export.export(_a['target'], _a['path'] or None, fmt=_a['fmt'],
+                                    overwrite=_a['ow']))
+""", _timeout=_ANALYSIS_TIMEOUT, target=target, path=path, fmt=format, ow=overwrite)
 
 
 @mcp.tool()

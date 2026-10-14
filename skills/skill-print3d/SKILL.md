@@ -43,7 +43,9 @@ Checks: `hasNonManifolds()`, `hasSelfIntersections()`, `isSolid()`. Example: `in
    overhang area. Export only on `OK`.
    - An assembly (several solids) is judged as parts printed **one by one**; the advisory says
      whether they would fit printed together. Print-in-place: check the assembled overhangs too.
-2. `mesh_operations` (export/convert); `measurement_operations` `get_volume` for a last sanity check.
+2. **`export(target, format="3mf")`** (or `"stl"`): refused unless `check` is OK; the file is read back
+   and compared with the solid (closed, oriented, volume, size and position). 3MF is ~5x smaller and
+   carries its units (mm); STL has none. Relative paths land in the project folder.
 
 ## Checklist before sending to a slicer
 - `verify.watertight(obj)` is True (closed solid, valid).

@@ -14,6 +14,12 @@ trusting the AI's reading of it.
 > autosaves, and lets you roll back.
 
 ## Since 2.1 (unreleased)
+- **Verified export** (`export`, new tool): STL or 3MF for printing, STEP, BREP or IGES for another
+  CAD, written only for a part `check` passes. The file is then read back and compared with the
+  solid (volume, size, position, closed mesh). A file that does not match is never handed over,
+  and never replaces a good one.
+- **Files land in the project**: a file named without a folder (`plan.dxf`, `part.stl`) used to land
+  among the server's code; it now goes to the project folder.
 - **Heavy parts** (measured on a plate with 1,600 holes):
   - wall thickness: 73 s → 0.7 s, and now exact (rays meet the real surfaces, no mesh);
   - `printability`: 129 s → 1.6 s; `analyze`: 132 s → 1.7 s; `render_views`: 48 s → 13 s;
@@ -84,10 +90,10 @@ You (natural language)
   → AI client (Claude Code / Claude Desktop / any MCP client)
     ├─ `freecad`         launcher (starts/supervises FreeCAD, refuses a hijacked port)
     │                      → freecad-mcp bridge (blwfish v8.3.0, vendored + fixed, ~39 tools)
-    └─ `freecad-layers`  17 reliability tools: project_status · project_init · project_switch · recipe ·
+    └─ `freecad-layers`  18 reliability tools: project_status · project_init · project_switch · recipe ·
                           require · check · analyze · fem_static · render_views ·
-                          check_assembly · printability · record_step · checkpoint · recover ·
-                          bill_of_materials · drawing_sheet · pd_hole
+                          check_assembly · printability · export · record_step · checkpoint ·
+                          recover · bill_of_materials · drawing_sheet · pd_hole
          → FreeCAD 1.1 headless on localhost:23456 (token auth) + domain workbench grafts
 ```
 - **The code decides, not the AI.** `check` returns `OK`, `FAIL` or `UNKNOWN` (a check that could
@@ -96,7 +102,7 @@ You (natural language)
 - **Nothing is lost.** Project memory survives sessions and concurrent writers; autosave copies
   after each validated step; checkpoints reload from disk; FreeCAD is restarted at once after a
   crash.
-- **Token-aware.** The reliability tools cost ~2,000 tokens of schema; results are short text
+- **Token-aware.** The reliability tools cost ~3,300 tokens of schema; results are short text
   verdicts; no screenshots by default.
 
 ## Install (one command, Windows)
@@ -129,7 +135,7 @@ documented. **Experimental** = works on the tested cases only.
 | Reliability | Geometry verdicts (stale recompute, self-intersection, interference), design contract, part analysis (holes, walls), project memory, checkpoints, autosave/recovery | **Stable** |
 | Workflow | Several projects side by side (`project_init` never overwrites, `project_switch`); verified recipes (a design is kept only when its contract is OK) | **Beta** |
 | Core modeling | PartDesign (sketch, Pad/Pocket, real holes in the Body), spreadsheet variants | **Stable** |
-| Fabrication | STL gated on watertight + FDM printability (bed, walls, overhangs) · STEP/IGES · mesh repair | **Stable** |
+| Fabrication | STL/3MF/STEP/IGES export only after `check` OK, the file read back and compared with the solid · FDM printability (bed, walls, overhangs) · mesh repair | **Stable** |
 | Documentation | Bill of materials (real parts, links, CSV) | **Stable** |
 | Visual check | `render_views`: shaded front/top/right/iso views in one image, headless, on request | **Beta** |
 | 2D plans | TechDraw views, auto ISO scale, page-fit check, overall dims → DXF (headless) | **Beta** (PDF needs the GUI) |

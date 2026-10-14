@@ -7,6 +7,9 @@ other CAD, suppliers, or simulation tools).
 CAD interchange via **bundled FreeCAD** (`Part`, `Import`) — no install. STL is separate (`skill-print3d`).
 
 ## Export
+Via the MCP tools: **`export(target, format="step")`** (`stp`, `brep`, `iges` too) — refused unless
+`check` is OK, then the file is read back: same solids, same volume, same place. The Python below is
+for `execute_python` only.
 ```python
 obj.Shape.exportStep(r"part.step")            # STEP (preferred for solids, preserves topology)
 obj.Shape.exportBrep(r"part.brep")            # native OCCT

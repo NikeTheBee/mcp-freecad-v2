@@ -64,6 +64,9 @@ async def run(inst: Instance, project: str, out: str) -> None:
                        params={"count": 1, "diameter": 6, "through": True})
             txt = await call("check", target="Body")
             assert "OK Body" in txt and "FAIL contract" in txt, txt     # valid but WRONG
+            txt = await call("export", target="Body")
+            assert txt.startswith("ERROR") and "not exported: check says FAIL" in txt, txt
+            assert not (Path(project) / "projects" / "Plate" / "exports" / "Body.stl").exists()
             assert (await call("checkpoint", action="save", name="no hole")).endswith(".FCStd")
 
             txt = await call("pd_hole", body="Body", diameter=6, x=0, y=0)
@@ -74,6 +77,11 @@ async def run(inst: Instance, project: str, out: str) -> None:
             assert "D6.0 @ [0.0, 0.0, 4.0]" in txt, txt
             txt = await call("printability", target="Body")
             assert '"status": "OK"' in txt, txt
+            txt = await call("export", target="Body", format="3mf")
+            assert txt.startswith("OK 3MF Body -> ") and "closed" in txt and "bbox 60x40x8" in txt, txt
+            assert (Path(project) / "projects" / "Plate" / "exports" / "Body.3mf").is_file(), txt
+            txt = await call("export", target="Body", path="plate.step")
+            assert txt.startswith("OK STEP Body") and "same as the part" in txt, txt
             txt = await call("fem_static", target="Body", fixed=["xmin"], material="aluminium",
                              loads=[{"faces": "xmax", "force_N": 500, "direction": [0, 0, -1]}])
             assert txt.startswith("OK FEM static (aluminium") and "safety factor" in txt, txt

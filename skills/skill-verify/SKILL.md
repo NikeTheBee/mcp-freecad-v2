@@ -13,6 +13,7 @@
 | `check(target)` | geometry verdict + the target's requirements; autosaves when all OK |
 | `analyze(target)` | holes (Ø, position, through/blind), min wall estimate |
 | `check_assembly([...])`, `printability(target)` | overlaps between parts; FDM checks |
+| `export(target, format, path)` | STL/3MF/STEP/BREP/IGES, only when `check` is OK; the file is read back and compared with the solid (volume, size, position, closed mesh) |
 | `fem_static(target, fixed, loads, material)` | CalculiX stress analysis: displacement, von Mises, safety factor (see `skill-fem`) |
 | `render_views(targets, views)` | shaded front/top/right/iso picture, headless — on request or at a milestone only; not a measurement |
 | `record_step(feature, ftype, params, decision)` | memory + autosave after a validated step |
