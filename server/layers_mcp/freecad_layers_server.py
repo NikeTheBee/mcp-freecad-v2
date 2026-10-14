@@ -156,11 +156,18 @@ def _run(template: str, /, _timeout: float = 30.0, **args: Any) -> Any:
     resp = json.loads(raw) if raw else {"error": "no response from FreeCAD"}
     if "error" in resp:
         raise FreeCADError(_explain(str(resp["error"]), _timeout)[:2000])
-    result = resp.get("result")
+    return _decode(resp.get("result"))
+
+
+def _decode(result: Any) -> Any:
+    """The template's `_out` from FreeCAD's reply. The reply holds captured
+    stdout first (CalculiX's own prints, FreeCAD console lines), then the
+    value's repr: one line, quoted (every template ends in json.dumps). The
+    base may append a "Tip: ..." line AFTER it when the code calls .cut(),
+    .fuse(), makeBox()...: the last line is not always the value."""
     if isinstance(result, str) and "\n" in result.strip():
-        # FreeCAD returns captured stdout first (e.g. CalculiX's own prints),
-        # then the value's repr on the last line (a repr is always one line).
-        result = result.strip().rsplit("\n", 1)[-1]
+        lines = result.strip().split("\n")
+        result = next((ln for ln in reversed(lines) if ln[:1] in ("'", '"')), lines[-1])
     if isinstance(result, str) and result[:1] in ("'", '"'):
         result = ast.literal_eval(result)
     return json.loads(result) if isinstance(result, str) else result

@@ -283,9 +283,21 @@ def main() -> int:
             r = op(inst, "partdesign_operations", args)
             close(body_volume(inst), want, f"partdesign {args['operation']} ({str(r)[:30]}...)", rel=1e-5)
         py(inst, PD_SETUP)
-        op(inst, "partdesign_operations", {"operation": "revolution", "sketch_name": "Ring",
-                                           "angle": 360, "axis": "y"})
+        # the axis letter names a BODY axis: Ring is on XZ, "y" is its normal (refused);
+        # it used to name the sketch's own V axis, so "y" turned around Z, said "Y-axis"
+        r = str(op(inst, "partdesign_operations", {"operation": "revolution", "sketch_name": "Ring",
+                                                   "angle": 360, "axis": "y"}))
+        assert "N_Axis" in r and "holds the x and z axes" in r, r
+        r = op(inst, "partdesign_operations", {"operation": "revolution", "sketch_name": "Ring",
+                                               "angle": 360, "axis": "z"})
+        assert "Z" in str(r), r
         close(body_volume(inst), math.pi * (7 ** 2 - 5 ** 2) * 10, "partdesign revolution (ring)", rel=1e-5)
+        py(inst, PD_SETUP)
+        op(inst, "partdesign_operations", {"operation": "pad", "sketch_name": "Base", "length": 5})
+        op(inst, "partdesign_operations", {"operation": "groove", "sketch_name": "Ring",
+                                           "angle": 360, "axis": "z"})
+        # a ring r 5..7 around Z, in the first quadrant of the 10x10x5 pad: 30 pi removed
+        close(body_volume(inst), 500 - 30 * math.pi, "partdesign groove around Z (XZ sketch)", rel=1e-5)
 
         # sketch tools: 20x10 rectangle + D4 circle at its centre, padded 3 mm
         py(inst, "import FreeCAD\nfor _n in list(FreeCAD.listDocuments()):\n    FreeCAD.closeDocument(_n)\n"

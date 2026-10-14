@@ -21,6 +21,7 @@ from handlers.partdesign_ops import PartDesignOpsHandler
 
 from tests.unit._freecad_mocks import (
     _Placement,
+    _Rotation,
     _Vec,
     assert_awaiting_selection,
     assert_error_contains,
@@ -1126,6 +1127,30 @@ class TestRevolution(unittest.TestCase):
         assert_error_contains(self, result, "invalid axis", "q")
         body.newObject.assert_not_called()
         doc.addObject.assert_not_called()
+
+    def test_revolution_axis_names_a_body_axis_on_an_xz_sketch(self):
+        """MCP FREECAD v2: the letter names a BODY axis (as for patterns). On
+        an XZ sketch "z" is its V_Axis; "y" (its normal) is refused. The
+        letter used to name the sketch's own axes: "y" revolved around Z
+        while the reply said "around Y-axis"."""
+        sketch = make_sketch("S")
+        sketch.Placement = _Placement(rotation=_Rotation(_Vec(1, 0, 0), 90))   # XZ plane
+        body = make_body("Body", group=[sketch])
+        doc = make_mock_doc([body, sketch])
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.revolution({'sketch_name': 'S', 'axis': 'z'})
+        rev = body.newObject.return_value
+        self.assertEqual(rev.ReferenceAxis, (sketch, ['V_Axis']))
+        assert_success_contains(self, result, "Z")
+
+        body.newObject.reset_mock()
+        result = self.handler.revolution({'sketch_name': 'S', 'axis': 'y'})
+        assert_error_contains(self, result, "n_axis", "holds the x and z axes")
+        body.newObject.assert_not_called()
+
+        result = self.handler.groove({'sketch_name': 'S', 'axis': 'x'})
+        self.assertEqual(body.newObject.return_value.ReferenceAxis, (sketch, ['H_Axis']))
 
 
 class TestGroove(unittest.TestCase):

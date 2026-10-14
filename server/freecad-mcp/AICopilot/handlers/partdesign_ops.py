@@ -478,6 +478,34 @@ class PartDesignOpsHandler(BaseHandler):
         except Exception as e:
             return f"Error creating auto chamfer: {e}"
 
+    @staticmethod
+    def _sketch_axis_ref(sketch, axis, what: str):
+        """(reference, None) or (None, error). `axis` names a BODY axis (x, y, z,
+        as for patterns and the standalone revolution), mapped to the sketch's
+        own H_Axis or V_Axis that runs along it (MCP FREECAD v2, 2026-10-14).
+        The letters used to name the SKETCH's axes: on an XZ sketch "y" (its
+        V axis) revolved around Z while the reply said "around Y-axis"."""
+        a = str(axis).lower()
+        if a not in ("x", "y", "z"):
+            return None, f"Invalid axis '{axis}': must be 'x', 'y' or 'z'"
+        unit = {k: FreeCAD.Vector(*(1.0 if k == j else 0.0 for j in "xyz")) for k in "xyz"}
+        rot = sketch.Placement.Rotation
+        in_plane = {"H_Axis": rot.multVec(FreeCAD.Vector(1, 0, 0)),
+                    "V_Axis": rot.multVec(FreeCAD.Vector(0, 1, 0))}
+        for ref, d in in_plane.items():
+            if abs(abs(d.dot(unit[a])) - 1.0) < 1e-9:
+                return ref, None
+        held = [k for k in "xyz"
+                if any(abs(abs(d.dot(unit[k])) - 1.0) < 1e-9 for d in in_plane.values())]
+        if held:
+            return None, (
+                f"Invalid axis '{a}': it is the sketch's own normal (N_Axis), and "
+                f"{what} a planar profile around its own plane's normal sweeps zero "
+                f"volume. This sketch's plane holds the {' and '.join(held)} axes.")
+        return None, (
+            f"Invalid axis '{a}': this sketch is tilted, no body axis lies in its plane "
+            f"(a {what} axis must)")
+
     def _body_simple_hole(self, doc, body, object_name: str, hole_type: str,
                           diameter: float, depth: float, x: float, y: float) -> str:
         """Vertical hole as a PartDesign::SubtractiveCylinder inside `body`
@@ -1103,25 +1131,11 @@ class PartDesignOpsHandler(BaseHandler):
             body = self.find_body_for_object(sketch, doc)
 
             if body:
-                # PartDesign::Revolution's ReferenceAxis needs a sketch-local
-                # reference (H_Axis/V_Axis), not a global vector — the same
-                # mapping groove() already uses. N_Axis (axis='z') is always
-                # the sketch's own plane normal by construction, so it's
-                # always degenerate here too, for the identical reason
-                # groove() rejects it — no per-sketch computation needed.
-                axis_refs = {'x': 'H_Axis', 'y': 'V_Axis'}
-                ref_axis = axis_refs.get(axis.lower())
-                if ref_axis is None:
-                    if axis.lower() == 'z':
-                        return (
-                            "Invalid axis 'z': the sketch's own normal "
-                            "(N_Axis) cannot be used as a revolution axis — "
-                            "revolving a planar profile around its own "
-                            "plane's normal always sweeps zero volume, for "
-                            "any sketch. Use 'x' (H_Axis) or 'y' (V_Axis), "
-                            "which lie in the sketch's plane."
-                        )
-                    return f"Invalid axis '{axis}': must be 'x' or 'y'"
+                # ReferenceAxis is the sketch's H_Axis or V_Axis: the one
+                # running along the requested body axis
+                ref_axis, err = self._sketch_axis_ref(sketch, axis, "revolving")
+                if err:
+                    return err
 
                 revolution = body.newObject("PartDesign::Revolution", name)
                 revolution.Profile = sketch
@@ -1197,27 +1211,11 @@ class PartDesignOpsHandler(BaseHandler):
             if not body:
                 return f"Sketch {sketch_name} must be in a PartDesign Body"
 
-            # Map the requested revolution axis to the sketch's local axes:
-            #   x -> H_Axis (horizontal), y -> V_Axis (vertical), z -> N_Axis (normal).
-            # N_Axis is excluded (see below) — unlike revolution()'s global
-            # axis choice, N_Axis is *unconditionally* the sketch's own plane
-            # normal for every sketch, by construction, so it can never sweep
-            # volume; there's no sketch placement that makes it valid.
-            axis_refs = {'x': 'H_Axis', 'y': 'V_Axis'}
-            ref_axis = axis_refs.get(axis.lower())
-            if ref_axis is None:
-                if axis.lower() == 'z':
-                    return (
-                        "Invalid axis 'z': the sketch's own normal (N_Axis) "
-                        "cannot be used as a groove axis — revolving a planar "
-                        "profile around its own plane's normal always sweeps "
-                        "zero volume, for any sketch. Use 'x' (H_Axis) or 'y' "
-                        "(V_Axis), which lie in the sketch's plane."
-                    )
-                # Validated before creating the object — see revolution()
-                # for the identical silent-default/message-lie bug this
-                # mirrors.
-                return f"Invalid axis '{axis}': must be 'x' or 'y'"
+            # ReferenceAxis is the sketch's H_Axis or V_Axis: the one running
+            # along the requested body axis (validated before any object)
+            ref_axis, err = self._sketch_axis_ref(sketch, axis, "revolving")
+            if err:
+                return err
 
             groove = body.newObject("PartDesign::Groove", name)
             groove.Profile = sketch
@@ -1806,27 +1804,11 @@ class PartDesignOpsHandler(BaseHandler):
             body = self.find_body_for_object(sketch, doc)
 
             if body:
-                # Same in-plane-axis mapping as revolution()/groove(): a
-                # helix's ReferenceAxis must lie in the sketch's own plane
-                # -- geometrically a helix is a revolution with
-                # progressive translation added along that same axis.
-                # N_Axis (the sketch's own normal) is degenerate for the
-                # identical reason it is for revolution/groove: winding a
-                # planar profile around its own plane's normal sweeps zero
-                # volume, for any sketch.
-                axis_refs = {'x': 'H_Axis', 'y': 'V_Axis'}
-                ref_axis = axis_refs.get(axis.lower())
-                if ref_axis is None:
-                    if axis.lower() == 'z':
-                        return (
-                            "Invalid axis 'z': the sketch's own normal "
-                            "(N_Axis) cannot be used as a helix axis — "
-                            "winding a planar profile around its own "
-                            "plane's normal always sweeps zero volume, for "
-                            "any sketch. Use 'x' (H_Axis) or 'y' (V_Axis), "
-                            "which lie in the sketch's plane."
-                        )
-                    return f"Invalid axis '{axis}': must be 'x' or 'y'"
+                # Same mapping as revolution()/groove(): a helix's
+                # ReferenceAxis must lie in the sketch's own plane.
+                ref_axis, err = self._sketch_axis_ref(sketch, axis, "winding")
+                if err:
+                    return err
 
                 helix = body.newObject("PartDesign::AdditiveHelix", name)
                 helix.Profile = sketch

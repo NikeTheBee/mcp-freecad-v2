@@ -278,6 +278,12 @@ async def run(inst: Instance, project: str, out: str) -> None:
     finally:
         srv.launcher.port_owners = serving
     assert "recover(action='open'" in srv._STOPPED.format(pid=dead.pid)
+    # the value is the last QUOTED line: CalculiX prints come before it, and the base
+    # appends a "Tip: ..." line after it when the code calls .cut() / makeBox()...
+    reply = ("Calculix: solving\n[FreeCAD Console]\nsome warning\n" + repr(json.dumps({"V": 6}))
+             + "\nTip: this code calls cut directly -- a dedicated tool already covers this")
+    assert srv._decode(reply) == {"V": 6}, srv._decode(reply)
+    assert srv._decode(repr(json.dumps([1, "a"]))) == [1, "a"]
     print("long calls: headless runs them to the end; timeouts explained plainly: OK")
 
 

@@ -244,7 +244,7 @@ class PrimitivesHandler(BaseHandler):
 
             self.recompute(doc)
 
-            return f"Created cone: {cone.Name} (R1{radius1}, R2{radius2}, H{height}) at ({x},{y},{z})"
+            return f"Created cone: {cone.Name} (R1={radius1}, R2={radius2}, H{height}) at ({x},{y},{z})"
 
         except Exception as e:
             return f"Error creating cone: {e}"
@@ -284,7 +284,7 @@ class PrimitivesHandler(BaseHandler):
 
             self.recompute(doc)
 
-            return f"Created torus: {torus.Name} (R1{radius1}, R2{radius2}) at ({x},{y},{z})"
+            return f"Created torus: {torus.Name} (R1={radius1}, R2={radius2}) at ({x},{y},{z})"
 
         except Exception as e:
             return f"Error creating torus: {e}"

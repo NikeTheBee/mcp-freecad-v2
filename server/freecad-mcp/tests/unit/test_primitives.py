@@ -130,7 +130,8 @@ class TestCreateCone(unittest.TestCase):
             'radius1': 5, 'radius2': 2, 'height': 10,
         })
 
-        assert_success_contains(self, result, "R1", "R2", "H10")
+        # "R15, R22" read as radius 15 (MCP FREECAD v2): the value follows "="
+        assert_success_contains(self, result, "R1=5", "R2=2", "H10")
         doc.addObject.assert_called_once_with("Part::Cone", "Cone")
         cone = doc.Objects[-1]
         self.assertEqual(cone.Radius1, 5)
@@ -151,7 +152,7 @@ class TestCreateTorus(unittest.TestCase):
             'radius1': 20, 'radius2': 4,
         })
 
-        assert_success_contains(self, result, "R1", "R2")
+        assert_success_contains(self, result, "R1=20", "R2=4")
         doc.addObject.assert_called_once_with("Part::Torus", "Torus")
 
 

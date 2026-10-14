@@ -30,6 +30,9 @@ trusting the AI's reading of it.
   not at the top of the whole part (on a stepped part it began in the air), and is measured once
   made: through, depth. On a plain Part solid, the base's countersink cut nothing (its cone lay
   under the part) and the counterbore went on the bottom face: both now sit on the top.
+- **Revolve around the axis you name**: on a sketch drawn in the XZ plane, "around y" turned around
+  Z while the reply said "around Y-axis" (the letter named the sketch's own axes). Revolution,
+  groove and helix now take the part's axes, like the patterns; the sketch's normal is refused.
 - **A feature left out of the part is a FAIL**: a Body whose Tip stops before its last feature, or
   with a suppressed feature, used to check OK (a valid solid, without the hole).
 - **Files land in the project**: a file named without a folder (`plan.dxf`, `part.stl`) used to land
