@@ -87,7 +87,8 @@ au lieu de croire la lecture qu'en fait l'IA.
   interface) : il enregistre ce qui peut l'être sans risque, quitte, et le lanceur en démarre un
   neuf. Avant, seul un arrêt manuel du processus en venait à bout.
 - **Assemblages mesurés pièce par pièce** : la nomenclature compte une seule fois les pièces
-  identiques quelle que soit leur orientation ; trous, porte-à-faux et imprimabilité jugent
+  identiques quelle que soit leur orientation, et sépare une pièce gauche de sa droite (mêmes
+  mesures, images miroir) ; trous, porte-à-faux et imprimabilité jugent
   chaque pièce seule ; un plan ne met jamais de cote d'encombrement sur une vue iso (une
   longueur projetée n'est pas une dimension).
 - **Retour arrière et récupération préservent le travail** : un checkpoint restauré ou une copie

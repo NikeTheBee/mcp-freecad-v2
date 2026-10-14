@@ -108,6 +108,65 @@ def _signature(shp) -> tuple:
     return (round(float(shp.Volume), 2), round(float(shp.Area), 2), *moments)
 
 
+def _frame_points(s):
+    """The solid's vertices in its principal frame (right-handed), or None when
+    that frame is not unique (two equal moments: a turned part, a cube) or the
+    part is too big to compare point by point."""
+    import numpy as np
+
+    p = s.PrincipalProperties
+    m = sorted(p["Moments"])
+    if min(m[1] - m[0], m[2] - m[1]) <= 1e-6 * max(abs(m[2]), 1e-12) or len(s.Vertexes) > 2000:
+        return None
+    a1, a2 = p["FirstAxisOfInertia"], p["SecondAxisOfInertia"]
+    axes = np.array([tuple(a1), tuple(a2), tuple(a1.cross(a2))])
+    c = s.CenterOfMass
+    pts = np.array([(v.Point.x - c.x, v.Point.y - c.y, v.Point.z - c.z) for v in s.Vertexes])
+    return pts @ axes.T, list(p["Moments"])        # moments in the axes' order
+
+
+def _matches(p, q, tol: float) -> bool:
+    """Every point of p has a point of q within tol (by rows of 256: a
+    2000-vertex part stays within ~12 MB)."""
+    import numpy as np
+
+    for i in range(0, len(p), 256):
+        d = np.abs(p[i:i + 256, None, :] - q[None, :, :]).max(axis=2)
+        if not (d.min(axis=1) < tol).all():
+            return False
+    return True
+
+
+def _handedness(a, b) -> Optional[str]:
+    """"same" if solid b is solid a turned and moved, "mirror" if it is a's
+    mirror image, None if neither or not decidable. Two parts with the same
+    volume, area and moments of inertia can still be a left and a right hand:
+    not one part ordered twice."""
+    import numpy as np
+
+    fa, fb = _frame_points(a), _frame_points(b)
+    if fa is None or fb is None:
+        return None
+    (pa, ma), (pb, mb) = fa, fb
+    # pair the axes by moment (each frame lists its axes in its own order)
+    ia, ib = np.argsort(ma), np.argsort(mb)
+    pa, pb = pa[:, ia], pb[:, ib]
+    if len(pa) != len(pb):
+        return None
+    tol = 1e-4 * max(float(np.abs(pa).max()), 1.0)
+    found = None
+    for signs in ((1, 1, 1), (1, -1, -1), (-1, 1, -1), (-1, -1, 1),
+                  (-1, -1, -1), (-1, 1, 1), (1, -1, 1), (1, 1, -1)):
+        q = pa * np.array(signs)
+        if _matches(q, pb, tol) and _matches(pb, q, tol):
+            # the frames' own handedness enters too: det of the axis pairing
+            proper = np.prod(signs) * np.linalg.det(np.eye(3)[ia]) * np.linalg.det(np.eye(3)[ib]) > 0
+            if proper:
+                return "same"
+            found = "mirror"
+    return found
+
+
 def _parts(doc, include_hidden: bool):
     """Yield (instance_object, part_object) for every part instance."""
     for o in doc.Objects:
@@ -139,16 +198,28 @@ def collect(doc, include_hidden: bool = True) -> List[Dict[str, Any]]:
     """Grouped parts list. Each row: {item, designation, qty, volume_mm3,
     bbox_mm (sorted), refs}."""
     groups: "OrderedDict[tuple, Dict[str, Any]]" = OrderedDict()
+    shapes: Dict[tuple, Any] = {}
     for inst, part in _parts(doc, include_hidden):
         shp = _solid_shape(part)
         stem = _label_stem(part.Label)
-        key = (stem, _signature(shp))
+        sig = (stem, _signature(shp))
+        # same measures can still be a left and a right hand: those are two parts
+        key, mirrored = sig, False
+        n = 0
+        while key in groups:
+            h = (_handedness(shapes[key].Solids[0], shp.Solids[0])
+                 if len(shp.Solids) == 1 and len(shapes[key].Solids) == 1 else None)
+            if h != "mirror":
+                break                          # the same part (or not decidable: as before)
+            mirrored, n = True, n + 1
+            key = sig + (n,)
         g = groups.get(key)
         if g is None:
-            groups[key] = {"designation": stem,
+            groups[key] = {"designation": stem + (" (mirrored)" if mirrored else ""),
                            "volume_mm3": round(float(shp.Volume), 2),
                            "bbox_mm": _own_size(shp),
                            "qty": 1, "refs": [inst.Name]}
+            shapes[key] = shp
         else:
             g["qty"] += 1
             g["refs"].append(inst.Name)

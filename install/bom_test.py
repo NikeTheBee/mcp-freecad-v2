@@ -124,6 +124,26 @@ def main() -> int:
         [("Bolt", 4, [7.0, 7.0, 23.0])], rows
     print("identical parts in 4 orientations: one line, own size 7x7x23: OK")
 
+    # a left and a right hand have the same volume, area and moments of inertia, but are
+    # two parts: an L-bracket with an off-centre hole, its turned copy, its mirror image
+    d4 = App.newDocument("BOMHanded")
+    lb = Part.makeBox(40, 20, 4).fuse(Part.makeBox(4, 20, 30)).removeSplitter()
+    lb = lb.cut(Part.makeCylinder(2.5, 4, V(30, 6, 0)))
+    turned = lb.copy()
+    turned.rotate(V(0, 0, 0), V(0, 0, 1), 90)
+    mirror = lb.mirror(V(0, 0, 0), V(1, 0, 0))
+    mirror2 = mirror.copy()
+    mirror2.rotate(V(0, 0, 0), V(1, 0, 0), 30)
+    for i, s in enumerate((lb, turned, mirror, mirror2)):
+        o = d4.addObject("Part::Feature", f"Bracket{i + 1:03d}")
+        o.Shape = s
+        o.Placement.Base = V(100 * i, 0, 0)
+    d4.recompute()
+    rows = bom.collect(d4)
+    assert [(r["designation"], r["qty"]) for r in rows] == \
+        [("Bracket", 2), ("Bracket (mirrored)", 2)], rows
+    print("left and right hands: two lines, turned copies still one: OK")
+
     print("BOM_OK")
     return 0
 

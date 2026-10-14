@@ -12,7 +12,8 @@
 - The inputs of a boolean or a mirror (Base/Tool of a Cut...) are not parts; the result is.
 - Containers (App::Part, groups, Part::Compound, assemblies) are not parts; their children are.
 - Each `App::Link` is one more instance of the object it points to.
-- Identical parts are grouped by measured geometry (volume, area, sorted bounding box) **and**
+- Identical parts are grouped by measured geometry (volume, area, moments of inertia; a mirror
+  image is a different part, listed "(mirrored)") **and**
   name stem: two different shapes of equal volume are never merged.
 - Limitation: mirror images with the same name stem group together — name left/right parts
   differently (`Bracket_L`, `Bracket_R`).

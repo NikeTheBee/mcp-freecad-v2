@@ -81,7 +81,7 @@ trusting the AI's reading of it.
   what it safely can, exits, and the launcher starts a fresh one. Before, only killing the
   process by hand helped.
 - **Assemblies measured part by part**: the parts list counts identical parts once whatever
-  their orientation; holes, overhangs and printability judge each part on its own; a plan
+  their orientation, and keeps a left and a right hand apart (same measures, mirror images); holes, overhangs and printability judge each part on its own; a plan
   never puts an overall size on an iso view (a projected length is not a size).
 - **Rollback and recovery keep the work whole**: a restored checkpoint or recovered copy reopens
   under the document's own name, as a working copy (a later save no longer overwrites the
