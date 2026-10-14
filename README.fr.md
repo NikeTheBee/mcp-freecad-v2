@@ -80,7 +80,9 @@ au lieu de croire la lecture qu'en fait l'IA.
 - **Un redémarrage ne peut plus vous bloquer dehors** : quand deux FreeCAD démarraient en même temps
   pendant un redémarrage, celui qui n'obtenait pas le port écrasait la clé d'accès de l'autre avant
   de quitter, et tous les appels étaient ensuite refusés (« did not prove it is your FreeCAD »)
-  jusqu'au redémarrage suivant. La clé n'est plus écrite que par le FreeCAD qui tient le port.
+  jusqu'au redémarrage suivant. La clé n'est plus écrite que par le FreeCAD qui tient le port, et
+  l'appel dont le FreeCAD a perdu la course obtient le gagnant au lieu de « FreeCAD exited during
+  start ».
 - **Un FreeCAD bloqué peut être redémarré par l'assistant** (`restart_freecad`, aussi sans
   interface) : il enregistre ce qui peut l'être sans risque, quitte, et le lanceur en démarre un
   neuf. Avant, seul un arrêt manuel du processus en venait à bout.

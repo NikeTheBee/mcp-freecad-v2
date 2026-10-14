@@ -79,6 +79,20 @@ def main() -> int:
         sup.terminate()
         sup.wait(10)
 
+        # two starts at once (the supervisor and another call's ensure() during a restart):
+        # one FreeCAD wins the port, the other quits -- and that caller must still get the
+        # winner, not "FreeCAD exited during start"
+        inst.kill()
+        time.sleep(1)
+        both = [subprocess.Popen([str(VENV_PY), str(LAUNCHER), "--check"], env=inst.env,
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                for _ in range(2)]
+        infos = [json.loads(p.communicate(timeout=180)[0].strip().splitlines()[-1]) for p in both]
+        assert all(i.get("ok") for i in infos) and infos[0]["pid"] == infos[1]["pid"], infos
+        r = inst.call("execute_python_sync", {"code": "5+5"})
+        assert r and r.get("result") == "10", r
+        print("3b. two simultaneous starts: both callers get the one FreeCAD that won: OK")
+
         inst.kill()
         time.sleep(1)
         fake = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

@@ -50,6 +50,7 @@ HOST = "127.0.0.1"
 FREECAD_NAMES = {"freecadcmd.exe", "freecad.exe", "freecadcmd", "freecad"}
 BACKOFF_S = (0, 2, 4, 8, 16, 30)
 START_TIMEOUT_S = float(os.environ.get("FREECAD_MCP_AUTOSTART_WAIT", "90"))
+LOST_RACE_WAIT_S = 30.0   # a FreeCAD that lost the port: wait this long for the winner
 
 
 class Untrusted(RuntimeError):
@@ -180,13 +181,19 @@ def ensure(freecadcmd: Path) -> int:
                            "(run install/bootstrap.py)")
     proc = spawn(freecadcmd)
     deadline = time.monotonic() + START_TIMEOUT_S
+    exited_at = None
     while time.monotonic() < deadline:
-        if proc.poll() is not None:
-            raise RuntimeError(f"FreeCAD exited during start (code {proc.returncode}); "
-                               f"see {_log_path().with_name('freecad_headless.log')}")
         owner = port_owner(PORT, freecadcmd)
         if owner is not None:
             return owner
+        if proc.poll() is not None:
+            # ours quit: it may have lost the port to a FreeCAD started at the same
+            # moment (the supervisor's, another call's ensure()), which then serves;
+            # give that one time to open the port before calling it a failure
+            exited_at = exited_at or time.monotonic()
+            if time.monotonic() - exited_at > LOST_RACE_WAIT_S:
+                raise RuntimeError(f"FreeCAD exited during start (code {proc.returncode}); "
+                                   f"see {_log_path().with_name('freecad_headless.log')}")
         time.sleep(0.25)
     raise RuntimeError(f"FreeCAD did not open port {PORT} within {START_TIMEOUT_S:.0f}s")
 

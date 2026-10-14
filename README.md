@@ -75,7 +75,8 @@ trusting the AI's reading of it.
 - **A restart can no longer lock you out**: when two FreeCADs started at once during a restart,
   the one that could not get the port overwrote the other's access key before quitting, and
   every call was then refused ("did not prove it is your FreeCAD") until the next restart. The
-  key is now written only by the FreeCAD that holds the port.
+  key is now written only by the FreeCAD that holds the port, and the call whose FreeCAD lost
+  the race gets the winner instead of "FreeCAD exited during start".
 - **A stuck FreeCAD can be restarted by the assistant** (`restart_freecad`, headless too): it saves
   what it safely can, exits, and the launcher starts a fresh one. Before, only killing the
   process by hand helped.
