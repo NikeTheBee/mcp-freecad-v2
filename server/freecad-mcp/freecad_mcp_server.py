@@ -1438,6 +1438,9 @@ async def main():
                                              "(see measurement_operations list_faces). Required on a headless "
                                              "FreeCAD, which has no interactive selection."},
                     "auto_select_all": {"type": "boolean", "description": "fillet/chamfer: every edge of the object"},
+                    "faces": {"type": "array", "items": {"type": ["integer", "string"]},
+                              "description": "thickness/shell (faces to open)/draft: 1-based indices or 'Face6'. "
+                                             "Required on a headless FreeCAD."},
                     "distance": {"type": "number", "description": "Distance for chamfer", "default": 1},
                     "angle": {"type": "number", "description": "Angle for revolution/draft", "default": 360},
                     "thickness": {"type": "number", "description": "Thickness value", "default": 2},

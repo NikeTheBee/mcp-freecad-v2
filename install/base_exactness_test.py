@@ -299,6 +299,21 @@ def main() -> int:
         # a ring r 5..7 around Z, in the first quadrant of the 10x10x5 pad: 30 pi removed
         close(body_volume(inst), 500 - 30 * math.pi, "partdesign groove around Z (XZ sketch)", rel=1e-5)
 
+        # dress-ups on every edge / an opened face land INSIDE the Body: "all edges" made a
+        # Part::Fillet beside it (the Body kept 500 mm3), thickness only asked to "select
+        # faces in FreeCAD". Reference: the same operation through the Part API.
+        for args, ref in (({"operation": "fillet", "radius": 1}, "s.makeFillet(1, s.Edges)"),
+                          ({"operation": "chamfer", "distance": 1}, "s.makeChamfer(1, s.Edges)"),
+                          ({"operation": "thickness", "thickness": 1, "faces": ["Face6"]}, None)):
+            py(inst, PD_SETUP)
+            op(inst, "partdesign_operations", {"operation": "pad", "sketch_name": "Base", "length": 5})
+            extra = {} if args["operation"] == "thickness" else {"auto_select_all": True}
+            r = op(inst, "partdesign_operations", {"object_name": "Body", **args, **extra})
+            want = (500 - 8 * 8 * 4) if ref is None else float(
+                py(inst, f"import Part\ns = Part.makeBox(10, 10, 5)\nround({ref}.Volume, 9)").split("\n")[0])
+            close(body_volume(inst), want, f"partdesign {args['operation']} in the Body ({str(r)[:30]}...)",
+                  rel=1e-6)
+
         # sketch tools: 20x10 rectangle + D4 circle at its centre, padded 3 mm
         py(inst, "import FreeCAD\nfor _n in list(FreeCAD.listDocuments()):\n    FreeCAD.closeDocument(_n)\n"
                  "d = FreeCAD.newDocument('SK')\nd.addObject('PartDesign::Body', 'Body')\n'ok'")

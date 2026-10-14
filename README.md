@@ -30,6 +30,11 @@ trusting the AI's reading of it.
   not at the top of the whole part (on a stepped part it began in the air), and is measured once
   made: through, depth. On a plain Part solid, the base's countersink cut nothing (its cone lay
   under the part) and the counterbore went on the bottom face: both now sit on the top.
+- **Fillets, chamfers and shells land in the part**: "fillet all edges" of a PartDesign part made
+  a separate object beside the Body, which kept its sharp edges while the reply said "all 12
+  edges" (same for chamfer and shell). They are now features of the Body, checked against the
+  same operation done directly (to 1e-6). Thickness/shell/draft take `faces=[...]` headless,
+  where they used to ask for a selection in a window that does not exist.
 - **Revolve around the axis you name**: on a sketch drawn in the XZ plane, "around y" turned around
   Z while the reply said "around Y-axis" (the letter named the sketch's own axes). Revolution,
   groove and helix now take the part's axes, like the patterns; the sketch's normal is refused.

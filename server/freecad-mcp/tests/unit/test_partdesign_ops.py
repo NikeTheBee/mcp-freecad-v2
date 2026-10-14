@@ -308,6 +308,29 @@ class TestFilletEdges(unittest.TestCase):
         self.assertEqual(len(fillet.Edges), 12)
         assert_success_contains(self, result, "all 12")
 
+    def test_auto_select_all_in_a_body_fillets_inside_the_body(self):
+        """MCP FREECAD v2: "all edges" of a Body feature made a Part::Fillet
+        BESIDE the Body, which kept no fillet while the reply said "all 12
+        edges". It is now a PartDesign::Fillet inside the Body, as with
+        explicit edges; the Body itself stands for its Tip."""
+        box = make_box_object("Pad")
+        body = make_body("Body", tip=box, group=[box])
+        doc = make_mock_doc([body, box])
+        mock_FreeCAD.ActiveDocument = doc
+        body.newObject.return_value.State = []
+
+        for target in ("Pad", "Body"):
+            body.newObject.reset_mock()
+            result = self.handler.fillet_edges({
+                'object_name': target, 'radius': 1.0, 'auto_select_all': True,
+            })
+            body.newObject.assert_called_with("PartDesign::Fillet", "Fillet")
+            self.assertEqual(body.newObject.return_value.Base,
+                             (box, [f"Edge{i}" for i in range(1, 13)]))
+            assert_success_contains(self, result, "12 edges")
+        type_ids = [c.args[0] for c in doc.addObject.call_args_list]
+        self.assertNotIn("Part::Fillet", type_ids)
+
     def test_continue_selection_processes_edges(self):
         """When _continue_selection is set, fillet builds from completed picks."""
         box = make_box_object("B")
@@ -363,6 +386,22 @@ class TestChamferEdges(unittest.TestCase):
         })
         doc.addObject.assert_called_with("Part::Chamfer", "Chamfer")
         assert_success_contains(self, result, "all 12")
+
+    def test_auto_select_all_in_a_body_chamfers_inside_the_body(self):
+        box = make_box_object("Pad")
+        body = make_body("Body", tip=box, group=[box])
+        doc = make_mock_doc([body, box])
+        mock_FreeCAD.ActiveDocument = doc
+        body.newObject.return_value.State = []
+
+        result = self.handler.chamfer_edges({
+            'object_name': 'Body', 'distance': 0.5, 'auto_select_all': True,
+        })
+
+        body.newObject.assert_called_with("PartDesign::Chamfer", "Chamfer")
+        self.assertEqual(body.newObject.return_value.Base[0], box)
+        self.assertNotIn("Part::Chamfer", [c.args[0] for c in doc.addObject.call_args_list])
+        assert_success_contains(self, result, "12 selected edges")
 
     def test_auto_select_all_no_edges_errors(self):
         """A zero-edge object must get a clear message, not a false 'all 0 edges'
@@ -1605,6 +1644,7 @@ class TestShellSolid(unittest.TestCase):
         self.handler = make_handler(PartDesignOpsHandler)
 
     def test_default_returns_awaiting_selection(self):
+        mock_FreeCAD.GuiUp = True   # MCP FREECAD v2: interactive selection needs the GUI
         box = make_box_object("B")
         doc = make_mock_doc([box])
         mock_FreeCAD.ActiveDocument = doc
@@ -1678,6 +1718,7 @@ class TestAddThickness(unittest.TestCase):
         self.handler = make_handler(PartDesignOpsHandler)
 
     def test_default_returns_awaiting_selection(self):
+        mock_FreeCAD.GuiUp = True   # MCP FREECAD v2: interactive selection needs the GUI
         box = make_box_object("B")
         doc = make_mock_doc([box])
         mock_FreeCAD.ActiveDocument = doc
@@ -1686,6 +1727,40 @@ class TestAddThickness(unittest.TestCase):
         })
         assert_awaiting_selection(self, result)
 
+    def test_headless_without_faces_says_how(self):
+        """MCP FREECAD v2: headless, it asked to "select faces in FreeCAD"."""
+        mock_FreeCAD.GuiUp = False
+        box = make_box_object("B")
+        body = make_body("Body", tip=box, group=[box])
+        doc = make_mock_doc([body, box])
+        mock_FreeCAD.ActiveDocument = doc
+        for op in (self.handler.add_thickness, self.handler.shell_solid, self.handler.draft_faces):
+            result = op({'object_name': 'B', 'thickness': 1.5})
+            assert_error_contains(self, result, "needs faces=[...]", "Face6")
+        body.newObject.assert_not_called()
+
+    def test_faces_param_hollows_inside_the_body(self):
+        """faces=[...] (or face_index) goes straight to the feature; shell on a
+        Body feature is a PartDesign::Thickness INSIDE the Body, not a
+        Part::Thickness beside it (which left the Body solid)."""
+        box = make_box_object("Pad")
+        body = make_body("Body", tip=box, group=[box])
+        doc = make_mock_doc([body, box])
+        mock_FreeCAD.ActiveDocument = doc
+        body.newObject.return_value.State = []
+
+        for op, args in ((self.handler.add_thickness, {'faces': ['Face6']}),
+                         (self.handler.shell_solid, {'face_index': 6}),
+                         (self.handler.add_thickness, {'object_name': 'Body', 'faces': [6]})):
+            body.newObject.reset_mock()
+            result = op({'object_name': 'Pad', 'thickness': 1, **args})
+            body.newObject.assert_called_with("PartDesign::Thickness", "Shell" if op is self.handler.shell_solid else "Thickness")
+            self.assertEqual(body.newObject.return_value.Base, (box, ("Face6",)))
+            assert_success_contains(self, result, "1 face(s) removed")
+        self.assertNotIn("Part::Thickness", [c.args[0] for c in doc.addObject.call_args_list])
+        result = self.handler.add_thickness({'object_name': 'Pad', 'faces': [99]})
+        assert_error_contains(self, result, "Invalid face", "99")
+
 
 class TestDraftFaces(unittest.TestCase):
     def setUp(self):
@@ -1693,6 +1768,7 @@ class TestDraftFaces(unittest.TestCase):
         self.handler = make_handler(PartDesignOpsHandler)
 
     def test_default_returns_awaiting_selection(self):
+        mock_FreeCAD.GuiUp = True   # MCP FREECAD v2: interactive selection needs the GUI
         box = make_box_object("B")
         doc = make_mock_doc([box])
         mock_FreeCAD.ActiveDocument = doc

@@ -32,6 +32,34 @@ def edge_indices(edges) -> tuple[list[int] | None, str | None]:
 
 
 
+def face_indices(faces) -> tuple[list[int] | None, str | None]:
+    """1-based face indices from 6, "6" or "Face6"; (None, reason) if any is invalid."""
+    items = faces if isinstance(faces, (list, tuple)) else [faces]
+    out = []
+    for f in items:
+        m = re.fullmatch(r"(?:Face)?(\d+)", str(f).strip()) if not isinstance(f, bool) else None
+        if not m or int(m.group(1)) < 1:
+            return None, f"Invalid face {f!r}: use 1-based indices (6) or names ('Face6')"
+        out.append(int(m.group(1)))
+    if not out:
+        return None, "No faces given"
+    return out, None
+
+
+# MCP FREECAD v2 (2026-10-14): headless, these operations asked the user to
+# "select faces in FreeCAD" -- there is no FreeCAD window to select in.
+_HEADLESS_FACES = ("{op} needs faces=[...] on a headless FreeCAD (no interactive selection): "
+                   "1-based indices or names like 'Face6' -- list them with "
+                   "measurement_operations list_faces")
+
+
+def _given_faces(args) -> list:
+    """faces=[...] or face_index=N, whichever the call gave."""
+    if args.get('faces'):
+        return args['faces']
+    return [args['face_index']] if args.get('face_index') is not None else []
+
+
 class PartDesignOpsHandler(BaseHandler):
     """Handler for PartDesign workbench operations."""
 
@@ -248,6 +276,14 @@ class PartDesignOpsHandler(BaseHandler):
         except Exception as e:
             return f"Error creating fillet with selection: {e}"
 
+    def _dressup_target(self, obj, doc):
+        """(body, base feature) for a fillet/chamfer on `obj`: a feature in a
+        Body, or the Body itself (then its Tip, whose edges are the Body's).
+        (None, obj) outside any Body (MCP FREECAD v2, 2026-10-14)."""
+        if getattr(obj, "TypeId", "") == "PartDesign::Body":
+            return (obj, obj.Tip) if obj.Tip is not None else (None, obj)
+        return self.find_body_for_object(obj, doc), obj
+
     def _create_fillet_with_edges(self, object_name: str, edges: list, radius: float, name: str) -> str:
         """Create fillet with explicit edge list."""
         try:
@@ -259,9 +295,10 @@ class PartDesignOpsHandler(BaseHandler):
             if not obj:
                 return f"Object not found: {object_name}"
 
-            body = self.find_body_for_object(obj, doc)
+            body, base = self._dressup_target(obj, doc)
 
             if body:
+                obj = base
                 fillet = body.newObject("PartDesign::Fillet", name)
                 fillet.Radius = radius
                 edge_names = [f"Edge{idx}" for idx in edges]
@@ -319,6 +356,13 @@ class PartDesignOpsHandler(BaseHandler):
             if not hasattr(obj, 'Shape') or not obj.Shape.Edges:
                 return f"Object {object_name} has no edges to fillet"
             n_edges = len(obj.Shape.Edges)
+            if self._dressup_target(obj, doc)[0] is not None:
+                # in a Body: a PartDesign::Fillet INSIDE it, as with explicit
+                # edges. A Part::Fillet beside the Body left the Body -- what
+                # gets checked and exported -- without any fillet, while the
+                # reply said "all N edges" (MCP FREECAD v2, 2026-10-14).
+                return self._create_fillet_with_edges(
+                    object_name, list(range(1, n_edges + 1)), radius, name)
 
             fillet = doc.addObject("Part::Fillet", name)
             fillet.Base = obj
@@ -404,9 +448,10 @@ class PartDesignOpsHandler(BaseHandler):
             if not edge_indices:
                 return "No edges were selected"
 
-            body = self.find_body_for_object(obj, doc)
+            body, base = self._dressup_target(obj, doc)
 
             if body:
+                obj = base
                 chamfer = body.newObject("PartDesign::Chamfer", name)
                 chamfer.Size = distance
                 edge_names = [f"Edge{idx}" for idx in edge_indices]
@@ -462,6 +507,10 @@ class PartDesignOpsHandler(BaseHandler):
             if not hasattr(obj, 'Shape') or not obj.Shape.Edges:
                 return f"Object {object_name} has no edges to chamfer"
             n_edges = len(obj.Shape.Edges)
+            if self._dressup_target(obj, doc)[0] is not None:
+                # in a Body: a PartDesign::Chamfer INSIDE it (see _create_fillet_auto)
+                return self._create_chamfer_with_selection(
+                    args, {"selection_data": {"elements": list(range(1, n_edges + 1))}})
 
             chamfer = doc.addObject("Part::Chamfer", name)
             chamfer.Base = obj
@@ -1473,6 +1522,14 @@ class PartDesignOpsHandler(BaseHandler):
             if not hasattr(obj, 'Shape') or not obj.Shape.Faces:
                 return f"Object {object_name} has no faces for draft"
 
+            if _given_faces(args):
+                idx, err = face_indices(_given_faces(args))
+                if err:
+                    return err
+                return self._create_draft_with_selection(args, {"selection_data": {"elements": idx}})
+            if not FreeCAD.GuiUp:
+                return _HEADLESS_FACES.format(op="draft")
+
             selection_request = self.selector.request_selection(
                 tool_name="draft_faces",
                 selection_type="faces",
@@ -1508,7 +1565,12 @@ class PartDesignOpsHandler(BaseHandler):
             if not face_indices:
                 return "No faces were selected"
 
-            body = self.find_body_for_object(obj, doc)
+            body, obj = self._dressup_target(obj, doc)
+            n_faces = len(obj.Shape.Faces) if hasattr(obj, 'Shape') else 0
+            invalid = [fi for fi in face_indices if not (1 <= fi <= n_faces)]
+            if invalid:
+                return (f"Invalid face index/indices {invalid} for {object_name} "
+                        f"({n_faces} faces, valid range 1-{n_faces})")
 
             if body:
                 draft = body.newObject("PartDesign::Draft", name)
@@ -1553,6 +1615,14 @@ class PartDesignOpsHandler(BaseHandler):
             if auto_shell_closed:
                 return self._create_shell_closed(args)
 
+            if _given_faces(args):
+                idx, err = face_indices(_given_faces(args))
+                if err:
+                    return err
+                return self._create_shell_with_selection(args, {"selection_data": {"elements": idx}})
+            if not FreeCAD.GuiUp:
+                return _HEADLESS_FACES.format(op="shell")
+
             selection_request = self.selector.request_selection(
                 tool_name="shell_solid",
                 selection_type="faces",
@@ -1586,6 +1656,11 @@ class PartDesignOpsHandler(BaseHandler):
             face_indices = selection_result["selection_data"]["elements"]
             if not face_indices:
                 return "No faces were selected for opening"
+
+            if self._dressup_target(obj, doc)[0] is not None:
+                # in a Body: a PartDesign::Thickness INSIDE it. A Part::Thickness
+                # beside the Body left the Body solid (MCP FREECAD v2, 2026-10-14).
+                return self._create_thickness_with_selection(args, selection_result)
 
             # Validate BEFORE creating anything -- same "reject up front,
             # don't silently drop selected faces" contract as
@@ -1703,6 +1778,14 @@ class PartDesignOpsHandler(BaseHandler):
             if not hasattr(obj, 'Shape') or not obj.Shape.Faces:
                 return f"Object {object_name} has no faces for thickness"
 
+            if _given_faces(args):
+                idx, err = face_indices(_given_faces(args))
+                if err:
+                    return err
+                return self._create_thickness_with_selection(args, {"selection_data": {"elements": idx}})
+            if not FreeCAD.GuiUp:
+                return _HEADLESS_FACES.format(op="thickness")
+
             selection_request = self.selector.request_selection(
                 tool_name="thickness_faces",
                 selection_type="faces",
@@ -1733,13 +1816,18 @@ class PartDesignOpsHandler(BaseHandler):
             if not obj:
                 return f"Object not found: {object_name}"
 
-            body = self.find_body_for_object(obj, doc)
+            body, obj = self._dressup_target(obj, doc)
             if not body:
                 return f"Object {object_name} is not in a PartDesign Body. PartDesign::Thickness requires a Body."
 
             face_indices = selection_result["selection_data"]["elements"]
             if not face_indices:
                 return "No faces were selected for thickness opening"
+            n_faces = len(obj.Shape.Faces)
+            invalid = [fi for fi in face_indices if not (1 <= fi <= n_faces)]
+            if invalid:
+                return (f"Invalid face index/indices {invalid} for {object_name} "
+                        f"({n_faces} faces, valid range 1-{n_faces})")
 
             thickness = body.newObject("PartDesign::Thickness", name)
             thickness.Base = (obj, tuple(f"Face{face_idx}" for face_idx in face_indices))
