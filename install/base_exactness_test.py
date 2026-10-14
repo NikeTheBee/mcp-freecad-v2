@@ -355,6 +355,8 @@ def main() -> int:
                  "Q = [V(0, 0, 0), V(8, 0, 0), V(8, 5, 0), V(0, 5, 0)]\n"
                  "for i in range(4):\n    x.addGeometry(Part.LineSegment(Q[i], Q[(i + 1) % 4]))\n"
                  "d.recompute()\n'ok'")
+        r = str(op(inst, "sketch_operations", {"operation": "verify_sketch", "sketch_name": "Plate"}))
+        assert f"Face area: {200 - 2 * math.pi:.2f}" in r, r          # holes subtracted
         r = op(inst, "part_operations", {"operation": "extrude", "profile_sketch": "Plate", "height": 3})
         close(float(py(inst, "import FreeCAD\nFreeCAD.ActiveDocument.getObject('Plate_extruded').Shape.Volume")),
               (200 - 2 * math.pi) * 3, f"part extrude, plate with 2 holes ({str(r)[:24]}...)", rel=1e-9)

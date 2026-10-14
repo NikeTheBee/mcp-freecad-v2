@@ -225,9 +225,14 @@ class SketchOpsHandler(BaseHandler):
                 if wire_count > 0 and closed_wires > 0:
                     try:
                         import Part
-                        face = Part.Face(shape.Wires[0])
+                        # every closed wire, holes subtracted (MCP FREECAD v2): the
+                        # first wire alone gave a plate without its holes -- or a
+                        # hole's circle -- as "the" face area
+                        closed = [w for w in shape.Wires if w.isClosed()]
+                        face = Part.makeFace(closed, "Part::FaceMakerBullseye")
                         results.append("Can create face: Yes")
-                        results.append(f"Face area: {face.Area:.2f} mm²")
+                        results.append(f"Face area: {face.Area:.2f} mm² ({len(closed)} closed "
+                                       f"wire(s), inner ones cut out)")
                     except Exception as e:
                         results.append(f"Can create face: No - {e}")
             else:
