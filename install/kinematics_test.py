@@ -38,6 +38,18 @@ def main() -> int:
     print(f"gripper dead points (mm): {{k: round(v,2) for k,v in dp.items()}}".replace("{k: round(v,2) for k,v in dp.items()}", str({k: round(v,2) for k,v in dp.items()})))
     assert any(-3.0 < v < -1.0 for v in dp.values()), dp          # toggle ~ -2.2 mm
 
+    # --- in-line slider-crank against the textbook law x = r cos t + sqrt(l^2 - r^2 sin^2 t) ---
+    r_, l_ = 10.0, 30.0
+    inline = kin.SliderCrank(pivot=(0.0, 0.0), crank=r_, link=l_, slider_origin=(40.0, 0.0),
+                             slider_dir=(1.0, 0.0), ref_coupler=(r_ * math.cos(0.3), r_ * math.sin(0.3)))
+    for deg in (10, 30, 60, 90, 120, 150):
+        t = math.radians(deg)
+        x = r_ * math.cos(t) + math.sqrt(l_ ** 2 - (r_ * math.sin(t)) ** 2)
+        inline._prev_tip = (r_ * math.cos(t), r_ * math.sin(t))      # the upper branch
+        got = inline.angle(x - 40.0)
+        assert got is not None and abs(math.degrees(got) - deg) < 1e-9, (deg, got)
+    print("in-line slider-crank: crank angle from the slider position, exact (10-150 deg): OK")
+
     # --- four-bar crank-rocker: output must move and stay bounded ---
     fb = kin.FourBar(a=(0, 0), d=(40, 0), r_in=15, coupler=45, r_out=25,
                      ref_theta=math.radians(45))
@@ -46,6 +58,19 @@ def main() -> int:
     assert len(outs) >= 6, fl
     assert max(outs) - min(outs) > 5, "rocker should swing"
     print(f"four-bar rocker swing: {max(outs)-min(outs):.1f} deg over crank sweep")
+    # ...and the rocker angle equals the triangle solution (law of cosines on D-B-C)
+    for deg in (40, 60, 90, 110):
+        t = math.radians(deg)
+        bx, by = 15 * math.cos(t), 15 * math.sin(t)
+        bd = math.hypot(bx - 40, by)
+        psi = math.atan2(by, bx - 40)
+        gam = math.acos((25 ** 2 + bd ** 2 - 45 ** 2) / (2 * 25 * bd))
+        cands = [psi + gam, psi - gam]
+        want = max(cands, key=lambda a: 25 * math.sin(a))          # elbow up: the higher C
+        fb._prev_c = None
+        got = fb.output_angle(t)
+        assert abs(math.remainder(got - want, 2 * math.pi)) < 1e-9, (deg, got, want)
+    print("four-bar rocker angle = law-of-cosines solution: OK")
 
     # --- native solver passthrough (only if FreeCAD present) ---
     try:
