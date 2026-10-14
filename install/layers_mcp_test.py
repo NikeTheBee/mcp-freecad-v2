@@ -108,6 +108,19 @@ async def run(inst: Instance, project: str, out: str) -> None:
             assert "plate-hole (plate with a centred through hole)" in await call("recipe", action="list")
             txt = await call("recipe", action="show", name="plate-hole")
             assert "1. Hole [PartDesign::SubtractiveCylinder]" in txt and "holes on Body" in txt, txt
+            # every requirement can hold on a broken solid: its geometry must be OK too
+            inst.call("execute_python_sync", {"code": (
+                "import FreeCAD, Part\nV = FreeCAD.Vector\n"
+                "o = FreeCAD.ActiveDocument.addObject('Part::Feature', 'Bow')\n"
+                "o.Shape = Part.Face(Part.makePolygon([V(0, 0, 0), V(10, 10, 0), V(10, 0, 0),"
+                " V(0, 10, 0), V(0, 0, 0)])).extrude(V(0, 0, 5))\n"
+                "FreeCAD.ActiveDocument.recompute()\n'ok'")})
+            sid = (await call("require", target="Bow", kind="bbox", params={"size": [10, 10, 5]})).split()[0]
+            txt = await call("recipe", action="save", name="bow")
+            assert txt.startswith("ERROR") and "not verified" in txt and "FAIL Bow" in txt, txt
+            await call("require", target="Bow", kind="remove", replaces=sid)
+            inst.call("execute_python_sync", {"code": (
+                "import FreeCAD\nFreeCAD.ActiveDocument.removeObject('Bow')\n'ok'")})
             txt = await call("recover", action="list")
             assert "Plate" in txt, txt
             txt = await call("checkpoint", action="restore", name="no hole")

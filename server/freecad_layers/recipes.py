@@ -48,6 +48,16 @@ def save(name: str, description: str = "", overwrite: bool = False) -> Dict[str,
                          "(a recipe is only kept once it is verified)")
     if r["status"] != spec.OK:
         raise ValueError(f"not verified, so not kept: {spec.verdict()}")
+    # the requirements can all hold on a broken solid (a self-intersecting part with
+    # the right size): its geometry must be OK too
+    from . import verify
+    for target in sorted({x["target"] for x in s["specs"]}):
+        try:
+            v = verify.check(target)
+        except ValueError:
+            continue                    # not an object (an assembly-wide requirement)
+        if v["status"] != verify.OK:
+            raise ValueError(f"not verified, so not kept: {verify.verdict(target)}")
     data = {
         "recipe": name,
         "description": description,
