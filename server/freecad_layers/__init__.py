@@ -64,7 +64,12 @@ def safe_out_path(path, allowed_exts, overwrite: bool = False) -> Path:
     raw_name = Path(path).name
     if ":" in raw_name:   # NTFS alternate data stream ("evil.exe:x.csv")
         raise ValueError(f"refusing to write {raw_name!r}: ':' is not allowed in a file name")
-    p = Path(path).expanduser().resolve()
+    p = Path(path).expanduser()
+    if not p.is_absolute():
+        # relative to the PROJECT, not to wherever FreeCAD was started: the
+        # launcher starts it in the addon folder, so "plan.dxf" landed in the code
+        p = project_dir() / p
+    p = p.resolve()
     if p.stem.split(".")[0].upper() in _RESERVED:
         raise ValueError(f"refusing to write {p.name!r}: reserved Windows device name")
     exts = {e.lower() if e.startswith(".") else "." + e.lower()

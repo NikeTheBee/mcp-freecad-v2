@@ -33,6 +33,11 @@ def main() -> int:
         r = inst.call("execute_python_sync", {"code": "1+1"})
         assert r and r.get("result") == "2", r
         print("2. upstream auth: no/wrong token rejected, right token accepted: OK")
+        # FreeCAD does not work in the addon folder: a relative export would land in the code
+        import psutil
+        cwd = Path(psutil.Process(pid).cwd()).resolve()
+        assert cwd == LAUNCHER.parents[2].resolve(), cwd
+        print(f"2a. FreeCAD works in the workspace ({cwd.name}), not among the server's code: OK")
 
         # trust rule: the configured exe's folder, or its bin\ (portable build's root stub)
         sys.path.insert(0, str(LAUNCHER.parent))

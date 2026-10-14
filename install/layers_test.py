@@ -149,7 +149,13 @@ try:
     print("FAIL: second reservation accepted"); sys.exit(1)
 except FileExistsError:
     pass
-print("output gate: streams/device names refused, atomic reservation: OK")
+# a relative name lands in the project, not in FreeCAD's working folder (the
+# launcher starts FreeCAD in the addon folder: "plan.csv" used to land in the code)
+from pathlib import Path
+rel = safe_out_path(os.path.join("rel", "plan.csv"), {".csv"})
+assert rel.is_relative_to(Path(_tmp).resolve()), rel
+assert rel.is_file() and rel.parent.name == "rel", rel
+print("output gate: streams/device names refused, atomic reservation, relative -> project: OK")
 
 # --- secure-by-design: a tampered state.json must not escape /checkpoints --
 s = state.load()

@@ -158,7 +158,11 @@ def spawn(freecadcmd: Path) -> subprocess.Popen:
     # MANAGED: this FreeCAD is started again by us when it exits (supervisor, or
     # the next ensure()), so the base's restart_freecad may restart it by exiting.
     env = dict(os.environ, FREECAD_MCP_PORT=str(PORT), MCP_FREECAD_MANAGED="1")
-    proc = subprocess.Popen([str(freecadcmd), str(HEADLESS)], cwd=str(HEADLESS.parent),
+    # working folder = the workspace, not the addon: a relative file name given
+    # to FreeCAD (exportStl("part.stl")) must not land among the server's code
+    work = Path(os.environ.get("MCP_FREECAD_PROJECT_DIR") or REPO)
+    proc = subprocess.Popen([str(freecadcmd), str(HEADLESS)],
+                            cwd=str(work if work.is_dir() else HEADLESS.parent),
                             stdin=subprocess.DEVNULL, stdout=logf, stderr=logf,
                             creationflags=flags, close_fds=True, env=env)
     log(f"started FreeCAD pid={proc.pid}")

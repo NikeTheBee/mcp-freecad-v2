@@ -45,6 +45,11 @@ async def run(inst: Instance, project: str, out: str) -> None:
 
             assert "Project: Plate" in await call("project_init", name="Plate",
                                                   intent="60x40x8, one D6 through hole centred")
+            # FreeCAD works in the selected project: a relative export lands there
+            here = Path(project) / "projects" / "Plate"
+            r = inst.call("execute_python_sync", {"code": (
+                f"import os\nos.path.samefile(os.getcwd(), {str(here)!r})")})
+            assert r.get("result") == "True", (r, here)
             # model the plate with the base's own tools path (setup only)
             inst.call("execute_python_sync", {"code": (
                 "import FreeCAD\n"

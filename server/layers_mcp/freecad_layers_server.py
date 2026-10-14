@@ -98,6 +98,14 @@ _fl._mcpfc_stamp = _stamp
 from freecad_layers import (state, verify, checkpoint, recovery, spec, analysis, bom, drawing, gate,
                             fem, render, projects, recipes)
 """
+# FreeCAD's working folder follows the selected project: a relative file name
+# (an STL export, a saved copy) lands in the project the user is working on
+_CHDIR = """
+try:
+    os.chdir(_fl.project_dir())
+except OSError:
+    pass
+"""
 
 mcp = MCPServer(
     "freecad-layers",
@@ -129,6 +137,7 @@ def _run(template: str, /, _timeout: float = 30.0, **args: Any) -> Any:
     env_dir = os.environ.get("MCP_FREECAD_PROJECT_DIR")
     code = (_PRELUDE
             + (f"os.environ['MCP_FREECAD_PROJECT_DIR'] = {env_dir!r}\n" if env_dir else "")
+            + _CHDIR
             + f"_a = json.loads({json.dumps(json.dumps(args))})\n"
             + template
             + "\njson.dumps(_out, default=str)")
@@ -198,7 +207,7 @@ _out = "\\n".join(_lines)
 def project_init(name: str, intent: str = "") -> str:
     """Create a NEW project (own memory, contract, checkpoints, autosaves) and select it.
     Never overwrites: an existing name is refused; use project_switch to reopen it."""
-    return _run("projects.create(_a['name'], _a['intent']); _out = state.summary()",
+    return _run("projects.create(_a['name'], _a['intent'])" + _CHDIR + "_out = state.summary()",
                 name=name, intent=intent)
 
 
@@ -226,8 +235,8 @@ else:
 def project_switch(name: str) -> str:
     """Select an existing project ("default" = the original one). Open FreeCAD documents stay
     open, and checks use the ACTIVE one: the reply says which it is."""
-    return _run("projects.switch(_a['name']); _out = chr(10).join((state.summary(), "
-                "projects.listing(), projects.documents_line()))", name=name)
+    return _run("projects.switch(_a['name'])" + _CHDIR + "_out = chr(10).join(("
+                "state.summary(), projects.listing(), projects.documents_line()))", name=name)
 
 
 @mcp.tool()
