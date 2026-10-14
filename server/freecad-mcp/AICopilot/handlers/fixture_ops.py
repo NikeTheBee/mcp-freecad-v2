@@ -103,9 +103,14 @@ def _extract_topology(shape) -> dict[str, Any]:
     flip — face/edge/vertex counts, volume, and bbox are all invariant
     under a mirror, but CenterOfMass shifts. See _SCHEMA_VERSION's comment.
     """
-    bb = shape.BoundBox
+    # MCP FREECAD v2: the exact box. Shape.BoundBox bounds the triangulation of
+    # curved faces once the shape has been meshed -- and save_fixture's own STL
+    # export meshes it: an unchanged loft read 24.84 x 26.82 when saved, then
+    # 20.00 x 19.99 at the next compare (exact: 20 x 20).
+    bb = BaseHandler._exact_bbox(shape)
     com = shape.CenterOfMass
     return {
+        "bbox_method": "exact",
         "schema_version": _SCHEMA_VERSION,
         "face_count": len(shape.Faces),
         "edge_count": len(shape.Edges),
@@ -272,6 +277,11 @@ def _compare_values(actual, saved, tolerances: dict[str, Any]) -> dict[str, Any]
         checks['bbox'] = {'ok': bbox_ok, 'coordinates': bbox_detail}
         if not bbox_ok:
             all_ok = False
+            if saved.get('bbox_method') != 'exact':
+                checks['bbox']['note'] = (
+                    "this fixture's box was saved with Shape.BoundBox, which is "
+                    "inexact on curved faces and changes once the shape is meshed: "
+                    "if nothing else differs, re-run save_fixture")
 
     # Center of mass — absolute tolerance per axis. This is the field that
     # actually catches a mirror/chirality flip (see _SCHEMA_VERSION's
@@ -610,7 +620,8 @@ class FixtureOpsHandler(BaseHandler):
                             coord for coord, cv in ch.get('coordinates', {}).items()
                             if not cv.get('ok', True)
                         ]
-                        detail_parts.append(f"bbox[{', '.join(bad_coords)}]")
+                        note = f" -- {ch['note']}" if ch.get('note') else ""
+                        detail_parts.append(f"bbox[{', '.join(bad_coords)}]{note}")
                     elif field == 'volume':
                         pct = ch.get('relative_error', 0) * 100
                         detail_parts.append(

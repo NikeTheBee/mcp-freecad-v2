@@ -339,9 +339,9 @@ class VerificationOpsHandler(BaseHandler):
           boolean ops and produce incorrect slices.  Call before committing a
           generated solid to a document or exporting to STL.
 
-        Wraps Part.Shape.check() (FreeCAD's exposure of BRepCheck_Analyzer).
-        A shape that passes isValid() but has subtle geometry errors will still
-        be caught here.
+        Wraps Part.Shape.check(True): BRepCheck_Analyzer plus the boolean (BOP)
+        argument check, which finds faces and solids crossing each other. A shape
+        that passes isValid() but has subtle geometry errors will still be caught here.
 
         Args (from args dict):
           object_name: Name or label of the FreeCAD object to check.
@@ -374,7 +374,10 @@ class VerificationOpsHandler(BaseHandler):
             check_result = ""
             check_ok = True
             try:
-                result = shape.check()
+                # MCP FREECAD v2: with the boolean (BOP) check. BRepCheck alone
+                # does not look for faces crossing each other: a compound of two
+                # overlapping solids read "no self-intersections detected".
+                result = shape.check(True)
                 if result:  # non-empty string → errors were reported
                     check_result = str(result)
                     check_ok = False

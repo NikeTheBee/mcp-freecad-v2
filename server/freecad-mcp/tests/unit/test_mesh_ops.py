@@ -422,6 +422,33 @@ class TestMeshToSolid(unittest.TestCase):
         self.assertIn("Converted mesh", result)
         self.assertIn("sewing", result)
 
+    def test_open_mesh_kept_as_shell_without_volume(self):
+        """MCP FREECAD v2: makeSolid does not refuse an open mesh -- it gave an
+        invalid 'solid' with a wrong volume, replied as converted."""
+        mesh_obj = make_mesh_object("Terrain")
+        doc = make_mock_doc([mesh_obj])
+        mock_FreeCAD.ActiveDocument = doc
+
+        mock_shape = MagicMock()
+        mock_shape.removeSplitter.return_value = mock_shape
+        mock_shape.Shells = [MagicMock()]
+        mock_shape.BoundBox = types.SimpleNamespace(XLength=1.0, YLength=1.0, ZLength=1.0)
+        mock_Part.Shape.return_value = mock_shape
+
+        def invalid_solid():
+            s = MagicMock()
+            s.isValid.return_value = False
+            s.Volume = 5478.26
+            return s
+        mock_Part.makeSolid.reset_mock()
+        mock_Part.makeSolid.side_effect = [invalid_solid(), invalid_solid()]
+        doc.addObject.return_value = MagicMock(Name="Terrain_Solid")
+
+        result = self.handler.mesh_to_solid({'object_name': 'Terrain'})
+        self.assertIn("NOT a solid", result)
+        self.assertIn("Volume: none", result)
+        self.assertNotIn("5478", result)
+
 
 class TestGetMeshInfo(unittest.TestCase):
     """Tests for get_mesh_info operation."""

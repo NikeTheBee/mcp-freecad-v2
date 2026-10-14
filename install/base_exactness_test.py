@@ -11,11 +11,13 @@ Sentinel: BASE_EXACT_OK
 """
 import json
 import math
+import shutil
 import sys
 import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+REPO = Path(__file__).resolve().parent.parent
 from _fc_instance import Instance  # noqa: E402
 
 PI9 = math.pi * 9
@@ -523,6 +525,46 @@ def main() -> int:
         txt = str(op(inst, "geometric_verification", {"operation": "verify_orientation",
                                                       "object_name": "Dome", "expected_axis": "+Z"}))
         assert '"ok": true' in txt and "dot = 1.0000" in txt, txt
+
+        # two overlapping solids in one compound: BRepCheck alone said "no self-intersections"
+        py(inst, "import FreeCAD, Part\nd = FreeCAD.ActiveDocument\nV = FreeCAD.Vector\n"
+                 "c = d.addObject('Part::Feature', 'Overlap2')\n"
+                 "c.Shape = Part.makeCompound([Part.makeBox(10, 10, 10), Part.makeBox(10, 10, 10, V(5, 0, 0))])\n"
+                 "d.recompute()\n'ok'")
+        txt = str(op(inst, "geometric_verification", {"operation": "verify_no_self_intersection",
+                                                      "object_name": "Overlap2"}))
+        assert '"ok": false' in txt, txt
+
+        # mesh -> solid: a closed 10x20x30 mesh gives 6000 mm3; with one triangle missing
+        # it used to give an invalid "solid" of 5478 mm3
+        py(inst, "import FreeCAD, Part, MeshPart\nd = FreeCAD.ActiveDocument\n"
+                 "m = MeshPart.meshFromShape(Shape=Part.makeBox(10, 20, 30), LinearDeflection=0.1)\n"
+                 "d.addObject('Mesh::Feature', 'MClosed').Mesh = m\n"
+                 "m2 = m.copy()\nm2.removeFacets([0])\n"
+                 "d.addObject('Mesh::Feature', 'MOpen').Mesh = m2\nd.recompute()\n'ok'")
+        txt = str(op(inst, "mesh_operations", {"operation": "mesh_to_solid", "object_name": "MClosed"}))
+        assert "Volume: 6000.00" in txt and "WARNING" not in txt, txt
+        txt = str(op(inst, "mesh_operations", {"operation": "mesh_to_solid", "object_name": "MOpen"}))
+        assert "NOT a solid" in txt and "Volume: none" in txt, txt
+
+        # fixture round trip on a curved part: saving meshes the shape (STL), which used to
+        # change Shape.BoundBox -- the very next compare of the unchanged part failed
+        py(inst, "import FreeCAD, Part\nd = FreeCAD.ActiveDocument\nV = FreeCAD.Vector\n"
+                 "w1 = Part.Wire(Part.Circle(V(0, 0, 0), V(0, 0, 1), 10).toShape())\n"
+                 "w2 = Part.Wire(Part.Circle(V(3, 0, 20), V(0, 0, 1), 6).toShape())\n"
+                 "d.addObject('Part::Feature', 'FixLoft').Shape = Part.makeLoft([w1, w2], True)\n"
+                 "d.recompute()\n'ok'")
+        fixture_dir = REPO / "server" / "freecad-mcp" / "fixtures" / "exactness-tmp"
+        try:
+            txt = str(op(inst, "fixture_operations", {"operation": "save_fixture", "shape": "FixLoft",
+                                                      "fixture_name": "exactness-tmp"}))
+            assert '"ok": true' in txt, txt
+            txt = str(op(inst, "fixture_operations", {"operation": "compare_to_fixture",
+                                                      "shape": "FixLoft",
+                                                      "fixture_name": "exactness-tmp"}))
+            assert '"ok": true' in txt, txt[:600]
+        finally:
+            shutil.rmtree(fixture_dir, ignore_errors=True)
     finally:
         inst.stop()
     print("BASE_EXACT_OK")

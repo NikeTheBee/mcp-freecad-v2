@@ -447,6 +447,17 @@ class TestVerifyNoSelfIntersection(unittest.TestCase):
         self.assertFalse(r['ok'], r['message'])
         self.assertIn('self-intersection', r['details']['check_result'].lower())
 
+    def test_runs_the_boolean_check(self):
+        """MCP FREECAD v2: check() without the BOP check let a compound of two
+        overlapping solids through as 'no self-intersections detected'."""
+        obj = make_part_object("Two")
+        obj.Shape.isValid = MagicMock(return_value=True)
+        obj.Shape.check = MagicMock(return_value=None)
+        mock_FreeCAD.ActiveDocument = make_mock_doc([obj])
+
+        self.h.verify_no_self_intersection({'object_name': 'Two'})
+        obj.Shape.check.assert_called_once_with(True)
+
     def test_check_returns_error_string_fails(self):
         """check() returning a non-OK string (not 'Shape is valid') is an error."""
         obj = make_part_object("Bad")

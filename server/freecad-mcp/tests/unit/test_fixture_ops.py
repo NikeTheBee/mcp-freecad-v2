@@ -547,5 +547,31 @@ class TestFixtureNameValidation(unittest.TestCase):
                           f"Name {name!r} should produce 'invalid' message, got: {r['message']}")
 
 
+class TestBboxMethod(unittest.TestCase):
+    """MCP FREECAD v2: the box is the exact one (Shape.BoundBox changes once a
+    curved shape is meshed, and save_fixture's STL export meshes it)."""
+
+    @staticmethod
+    def _topo(xmax, method=None):
+        t = {"bbox": {"x": [0.0, xmax], "y": [0.0, 20.0], "z": [0.0, 20.0]}}
+        if method:
+            t["bbox_method"] = method
+        return t
+
+    def test_topology_records_the_exact_method(self):
+        obj = _make_box_obj("Box")
+        self.assertEqual(_fixture_ops_module._extract_topology(obj.Shape)["bbox_method"], "exact")
+
+    def test_old_fixture_box_mismatch_says_why(self):
+        cmp = _fixture_ops_module._compare_values(self._topo(20.0, "exact"), self._topo(24.84), {})
+        self.assertFalse(cmp["ok"])
+        self.assertIn("re-run save_fixture", cmp["checks"]["bbox"]["note"])
+
+    def test_exact_fixture_box_mismatch_has_no_note(self):
+        cmp = _fixture_ops_module._compare_values(self._topo(20.0, "exact"), self._topo(24.84, "exact"), {})
+        self.assertFalse(cmp["ok"])
+        self.assertNotIn("note", cmp["checks"]["bbox"])
+
+
 if __name__ == '__main__':
     unittest.main()

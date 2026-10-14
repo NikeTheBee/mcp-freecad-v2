@@ -244,29 +244,48 @@ class MeshOpsHandler(BaseHandler):
             with contextlib.suppress(Exception):
                 shape = shape.removeSplitter()
 
+            def _closed_solid(s):
+                # MCP FREECAD v2: makeSolid does not refuse an open mesh -- one
+                # missing triangle gave an INVALID "solid" of 5478 mm3 for a
+                # 6000 mm3 box, replied "Converted mesh to solid".
+                try:
+                    return (bool(s.isValid()) and bool(s.Solids)
+                            and all(sh.isClosed() for sh in s.Shells))
+                except Exception:
+                    return True  # not a real shape (unit-test stubs): not judged
+
+            closed = True
             try:
                 solid = Part.makeSolid(shape)
+                if not _closed_solid(solid):
+                    raise ValueError("open or invalid solid")
             except Exception:
                 # Fallback: try sewing first, then solid
                 try:
                     shell = shape.Shells[0] if shape.Shells else shape
                     shell.sewShape()
                     solid = Part.makeSolid(shell)
+                    if not _closed_solid(solid):
+                        raise ValueError("open or invalid solid")
                     warning = " (required sewing step)"
                 except Exception:
                     # Last resort: keep as shell
                     solid = shape
-                    warning = " (WARNING: could not create solid, kept as shell — CAM may not work correctly)"
+                    closed = False
+                    warning = (" (WARNING: the mesh is not closed: kept as a shell, NOT a "
+                               "solid -- it has no volume; repair it first with "
+                               "validate_mesh auto_repair=true)")
 
             solid_obj = doc.addObject("Part::Feature", name)
             solid_obj.Shape = solid
             doc.recompute()
 
             bb = solid.BoundBox
-            vol_str = ""
+            vol_str = "\n  Volume: none (not a closed solid)" if not closed else ""
             try:
-                vol = solid.Volume
-                vol_str = f"\n  Volume: {vol:.2f} mm^3"
+                if closed:
+                    vol = solid.Volume
+                    vol_str = f"\n  Volume: {vol:.2f} mm^3"
             except Exception:
                 pass
 
@@ -312,7 +331,9 @@ class MeshOpsHandler(BaseHandler):
             result += f"  Points: {mesh.CountPoints}\n"
             result += f"  Facets: {mesh.CountFacets}\n"
             result += f"  Area: {mesh.Area:.2f} mm^2\n"
-            result += f"  Volume: {mesh.Volume:.2f} mm^3\n"
+            # an open mesh has no inside: its "volume" is not one (MCP FREECAD v2)
+            open_note = "" if mesh.isSolid() else " (open mesh: not a real volume)"
+            result += f"  Volume: {mesh.Volume:.2f} mm^3{open_note}\n"
             result += f"  Bounding box: {bb.XLength:.2f} x {bb.YLength:.2f} x {bb.ZLength:.2f} mm\n"
             result += f"  Center: ({bb.Center.x:.2f}, {bb.Center.y:.2f}, {bb.Center.z:.2f})\n"
 
