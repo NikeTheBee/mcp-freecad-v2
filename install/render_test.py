@@ -17,6 +17,7 @@ import tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "server"))
 
+os.environ["MCP_FREECAD_PROJECT_DIR"] = tempfile.mkdtemp(prefix="mcpfc_render_proj_")
 import FreeCAD  # noqa: E402
 import Part  # noqa: E402
 from freecad_layers import render  # noqa: E402
@@ -72,4 +73,12 @@ for kw in (dict(targets="Plate", path=os.path.join(out_dir, "a.png"), which=["si
         print("refused:", str(e)[:70])
     else:
         raise AssertionError(f"accepted {kw}")
+# default names: several renders in the same second are numbered (the second one used
+# to fail "exists"), and only the newest automatic ones are kept
+render.KEEP_RENDERS = 2
+paths = [render.views("Plate", which=["top"], size_px=200)["path"] for _ in range(3)]
+assert len(set(paths)) == 3, paths
+kept = sorted(os.listdir(os.path.dirname(paths[0])))
+assert kept == sorted(os.path.basename(p) for p in paths[1:]), kept
+print("auto-named renders: no collision within a second, newest kept: OK")
 print("RENDER_OK")

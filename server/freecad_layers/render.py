@@ -32,6 +32,7 @@ _VIEWS = {
 _AXIS_NAMES = {(1, 0, 0): "X", (0, 1, 0): "Y", (0, 0, 1): "Z"}
 _COLORS = [(0.55, 0.68, 0.85), (0.90, 0.62, 0.35), (0.55, 0.80, 0.55), (0.85, 0.55, 0.65),
            (0.75, 0.70, 0.45), (0.60, 0.60, 0.85)]
+KEEP_RENDERS = 50   # pictures named by render_views itself; a path you give is never removed
 
 
 def _unit(v):
@@ -100,9 +101,20 @@ def views(targets, path: Optional[str] = None, which: Sequence[str] = ("front", 
     n_tris = sum(len(t) for _, t in meshes)
 
     names = "_".join(o.Name for o in objs)[:60]
-    if path is None:
-        path = project_dir() / "renders" / f"{names}_{time.strftime('%Y%m%d-%H%M%S')}.png"
-    out = safe_out_path(path, {".png"}, overwrite=overwrite)
+    auto = path is None
+    if auto:
+        # two renders in the same second used to collide ("exists"): number them
+        stem = project_dir() / "renders" / f"{names}_{time.strftime('%Y%m%d-%H%M%S')}"
+        for seq in range(100):
+            try:
+                out = safe_out_path(f"{stem}{f'-{seq:02d}' if seq else ''}.png", {".png"})
+                break
+            except FileExistsError:
+                continue
+        else:
+            raise FileExistsError(f"{stem}*.png: 100 renders in one second")
+    else:
+        out = safe_out_path(path, {".png"}, overwrite=overwrite)
 
     cols = 2 if len(which) > 1 else 1
     rows = math.ceil(len(which) / cols)
@@ -169,5 +181,12 @@ def views(targets, path: Optional[str] = None, which: Sequence[str] = ("front", 
     fig.tight_layout()
     fig.savefig(str(out))
     plt.close(fig)
+    if auto:   # renders/ grew by one picture per call, forever: keep the newest
+        old = sorted(out.parent.glob("*_????????-??????*.png"), key=lambda f: f.stat().st_mtime_ns)
+        for f in old[:-KEEP_RENDERS]:
+            try:
+                f.unlink()
+            except OSError:
+                pass
     return {"path": str(out), "views": list(which), "triangles": n_tris,
             "bbox": [round(bb.XLength, 3), round(bb.YLength, 3), round(bb.ZLength, 3)]}
