@@ -102,6 +102,24 @@ def main() -> int:
         pass
     print("old poisoned spec -> UNKNOWN for itself; remove() refuses unknown ids: OK")
 
+    # no_interference names the TARGET too: "the plate must not interfere with the pins"
+    # checked the pins against each other only, so an oversize pin in the plate passed
+    import Part
+    for i, (x, r) in enumerate(((-10, 2.0), (20, 2.5))):
+        pin = doc.addObject("Part::Feature", f"Pin{i + 1}")
+        pin.Shape = Part.makeCylinder(r, 30, V(x, 0, -10))
+    doc.recompute()
+    sid = spec.require("Body", "no_interference", objects=["Pin1", "Pin2"])
+    res = [x for x in spec.check_all("Body")["results"] if x["id"] == sid][0]
+    assert res["status"] == verify.FAIL and res["measured"][0]["a"] == "Body", res   # Pin1 in the plate
+    try:
+        spec.require("Pin1", "no_interference", objects=["Pin1"])
+        print("FAIL: a one-part no_interference was accepted"); return 1
+    except ValueError:
+        pass
+    spec.remove(sid)
+    print("no_interference includes its target; a single part is refused: OK")
+
     _tmp.cleanup()
     print("SPEC_OK")
     return 0

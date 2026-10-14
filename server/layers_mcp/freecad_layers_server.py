@@ -254,7 +254,7 @@ def require(target: str, kind: str, params: dict | None = None, note: str = "",
     kind: bbox{size:[x,y,z],tol?,any_orientation?} | volume{value,tol|min|max} |
     mass{density_g_cm3,value,tol|min|max} | solids{count} |
     holes{count?,diameter?,through?,tol?} | hole_at{diameter,center:[x,y,z|null],tol?} |
-    min_wall{min} | no_interference{objects:[...]} | valid{}.
+    min_wall{min} | no_interference{objects:[...], the target included} | valid{}.
     The user changed a requirement: replaces="S3" swaps it in one step;
     kind="remove" with replaces="S3" only deletes it."""
     return _run("""

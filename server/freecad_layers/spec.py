@@ -17,7 +17,7 @@ Kinds (all lengths mm, volumes mm³, masses g):
   holes       count, diameter (+tol), through (bool, optional)
   hole_at     diameter, center=[x, y, z] (+tol): one hole there
   min_wall    min (estimated by analysis.min_wall)
-  no_interference  objects=[names]  (target ignored)
+  no_interference  objects=[names]  (+ the target when it is an object)
   valid       (verify.check must be OK)
 """
 from __future__ import annotations
@@ -39,6 +39,8 @@ def require(target: str, kind: str, note: str = "", **params) -> str:
     if kind not in KINDS:
         raise ValueError(f"unknown spec kind {kind!r}; use one of {KINDS}")
     _validate(kind, params)
+    if kind == "no_interference" and len(set(params["objects"]) | {target}) < 2:
+        raise ValueError("spec 'no_interference' needs 2 or more parts: the target and objects=[...]")
 
     def add(s):
         nums = [int(x["id"][1:]) for x in s["specs"] if str(x.get("id", "")).startswith("S")
@@ -125,10 +127,10 @@ def _validate(kind: str, p: Dict[str, Any]) -> None:
         _number(kind, "min", p["min"], 0, strict=True)
     if kind == "no_interference":
         objs = p["objects"]
-        if (not isinstance(objs, (list, tuple)) or len(objs) < 2
+        if (not isinstance(objs, (list, tuple)) or not objs
                 or not all(isinstance(o, str) and o for o in objs) or len(set(objs)) != len(objs)):
-            raise ValueError("no_interference objects must be a list of 2 or more distinct "
-                             f"object names (got {objs!r})")
+            raise ValueError("no_interference objects must be a list of distinct object names "
+                             f"(got {objs!r})")
 
 
 def remove(spec_id: str) -> None:
@@ -176,10 +178,20 @@ def _eval_spec(spec: Dict[str, Any], doc=None) -> Dict[str, Any]:
     res = {"id": spec["id"], "kind": kind, "target": target}
     try:
         if kind == "no_interference":
-            a = verify.check_assembly(p["objects"])
+            names = list(p["objects"])
+            # the target is one of the parts when it is a real object: require("Plate",
+            # "no_interference", objects=[pins]) checked the pins against each other only,
+            # never against the plate
+            try:
+                t = verify._resolve(target, doc)
+            except ValueError:
+                t = None
+            if t is not None and t.Name not in names and getattr(t, "Label", None) not in names:
+                names.insert(0, t.Name)
+            a = verify.check_assembly(names)
             hits = a["interferences"]
             return {**res, "status": FAIL if hits else OK, "measured": hits,
-                    "expected": "no overlap"}
+                    "expected": "no overlap between " + ", ".join(names)}
         obj = verify._resolve(target, doc)
     except ValueError as e:
         return {**res, "status": FAIL, "measured": None, "expected": "object exists",

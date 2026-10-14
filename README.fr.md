@@ -52,6 +52,9 @@ au lieu de croire la lecture qu'en fait l'IA.
   autour de Z alors que la réponse disait « around Y-axis » (la lettre désignait les axes propres
   de l'esquisse). Révolution, rainure et hélice prennent maintenant les axes de la pièce, comme
   les réseaux ; la normale de l'esquisse est refusée.
+- **« Pas d'interférence » inclut la pièce visée** : `require("Plaque", "no_interference",
+  objects=[goupilles])` ne comparait que les goupilles entre elles, si bien qu'une goupille trop
+  grosse dans la plaque passait.
 - **Une fonction laissée hors de la pièce donne FAIL** : un Body dont la Tip s'arrête avant sa
   dernière fonction, ou avec une fonction supprimée, passait OK (un solide valide, sans le trou).
 - **Les fichiers arrivent dans le projet** : un fichier nommé sans dossier (`plan.dxf`,

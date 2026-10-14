@@ -48,6 +48,9 @@ trusting the AI's reading of it.
 - **Revolve around the axis you name**: on a sketch drawn in the XZ plane, "around y" turned around
   Z while the reply said "around Y-axis" (the letter named the sketch's own axes). Revolution,
   groove and helix now take the part's axes, like the patterns; the sketch's normal is refused.
+- **"No interference" includes the part it is set on**: `require("Plate", "no_interference",
+  objects=[pins])` checked the pins against each other only, so an oversize pin in the plate
+  passed.
 - **A feature left out of the part is a FAIL**: a Body whose Tip stops before its last feature, or
   with a suppressed feature, used to check OK (a valid solid, without the hole).
 - **Files land in the project**: a file named without a folder (`plan.dxf`, `part.stl`) used to land
