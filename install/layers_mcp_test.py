@@ -173,6 +173,10 @@ async def run(inst: Instance, project: str, out: str) -> None:
             assert txt.startswith("ERROR no requirement 'S99'"), txt     # no wrapper prefix
             txt = await call("require", target="Body", kind="holes", params={"diam": 6})
             assert txt.startswith("ERROR") and "unknown parameter" in txt, txt
+            # a requirement set on a step of the Body is checked by nobody: said at once
+            txt = await call("require", target="Pad", kind="valid")
+            assert "note: Pad is a step of Body; a requirement on the part goes on Body" in txt, txt
+            await call("require", target="Pad", kind="remove", replaces=txt.split()[0])
             # a hole that cuts nothing / would break the part is not kept
             vol = await call("check", target="Body")
             txt = await call("pd_hole", body="Body", diameter=3, x=1e9, y=0)

@@ -88,6 +88,12 @@ print("export STL/3MF: placed, measured, relative path in the project: OK")
 # --- refusals leave nothing behind ---
 assert "exists" in refused(export.export, "Plate", "out/plate.stl")
 assert "format must be" in refused(export.export, "Plate", fmt="obj")
+pdb = doc.addObject("PartDesign::Body", "PB")
+pad = pdb.newObject("PartDesign::AdditiveBox", "PadStep")
+pdb.newObject("PartDesign::SubtractiveCylinder", "Drill").Height = 20
+doc.recompute()
+assert "is a step of PB, not the whole part: export PB" in refused(export.export, "PadStep", "out/x.stl")
+assert not (proj / "out" / "x.stl").exists()
 sid =spec.require("Plate", "mass", density_g_cm3=1.24, max=5)        # ~23 g: FAIL
 why = refused(export.export, "Plate", "out/heavy.stl")
 assert "check says FAIL" in why and "mass" in why, why
