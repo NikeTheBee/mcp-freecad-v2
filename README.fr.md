@@ -36,6 +36,11 @@ au lieu de croire la lecture qu'en fait l'IA.
   profondeur. Sur un solide Part simple, le fraisage de la base ne coupait rien (son cône était
   sous la pièce) et le lamage se faisait sur la face du dessous : les deux sont maintenant
   dessus.
+- **Les extrusions gardent leurs trous** : l'extrusion/révolution Part de la base n'utilisait que
+  le premier contour de l'esquisse, si bien qu'une plaque sortait sans ses trous (ou réduite à un
+  cylindre quand un trou était dessiné en premier) ; une nervure partait selon l'axe Y global et
+  donnait des solides de volume nul. Les deux prennent maintenant tout le profil, selon la
+  normale de l'esquisse, et refusent une direction couchée dans l'esquisse.
 - **Congés, chanfreins et coques sont dans la pièce** : « congé sur toutes les arêtes » d'une pièce
   PartDesign créait un objet à côté du Body, qui gardait ses arêtes vives alors que la réponse
   disait « all 12 edges » (de même pour chanfrein, coque, lissage et balayage : un lissage des

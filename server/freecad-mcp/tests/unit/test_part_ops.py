@@ -13,6 +13,9 @@ from unittest.mock import MagicMock, patch
 from handlers.part_ops import PartOpsHandler
 
 from tests.unit._freecad_mocks import (
+    _Placement,
+    _Rotation,
+    _Vec,
     assert_error_contains,
     assert_success_contains,
     make_box_object,
@@ -79,6 +82,7 @@ class TestExtrude(unittest.TestCase):
 
     def test_extrude_x_direction(self):
         sketch = make_sketch("RectS", has_wires=True)
+        sketch.Placement = _Placement(rotation=_Rotation(_Vec(0, 1, 0), 90))   # YZ plane: normal x
         doc = make_mock_doc([sketch])
         mock_FreeCAD.ActiveDocument = doc
 
@@ -86,18 +90,19 @@ class TestExtrude(unittest.TestCase):
             'profile_sketch': 'RectS', 'height': 5, 'direction': 'x',
         })
 
-        assert_success_contains(self, result, "x")
+        assert_success_contains(self, result, "Extruded RectS by 5mm in x direction")
 
     def test_extrude_uppercase_direction_not_silently_z(self):
         """'X' must extrude in X — extrude used to be case-sensitive and would
         silently fall through to Z for any non-lowercase value."""
         sketch = make_sketch("RectS", has_wires=True)
+        sketch.Placement = _Placement(rotation=_Rotation(_Vec(0, 1, 0), 90))   # YZ plane: normal x
         doc = make_mock_doc([sketch])
         mock_FreeCAD.ActiveDocument = doc
         result = self.handler.extrude({
             'profile_sketch': 'RectS', 'height': 5, 'direction': 'X',
         })
-        assert_success_contains(self, result, "x")
+        assert_success_contains(self, result, "in x direction")
 
     def test_extrude_invalid_direction_errors(self):
         """An unrecognized direction must error, not silently extrude in Z."""
@@ -108,6 +113,16 @@ class TestExtrude(unittest.TestCase):
             'profile_sketch': 'RectS', 'height': 5, 'direction': 'diagonal',
         })
         self.assertIn("Invalid direction", result)
+
+    def test_extrude_in_the_sketch_plane_is_refused(self):
+        """MCP FREECAD v2: 'x' on an XY sketch lies in its plane (no volume)."""
+        sketch = make_sketch("RectS", has_wires=True)
+        doc = make_mock_doc([sketch])
+        mock_FreeCAD.ActiveDocument = doc
+        result = self.handler.extrude({
+            'profile_sketch': 'RectS', 'height': 5, 'direction': 'x',
+        })
+        assert_error_contains(self, result, "lies in the plane")
 
     def test_extrude_uses_face_path_when_only_faces(self):
         """When sketch has no Wires but has Faces, fall back to Shape.extrude."""

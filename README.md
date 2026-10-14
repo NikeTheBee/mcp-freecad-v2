@@ -34,6 +34,10 @@ trusting the AI's reading of it.
   not at the top of the whole part (on a stepped part it began in the air), and is measured once
   made: through, depth. On a plain Part solid, the base's countersink cut nothing (its cone lay
   under the part) and the counterbore went on the bottom face: both now sit on the top.
+- **Extrusions keep their holes**: the base's Part extrude/revolve used the sketch's first wire
+  only, so a plate sketch came out without its holes (or as a lone cylinder when a hole was drawn
+  first); a rib went along the global Y axis and made solids of zero volume. Both now use the
+  whole profile along the sketch's own normal, and refuse a direction lying in the sketch.
 - **Fillets, chamfers and shells land in the part**: "fillet all edges" of a PartDesign part made
   a separate object beside the Body, which kept its sharp edges while the reply said "all 12
   edges" (same for chamfer, shell, loft and sweep: a loft of a Body's sketches left the Body

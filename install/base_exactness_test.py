@@ -340,6 +340,31 @@ def main() -> int:
             r = op(inst, "partdesign_operations", args)
             close(body_volume(inst), want, f"partdesign {what} ({str(r)[:28]}...)", rel=1e-6)
 
+        # Part extrude of a plate sketch whose FIRST wire is a hole: the whole profile, holes
+        # cut (it extruded Wires[0] alone: a cylinder instead of the plate); an XZ sketch with
+        # no direction goes along its normal (a fixed "z" lay in its plane)
+        py(inst, "import FreeCAD, Part\nfor _n in list(FreeCAD.listDocuments()):\n"
+                 "    FreeCAD.closeDocument(_n)\nd = FreeCAD.newDocument('Ext')\nV = FreeCAD.Vector\n"
+                 "s = d.addObject('Sketcher::SketchObject', 'Plate')\n"
+                 "s.addGeometry(Part.Circle(V(5, 5, 0), V(0, 0, 1), 1))\n"
+                 "P = [V(0, 0, 0), V(20, 0, 0), V(20, 10, 0), V(0, 10, 0)]\n"
+                 "for i in range(4):\n    s.addGeometry(Part.LineSegment(P[i], P[(i + 1) % 4]))\n"
+                 "s.addGeometry(Part.Circle(V(15, 5, 0), V(0, 0, 1), 1))\n"
+                 "x = d.addObject('Sketcher::SketchObject', 'Side')\n"
+                 "x.Placement = FreeCAD.Placement(V(), FreeCAD.Rotation(V(1, 0, 0), 90))\n"
+                 "Q = [V(0, 0, 0), V(8, 0, 0), V(8, 5, 0), V(0, 5, 0)]\n"
+                 "for i in range(4):\n    x.addGeometry(Part.LineSegment(Q[i], Q[(i + 1) % 4]))\n"
+                 "d.recompute()\n'ok'")
+        r = op(inst, "part_operations", {"operation": "extrude", "profile_sketch": "Plate", "height": 3})
+        close(float(py(inst, "import FreeCAD\nFreeCAD.ActiveDocument.getObject('Plate_extruded').Shape.Volume")),
+              (200 - 2 * math.pi) * 3, f"part extrude, plate with 2 holes ({str(r)[:24]}...)", rel=1e-9)
+        r = op(inst, "part_operations", {"operation": "extrude", "profile_sketch": "Side", "height": 2})
+        close(float(py(inst, "import FreeCAD\nFreeCAD.ActiveDocument.getObject('Side_extruded').Shape.Volume")),
+              80.0, f"part extrude of an XZ sketch, no direction ({str(r)[:30]}...)", rel=1e-9)
+        r = str(op(inst, "part_operations", {"operation": "extrude", "profile_sketch": "Side",
+                                             "height": 2, "direction": "z"}))
+        assert "lies in the plane" in r, r
+
         # rib of a 10 x 4 rectangle sketched on XY, 3 mm: along the sketch's normal (it went
         # along global Y, within the sketch's plane: a solid of zero volume, replied as made)
         py(inst, "import FreeCAD, Part\nfor _n in list(FreeCAD.listDocuments()):\n"

@@ -15,39 +15,65 @@ from .base import (
 class PartOpsHandler(BaseHandler):
     """Handler for Part workbench operations (extrude, revolve, mirror, section, scale)."""
 
+    @staticmethod
+    def _profile(shape):
+        """The whole profile as planar face(s): every closed wire, inner loops
+        cut out, in any order (MCP FREECAD v2, 2026-10-14). Extruding or
+        revolving Wires[0] alone dropped a plate's holes -- or made a cylinder
+        of the plate when a circle came first. None: nothing closed."""
+        import Part
+        if shape.Wires:
+            closed = [w for w in shape.Wires if w.isClosed()]
+            return Part.makeFace(closed, "Part::FaceMakerBullseye") if closed else None
+        return shape if shape.Faces else None
+
+    @staticmethod
+    def _plane_normal(obj, profile):
+        """Unit normal of the profile's plane: the sketch's own, else its face's."""
+        try:
+            return obj.Placement.Rotation.multVec(FreeCAD.Vector(0, 0, 1))
+        except Exception:
+            faces = list(getattr(profile, "Faces", []) or [])
+            return faces[0].normalAt(0, 0) if faces else FreeCAD.Vector(0, 0, 1)
+
     def extrude(self, args: dict[str, Any]) -> str:
         """Extrude a sketch or wire profile."""
         try:
             profile_sketch = args.get('profile_sketch', '')
             height = args.get('height', 10)
             # Normalize case — 'X'/'Y'/'Z' must not silently fall through to Z
-            # (revolve already lowercases; extrude didn't).
-            direction = str(args.get('direction', 'z')).lower()
+            # (revolve already lowercases; extrude didn't). Omitted: along the
+            # sketch's own normal (a fixed 'z' lay IN the plane of an XZ sketch).
+            given = args.get('direction')
+            direction = str(given).lower() if given is not None else None
 
             doc, sketch, err = self.resolve_object(profile_sketch, attr='Shape', noun='Sketch')
             if err:
                 return err
 
+            shape = sketch.Shape
+            profile = self._profile(shape)
+            if profile is None:
+                return (f"Sketch {profile_sketch} has no valid wires or faces to extrude"
+                        if not shape.Wires else f"Sketch {profile_sketch} has no closed profile to extrude")
+            normal = self._plane_normal(sketch, profile)
+
             # Determine extrusion vector
-            if direction == 'x':
-                vec = FreeCAD.Vector(height, 0, 0)
-            elif direction == 'y':
-                vec = FreeCAD.Vector(0, height, 0)
-            elif direction == 'z':
-                vec = FreeCAD.Vector(0, 0, height)
+            axes = {'x': FreeCAD.Vector(1, 0, 0), 'y': FreeCAD.Vector(0, 1, 0), 'z': FreeCAD.Vector(0, 0, 1)}
+            if direction is None:
+                unit = normal
+                direction = next(("-" + k if float(a.dot(normal)) < 0 else k
+                                  for k, a in axes.items() if abs(abs(float(a.dot(normal))) - 1.0) < 1e-9),
+                                 "the sketch's normal")
+            elif direction in axes:
+                unit = axes[direction]
             else:
                 return f"Invalid direction {direction!r}; use 'x', 'y', or 'z'"
-
-            shape = sketch.Shape
-            import Part
-
-            if shape.Wires:
-                face = Part.Face(shape.Wires[0])
-                extruded = face.extrude(vec)
-            elif shape.Faces:
-                extruded = shape.extrude(vec)
-            else:
-                return f"Sketch {profile_sketch} has no valid wires or faces to extrude"
+            if abs(float(unit.dot(normal))) < 1e-9:
+                return (f"Invalid direction {direction!r}: it lies in the plane of {profile_sketch}, "
+                        "the extrusion would have no volume; omit it to extrude along the sketch's normal")
+            vec = FreeCAD.Vector(unit.x * height, unit.y * height, unit.z * height)
+            extruded = profile.extrude(vec)
 
             extrude_obj = doc.addObject("Part::Feature", f"{profile_sketch}_extruded")
             extrude_obj.Shape = extruded
@@ -83,13 +109,10 @@ class PartOpsHandler(BaseHandler):
             if hasattr(sketch, 'Placement'):
                 pos = sketch.Placement.Base
 
-            if shape.Wires:
-                face = Part.Face(shape.Wires[0])
-                revolved = face.revolve(pos, axis_vec, angle)
-            elif shape.Faces:
-                revolved = shape.Faces[0].revolve(pos, axis_vec, angle)
-            else:
+            profile = self._profile(shape)
+            if profile is None:
                 return f"Sketch {profile_sketch} has no valid wires or faces to revolve"
+            revolved = profile.revolve(pos, axis_vec, angle)
 
             revolve_obj = doc.addObject("Part::Feature", f"{profile_sketch}_revolved")
             revolve_obj.Shape = revolved
