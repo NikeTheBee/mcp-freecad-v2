@@ -25,6 +25,9 @@ doc.recompute()
 ```
 Other additive/subtractive features (same pattern): `PartDesign::Revolution` (set `.Angle`),
 `PartDesign::Groove`, `PartDesign::AdditiveLoft`/`AdditivePipe` (loft/sweep along sketches).
+With the tools, `revolution`/`groove`/`helix` take `axis` = an axis of the BODY (x, y, z), like
+the patterns: a profile drawn on XZ turns around `z`; the sketch's own normal is refused.
+`loft`/`sweep` of a Body's sketches make Body features (check the Body after).
 
 ## Sketch constraints
 After `addGeometry`, add constraints for robust parametrics:
@@ -37,7 +40,9 @@ Prefer the tool: `partdesign_operations(operation="fillet", object_name="Pad", r
 edges=["Edge1", 3])`. Chamfer is the same with `distance`. Inside a Body it creates a
 PartDesign feature; on a Part object it creates `Part::Fillet` / `Part::Chamfer`.
 **Always pass `edges`** (or `auto_select_all=true`): the headless FreeCAD has no interactive
-selection. Then `check` the result. The equivalent in code:
+selection; `object_name` may be the Body itself (its Tip). Hollowing: `thickness` (or `shell`,
+same result in a Body) and `draft` need `faces=[6]` / `["Face6"]` the same way. Then `check`
+the result. The equivalent in code:
 ```python
 f = body.newObject("PartDesign::Fillet", "Fillet")
 f.Base = (pad, ["Edge1", "Edge3"]); f.Radius = 2     # PartDesign::Chamfer is analogous (.Size)
