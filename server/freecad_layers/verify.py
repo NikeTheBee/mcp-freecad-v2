@@ -166,13 +166,15 @@ def check(obj_or_name, doc=None, min_volume: float = 1e-6,
     `expect_solid=False` is for sketches/wires, where "no solid" is expected.
     """
     obj = _resolve(obj_or_name, doc)
-    res: Dict[str, Any] = {"name": getattr(obj, "Name", "?"),
+    bare = not hasattr(obj, "Shape") and hasattr(obj, "Solids")   # a TopoShape, not an object
+    res: Dict[str, Any] = {"name": getattr(obj, "Name", "shape" if bare else "?"),
                            "type": getattr(obj, "TypeId", "?"),
                            "issues": [], "unchecked": []}
-    res["issues"] += _state_issues(obj)
-    res["issues"] += _body_issues(obj)
+    if not bare:
+        res["issues"] += _state_issues(obj)
+        res["issues"] += _body_issues(obj)
 
-    shp = getattr(obj, "Shape", None)
+    shp = obj if bare else getattr(obj, "Shape", None)
     if shp is None or shp.isNull():
         res.update(valid=False, solids=0, closed=False, volume=0.0)
         res["issues"].append("no shape / null shape")

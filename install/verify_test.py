@@ -35,6 +35,9 @@ def main() -> int:
     assert abs(r["volume"] - 6000) < 1e-6 and r["bbox"] == [10, 20, 30], r
     assert r["center_of_mass"] == [5, 10, 15] and r["faces"] == 6, r
     assert verify.watertight("Box")
+    # a bare shape (execute_python use) is checked too, not "no shape"
+    bare = verify.check(Part.makeSphere(10))
+    assert bare["status"] == verify.OK and bare["name"] == "shape", bare
 
     # V1: a wire has no solid -> FAIL (unless the caller says no solid is expected)
     w = doc.addObject("Part::Feature", "Wire")
