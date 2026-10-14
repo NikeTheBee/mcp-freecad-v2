@@ -11,7 +11,7 @@
 | `recipe(save/list/show)` | keep a verified design (refused unless the contract is OK) / reuse its steps |
 | `require(target, kind, params)` | record a user requirement (bbox, holes, hole_at, volume, mass, solids, min_wall, no_interference, valid); unknown or malformed params are refused. The user changed it: `replaces="S3"` swaps it; `kind="remove", replaces="S3"` deletes it |
 | `check(target)` | geometry verdict + the target's requirements; autosaves when all OK |
-| `analyze(target)` | holes (Ø, position, through/blind), min wall estimate |
+| `analyze(target)` | holes (Ø, position, through/blind, depth, axis), min wall estimate. A counterbore or a stepped bore is one bore per diameter (coaxial): give `diameter` in a `holes` requirement |
 | `check_assembly([...])`, `printability(target)` | overlaps between parts; FDM checks |
 | `export(target, format, path)` | STL/3MF/STEP/BREP/IGES, only when `check` is OK; the file is read back and compared with the solid (volume, size, position, closed mesh) |
 | `fem_static(target, fixed, loads, material)` | CalculiX stress analysis: displacement, von Mises, safety factor (see `skill-fem`) |
