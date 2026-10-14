@@ -1,30 +1,27 @@
 # skill-print3d
 
-**Load when:** preparing a model for 3D printing — STL/mesh export, watertight check, scale/units.
+**Load when:** preparing a model for 3D printing — STL/3MF export, watertight check, scale/units.
 
 ## What this is
 3D-print export using **bundled FreeCAD** (`Part`, `Mesh`/`MeshPart`) — no external install, works on
 FreeCAD 1.1 today. The golden rule (cahier des charges §7.2): **never export a non-watertight solid.**
 
-## Recipe (headless / execute_python)
-```python
-import sys; sys.path.insert(0, r"<repo>\server")
-from freecad_layers import verify
+## Use the MCP tools (the code decides)
+1. **`printability(target, bed_mm, min_wall_mm)`** (`freecad-layers`) first: watertight valid solid,
+   fits the bed (any 90° turn), walls ≥ the minimum (exact ray-cast, still sampled: say "estimate"),
+   overhang area (curved faces measured over the face: the ceiling of a horizontal hole counts; a
+   wall exactly at 45° does not). Overhangs are an advisory unless you set `max_overhang_area_mm2`.
+   - An assembly (several solids) is judged as parts printed **one by one**; the advisory says
+     whether they would fit printed together. Print-in-place: check the assembled overhangs too.
+2. **`export(target, format="3mf")`** (or `"stl"`): refused unless `check` is OK; the file is read back
+   and compared with the solid (closed, oriented, volume, size and position). 3MF is ~5x smaller and
+   carries its units (mm); STL has none. Relative paths land in the project folder. Solids that only
+   touch each other are refused (internal faces): overlap and fuse them, or export them one by one.
 
-# 1. GATE on watertightness before exporting
-assert verify.watertight(obj_name), verify.verdict(obj_name)
-
-# 2. Export STL (units are mm — FreeCAD's native; most slicers expect mm)
-doc.getObject(obj_name).Shape.exportStl(r"out.stl")
-```
-For finer mesh control use the `Mesh` workbench:
-```python
-import Mesh, MeshPart
-m = MeshPart.meshFromShape(Shape=obj.Shape, LinearDeflection=0.1, AngularDeflection=0.5,
-                           Relative=False)
-Mesh.Mesh(m.Topology).write(r"out.stl")
-```
-Lower `LinearDeflection` → finer surface (smaller facets, bigger file).
+## Checklist before sending to a slicer
+- `export` said `OK` (it already checked closed, oriented, volume, size).
+- Dimensions in **mm** (`measurement_operations get_bounding_box`); rescale if the source was in cm/inch.
+- Orientation: flattest stable face down (set via `move`/`rotate`) to reduce supports.
 
 ## Repair imported / dirty geometry (§4.6)
 Before printing a supplier STL or a messy mesh, run the standard repair passes (bundled `Mesh`):
@@ -37,19 +34,9 @@ assert not m.hasNonManifolds() and m.isSolid()   # clean + watertight before exp
 ```
 Checks: `hasNonManifolds()`, `hasSelfIntersections()`, `isSolid()`. Example: `install/mesh_repair_test.py`.
 
-## Via the MCP tools (AI-driven)
-1. **`printability(target, bed_mm, min_wall_mm)`** (`freecad-layers`) first: watertight valid solid,
-   fits the bed (any 90° turn), walls ≥ the minimum (exact ray-cast, still sampled: say "estimate"),
-   overhang area. Export only on `OK`.
-   - An assembly (several solids) is judged as parts printed **one by one**; the advisory says
-     whether they would fit printed together. Print-in-place: check the assembled overhangs too.
-2. **`export(target, format="3mf")`** (or `"stl"`): refused unless `check` is OK; the file is read back
-   and compared with the solid (closed, oriented, volume, size and position). 3MF is ~5x smaller and
-   carries its units (mm); STL has none. Relative paths land in the project folder.
-
-## Checklist before sending to a slicer
-- `verify.watertight(obj)` is True (closed solid, valid).
-- Dimensions in **mm** (`measurement_operations get_bounding_box`); rescale if the source was in cm/inch.
-- Orientation: flattest stable face down (set via `move`/`rotate`) to reduce supports.
+## Only without the tools (execute_python)
+`export` is the same code with the checks: `from freecad_layers import export;
+export.export(obj_name, "part.3mf")`. A bare `Shape.exportStl("out.stl")` checks nothing and its
+default triangles are coarse; never hand such a file over unverified.
 
 Runnable example: `install/print3d_test.py`.
