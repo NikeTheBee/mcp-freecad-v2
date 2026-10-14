@@ -625,6 +625,53 @@ class TestFaceRelationship(unittest.TestCase):
         self.assertIn("meet along 1 edge(s), 10.0000 mm long", result)
 
 
+class TestContainsPoint(unittest.TestCase):
+    """MCP FREECAD v2: only a solid or a closed shell has an inside."""
+
+    def setUp(self):
+        self.handler = make_handler()
+        self.fc = spatial_ops_module.FreeCAD
+
+    def test_point_inside_a_solid(self):
+        box = make_box("A")
+        box.Shape.isInside = MagicMock(return_value=True)
+        self.fc.ActiveDocument = make_mock_doc([box])
+        result = self.handler.contains_point({'object1': 'A', 'point': [5, 5, 5]})
+        self.assertIn("Inside (excluding boundary): True", result)
+
+    def test_open_shell_has_no_inside(self):
+        shell = make_shell("S")
+        shell.Shape.Faces = [MagicMock()] * 5
+        shell.Shape.isClosed = MagicMock(return_value=False)
+        shell.Shape.isInside = MagicMock(return_value=True)   # what OCCT answered
+        self.fc.ActiveDocument = make_mock_doc([shell])
+        result = self.handler.contains_point({'object1': 'S', 'point': [50, 50, 50]})
+        self.assertIn("no inside", result)
+        self.assertNotIn("Inside (excluding boundary)", result)
+        shell.Shape.isInside.assert_not_called()
+
+    def test_solids_of_a_compound_tested_one_by_one(self):
+        """Overlapping solids: the classifier on the whole compound said
+        'outside' for a point inside only the second solid."""
+        comp = make_box("C")
+        comp.Shape.isInside = MagicMock(return_value=False)
+        comp.Shape.Solids = [MagicMock(), MagicMock()]
+        comp.Shape.Solids[0].isInside = MagicMock(return_value=False)
+        comp.Shape.Solids[1].isInside = MagicMock(return_value=True)
+        self.fc.ActiveDocument = make_mock_doc([comp])
+        result = self.handler.contains_point({'object1': 'C', 'point': [12, 5, 5]})
+        self.assertIn("Inside (excluding boundary): True", result)
+
+    def test_closed_shell_is_tested(self):
+        shell = make_shell("S")
+        shell.Shape.Faces = [MagicMock()] * 6
+        shell.Shape.isClosed = MagicMock(return_value=True)
+        shell.Shape.isInside = MagicMock(return_value=False)
+        self.fc.ActiveDocument = make_mock_doc([shell])
+        result = self.handler.contains_point({'object1': 'S', 'point': [50, 50, 50]})
+        self.assertIn("Inside (excluding boundary): False", result)
+
+
 class TestBatchInterference(unittest.TestCase):
 
     def setUp(self):

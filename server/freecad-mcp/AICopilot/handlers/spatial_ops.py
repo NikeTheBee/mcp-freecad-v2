@@ -13,7 +13,7 @@ from typing import Any
 
 import FreeCAD
 
-from .base import NO_ACTIVE_DOCUMENT_ERROR, OCCT_CONFUSION_TOLERANCE_DEFAULT, BaseHandler
+from .base import NO_ACTIVE_DOCUMENT_ERROR, OCCT_CONFUSION_TOLERANCE_DEFAULT, BaseHandler, _a
 
 # OCCT Precision::Confusion() — the linear tolerance below which OCCT's boolean
 # operations consider two points identical.  Overlaps thinner than this in any
@@ -307,6 +307,15 @@ class SpatialOpsHandler(BaseHandler):
             if not hasattr(obj, 'Shape'):
                 return f"Error: {obj_name} has no Shape"
             shape = obj.Shape
+            # MCP FREECAD v2: only a solid or a closed shell has an inside. On an
+            # open shell isInside() answered True for a point 50 mm away from a
+            # 10 mm cube missing one face; on a face or a wire, always False.
+            solids = getattr(shape, 'Solids', None)
+            if isinstance(solids, (list, tuple)) and not solids and not (
+                    shape.Faces and shape.isClosed()):
+                kind = shape.ShapeType
+                return (f"Point containment: {obj_name} is {_a(kind)} {kind}, not a closed "
+                        f"solid: it has no inside to test the point against")
 
             # isInside's third arg controls whether points exactly ON the
             # boundary count as inside (True) or outside (False) — surfacing
@@ -314,8 +323,12 @@ class SpatialOpsHandler(BaseHandler):
             # "did the reserved zone actually get skipped" and callers
             # checking "is this comfortably inside the solid" want opposite
             # defaults and neither should have to guess which this returned.
-            inside_strict = shape.isInside(pt, tolerance, False)
-            inside_or_on_boundary = shape.isInside(pt, tolerance, True)
+            # Several solids are tested one by one (MCP FREECAD v2): the
+            # classifier counts crossings over ALL faces, so where two solids of
+            # a compound overlap, a point inside only the second read "outside".
+            parts = solids if isinstance(solids, (list, tuple)) and len(solids) > 1 else [shape]
+            inside_strict = any(p.isInside(pt, tolerance, False) for p in parts)
+            inside_or_on_boundary = any(p.isInside(pt, tolerance, True) for p in parts)
 
             lines = [
                 f"Point containment: {self._fmt_vec(pt, 4)} vs {obj_name}",

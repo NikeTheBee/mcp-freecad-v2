@@ -135,6 +135,8 @@ It runs `git subtree pull --squash` on a clean tree. Then run the base's unit te
 | `AICopilot/handlers/verification_ops.py` (`verify_no_self_intersection`) | Runs `shape.check(True)`: BRepCheck plus the boolean (BOP) argument check. | Plain `check()` does not look for faces or solids crossing each other: a compound of two overlapping solids read "valid: no self-intersections detected". |
 | `AICopilot/handlers/mesh_ops.py` (`mesh_to_solid`, `get_mesh_info`) | A converted solid must be valid and closed, else sewing is tried, else the shape is kept as a shell, said to be NOT a solid, with no volume. `get_mesh_info` marks an open mesh's volume as not a real one. | `Part.makeSolid` does not refuse an open mesh: one missing triangle gave an invalid "solid" of 5478 mm3 for a 6000 mm3 box, replied "Converted mesh ... to solid". |
 | `AICopilot/handlers/fixture_ops.py` | Fixtures record the exact bounding box (`bbox_method: exact`); a box mismatch against an older fixture says it may only need re-saving. | `Shape.BoundBox` of curved faces changes once the shape is meshed, and `save_fixture` meshes it (STL): the unchanged loft compared right after saving "DIFFERS ... bbox". |
+| `AICopilot/handlers/spatial_ops.py` (`contains_point`) | A shape with no inside (open shell, face, wire) is refused; the solids of a compound are tested one by one. | On an open shell a point 50 mm away read "Inside: True"; on a compound of two overlapping solids a point inside only the second read "outside" (the classifier counts crossings over all faces). |
+| tests | `test_spatial_ops` (`TestContainsPoint`: solid, open shell, closed shell, compound); `install/base_exactness_test.py`: open shell refused, point inside the second of two overlapping cubes found. | |
 | `AICopilot/handlers/base.py` (`_material`), `measurement_ops.py` (`get_volume`, `get_mass_properties`, `get_center_of_mass`) | Volume and centre of mass are the material's: overlapping solids of a compound are fused (up to 50 solids, said in the reply), a compound's centre is the volume-weighted one, a shape without a solid has no volume (a closed shell: the volume it encloses, said so). | Two cubes overlapping by half read 2000 mm3 (1500 of material); an open shell of 5 faces of a cube read 800 mm3; a compound has no `CenterOfMass`, the call errored. |
 | tests | `test_base_handler` (`_material` on shells); `install/base_exactness_test.py`: overlapping compound = 1500 mm3 centred at x = 7.5, open shell has no volume. | |
 | `AICopilot/handlers/base.py` (`_recompute_errors`), `spreadsheet_ops.py`, `varset_ops.py` | `set_cell`, `set_cell_range`, `clear_cell`, `set_alias`, `import_csv` and VarSet `set_property` replies name the objects left in error by the recompute. | `recompute()` never raises: a cell set to 0 under the Box it drives was replied "Set Sheet.A1 = 0" while the Box stayed Invalid with its last good shape. |
@@ -151,7 +153,7 @@ Upstream unit tests on Windows, compared with the unmodified upstream version in
 |---|---|---|---|
 | v8.2.3 + changes | 2118 | 0 | 9 (instance registry writes) |
 | v8.3.0 + changes | 2191 | 0 | 9 |
-| v8.3.0 + changes (2026-10-14) | 2265 | 0 | 9 |
+| v8.3.0 + changes (2026-10-14) | 2269 | 0 | 9 |
 
 - The remaining ~123 failures and 39 errors also exist on the unmodified upstream version: those
   tests use AF_UNIX sockets, `/tmp` and POSIX paths. On Linux, CI runs them all green.

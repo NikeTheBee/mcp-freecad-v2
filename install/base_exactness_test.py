@@ -554,6 +554,13 @@ def main() -> int:
                  "d.recompute()\n'ok'")
         txt = str(op(inst, "measurement_operations", {"operation": "get_volume", "object_name": "OpenShell"}))
         assert "has no volume" in txt and "800" not in txt, txt
+        # ...nor an inside: a point 50 mm away was "inside" it
+        txt = str(op(inst, "spatial_query", {"operation": "contains_point", "object1": "OpenShell",
+                                             "point": [50, 50, 50]}))
+        assert "no inside" in txt and "Inside" not in txt, txt
+        txt = str(op(inst, "spatial_query", {"operation": "contains_point", "object1": "Overlap2",
+                                             "point": [12, 5, 5]}))
+        assert "Inside (excluding boundary): True" in txt, txt
 
         # mesh -> solid: a closed 10x20x30 mesh gives 6000 mm3; with one triangle missing
         # it used to give an invalid "solid" of 5478 mm3
