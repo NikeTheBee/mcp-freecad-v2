@@ -119,6 +119,9 @@ async def run(inst: Instance, project: str, out: str) -> None:
             txt = await call("recipe", action="save", name="bow")
             assert txt.startswith("ERROR") and "not verified" in txt and "FAIL Bow" in txt, txt
             await call("require", target="Bow", kind="remove", replaces=sid)
+            # nor is a broken step recorded as done in the project memory
+            txt = await call("record_step", feature="Bow", ftype="Part::Feature")
+            assert txt.startswith("ERROR not recorded, the part is broken: FAIL Bow"), txt
             inst.call("execute_python_sync", {"code": (
                 "import FreeCAD\nFreeCAD.ActiveDocument.removeObject('Bow')\n'ok'")})
             txt = await call("recover", action="list")

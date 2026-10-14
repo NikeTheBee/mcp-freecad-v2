@@ -377,10 +377,18 @@ _out = render.views(_a['targets'], _a['path'], which=_a['views'])
 @_safe
 def record_step(feature: str, ftype: str, params: dict | None = None,
                 decision: str = "") -> str:
-    """After a validated step: record it in project memory and autosave the document."""
+    """After a validated step: record it in project memory and autosave the document.
+    A step whose part checks FAIL is not recorded (fix it first)."""
     return _run("""
 if not _a['feature'].strip() or not _a['ftype'].strip():
     raise ValueError("feature and ftype must name the step (e.g. 'Pad', 'PartDesign::Pad')")
+_o = FreeCAD.ActiveDocument.getObject(_a['feature']) if FreeCAD.ActiveDocument else None
+if _o is not None and _o.TypeId != 'Sketcher::SketchObject':
+    # the GEOMETRY of the part the step belongs to (not the contract: requirements
+    # recorded up front are met only by later steps)
+    _p = verify.body_of(_o) or _o
+    if verify.check(_p)['status'] == verify.FAIL:   # memory must not hold a broken step as done
+        raise ValueError("not recorded, the part is broken: " + verify.verdict(_p)[:400])
 state.record_feature(_a['feature'], _a['ftype'], _a['params'])
 if _a['decision']:
     state.add_decision(_a['decision'])
