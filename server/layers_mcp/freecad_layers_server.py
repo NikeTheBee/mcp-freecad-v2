@@ -284,8 +284,8 @@ else:
 @_safe
 def check(target: str, expect_solid: bool = True) -> str:
     """Verify an object: geometry verdict (OK/FAIL/UNKNOWN + measures) and the user's
-    requirements on it. Autosaves the document when everything is OK. For a sketch:
-    constraint health (conflicts, redundancy, DoF) and open wires."""
+    requirements on it. Autosaves the document when everything is OK. Check the Body, not
+    one of its steps. For a sketch: constraints (conflicts, DoF), open wires, crossing loops."""
     return _run("_out = gate.check_target(_a['target'], _a['expect_solid'])['text']",
                 _timeout=_ANALYSIS_TIMEOUT, target=target, expect_solid=expect_solid)
 
