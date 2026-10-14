@@ -302,7 +302,7 @@ class MeasurementOpsHandler(BaseHandler):
             if err:
                 return err
 
-            bb = obj.Shape.BoundBox
+            bb = self._exact_bbox(obj.Shape)
             return (
                 f"Bounding box of {object_name}:\n"
                 f"  X: {bb.XMin:.2f} to {bb.XMax:.2f} mm (length: {bb.XLength:.2f})\n"

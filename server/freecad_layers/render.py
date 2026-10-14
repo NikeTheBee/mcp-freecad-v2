@@ -92,9 +92,9 @@ def views(targets, path: Optional[str] = None, which: Sequence[str] = ("front", 
     if bad:
         raise ValueError(f"unknown view(s) {bad}; use {sorted(_VIEWS)}")
 
-    bb = shapes[0].BoundBox
+    bb = verify.box(shapes[0])
     for s in shapes[1:]:
-        bb.add(s.BoundBox)
+        bb.add(verify.box(s))
     tol = max(bb.DiagonalLength / 400.0, 1e-3)
     meshes = [_mesh(s, tol) for s in shapes]
     n_tris = sum(len(t) for _, t in meshes)

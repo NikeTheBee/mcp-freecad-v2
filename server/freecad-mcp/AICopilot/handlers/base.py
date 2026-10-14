@@ -1020,6 +1020,20 @@ class BaseHandler:
         return "\n".join(lines)
 
     @staticmethod
+    def _exact_bbox(shape):
+        """True bounding box (MCP FREECAD v2). Shape.BoundBox bounds the control
+        points or the triangulation of curved faces: a 30x20 loft reads 37.3x26.8,
+        and a revolved B-spline reads SMALLER than the part (a pre-filter then
+        skips a real overlap). AddOptimal measures the surfaces, as fast."""
+        try:
+            bb = shape.optimalBoundingBox(False, False)
+            if isinstance(bb, FreeCAD.BoundBox) and bb.isValid():
+                return bb
+        except Exception:  # meshes, mocks: the plain box
+            pass
+        return shape.BoundBox
+
+    @staticmethod
     def _resolve_path(path: str) -> str:
         """Canonicalize a caller-supplied path the same way for every
         allowlist check in this class: expand ~, make absolute, resolve

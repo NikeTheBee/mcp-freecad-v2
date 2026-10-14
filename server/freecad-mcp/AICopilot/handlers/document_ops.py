@@ -424,7 +424,7 @@ class DocumentOpsHandler(BaseHandler):
                 feature.Placement.Base = FreeCAD.Vector(x, y, z)
 
             dst_doc.recompute()
-            bb = feature.Shape.BoundBox
+            bb = self._exact_bbox(feature.Shape)
             return (f"Inserted '{source_object}' from '{source_doc}' as '{feature.Name}' "
                     f"({bb.XLength:.1f}×{bb.YLength:.1f}×{bb.ZLength:.1f} mm)")
         except Exception as e:

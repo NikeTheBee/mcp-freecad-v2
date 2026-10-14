@@ -76,7 +76,7 @@ def faces(shape, spec: str) -> List[str]:
     if spec.lower() not in _SIDES:
         raise ValueError(f"face spec {spec!r}: use FaceN or one of {sorted(_SIDES)}")
     axis, is_max = _SIDES[spec.lower()]
-    bb = shape.BoundBox
+    bb = verify.box(shape)
     plane = (bb.XMax, bb.YMax, bb.ZMax)[axis] if is_max else (bb.XMin, bb.YMin, bb.ZMin)[axis]
     tol = max(bb.DiagonalLength * 1e-6, 1e-7)
     out = []
@@ -217,7 +217,7 @@ def _solve_once(doc, target, fixed_specs, loads, mat, mesh_size: float, prefix: 
     pts = r.Mesh.FemMesh.Nodes
     boxes = []
     for name in fixed.References[0][1]:
-        bb = shape.getElement(name).BoundBox
+        bb = verify.box(shape.getElement(name))
         bb.enlarge(mesh_size)
         boxes.append(bb)
     vm_away, at_away = 0.0, None
@@ -262,7 +262,7 @@ def smallest_mesh_size(shape) -> float:
 
 
 def default_mesh_size(shape) -> float:
-    bb = shape.BoundBox
+    bb = verify.box(shape)
     dims = sorted(d for d in (bb.XLength, bb.YLength, bb.ZLength) if d > 1e-9)
     return max(dims[0] / 4.0, bb.DiagonalLength / 80.0)
 

@@ -27,7 +27,7 @@ from typing import Any, Dict, List, Optional
 
 import FreeCAD as App
 
-from . import safe_out_path
+from . import safe_out_path, verify
 
 # Grouping objects: their children are the parts.
 _CONTAINERS = ("App::Part", "App::DocumentObjectGroup", "App::Origin",
@@ -94,7 +94,7 @@ def _own_size(shp) -> List[float]:
     removed): the size of the part, not of its envelope once turned."""
     local = shp.copy()
     local.Placement = App.Placement()
-    bb = local.BoundBox
+    bb = verify.box(local)
     return sorted(round(x, 2) for x in (bb.XLength, bb.YLength, bb.ZLength))
 
 

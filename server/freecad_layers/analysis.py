@@ -109,7 +109,7 @@ def _holes_of(shp, tol: float) -> List[Dict[str, Any]]:
             groups.append(g)
             buckets.setdefault(key, []).append(g)
     out = []
-    bb = shp.BoundBox
+    bb = verify.box(shp)
     for g in groups:
         if g["span"] < _TWO_PI - 1e-3:
             continue                    # partial arc: concave fillet / slot end
@@ -204,7 +204,7 @@ def min_wall(obj_or_shape, per_face: Optional[int] = None, max_samples: int = 20
     solids = shp.Solids
     if not solids:
         return {"min_mm": None, "samples": 0, "method": "no solid"}
-    diag = shp.BoundBox.DiagonalLength
+    diag = verify.box(shp).DiagonalLength
     eps = max(diag * 1e-7, 1e-7)
     tol = max(diag * 1e-6, 1e-6)
     n_faces = sum(len(s.Faces) for s in solids)
@@ -214,7 +214,7 @@ def min_wall(obj_or_shape, per_face: Optional[int] = None, max_samples: int = 20
     for solid in solids:
         faces = solid.Faces
         surfs = [f.Surface for f in faces]
-        bbs = [f.BoundBox for f in faces]
+        bbs = [verify.box(f) for f in faces]     # never too small: no face skipped
         lo = np.array([(b.XMin, b.YMin, b.ZMin) for b in bbs]) - tol
         hi = np.array([(b.XMax, b.YMax, b.ZMax) for b in bbs]) + tol
         for face in faces:
@@ -312,14 +312,14 @@ def printability(obj_or_name, bed_mm: Sequence[float] = (220, 220, 250),
     if len(solids) > 1:
         # an assembly: judged as parts printed one by one (bed size, overhangs),
         # the usual case; print-in-place needs the combined check, said below
-        too_big = [f"solid{i + 1}" for i, s in enumerate(solids) if not fits(s.BoundBox)]
+        too_big = [f"solid{i + 1}" for i, s in enumerate(solids) if not fits(verify.box(s))]
         if too_big:
             issues.append(f"{', '.join(too_big)} does not fit the {bx}x{by}x{bz} mm build volume")
         advisories.append(
             f"{len(solids)} separate solids, each judged as printed on its own (bed, overhangs); "
-            f"printed together (print-in-place) they {'fit' if fits(shp.BoundBox) else 'do NOT fit'}"
+            f"printed together (print-in-place) they {'fit' if fits(verify.box(shp)) else 'do NOT fit'}"
             " the bed and the overhangs must be checked with them assembled")
-    elif r.get("bbox") and not fits(shp.BoundBox):
+    elif r.get("bbox") and not fits(verify.box(shp)):
         issues.append(f"does not fit the {bx}x{by}x{bz} mm build volume")
     w = min_wall(shp)
     measures["min_wall"] = w

@@ -93,9 +93,9 @@ def _verify_mesh(tmp: Path, shp, defl: float) -> Dict[str, Any]:
         problems.append(f"volume {v:.6g} mm3: triangles face inwards")
     elif abs(v - want) > MESH_VOLUME_TOL * want:
         problems.append(f"volume {v:.6g} mm3 vs solid {want:.6g} ({100 * (v - want) / want:+.3g} %)")
-    box = _box_problem(m.BoundBox, shp.BoundBox, 2 * defl + 1e-3)
-    if box:
-        problems.append(box)
+    off = _box_problem(m.BoundBox, verify.box(shp), 2 * defl + 1e-3)   # a mesh's box is exact
+    if off:
+        problems.append(off)
     return {"problems": problems, "unchecked": unchecked, "facets": n, "volume": v,
             "bbox": _bbox(m.BoundBox)}
 
@@ -115,10 +115,10 @@ def _verify_exact(tmp: Path, shp, ext: str) -> Dict[str, Any]:
     problems = []
     if s.isNull() or not s.Faces:
         return {"problems": ["the file holds no geometry"], "unchecked": []}
-    box = _box_problem(s.BoundBox, shp.BoundBox, 1e-4)
-    if box:
-        problems.append(box)
-    out: Dict[str, Any] = {"problems": problems, "unchecked": [], "bbox": _bbox(s.BoundBox)}
+    off = _box_problem(verify.box(s), verify.box(shp), 1e-4)
+    if off:
+        problems.append(off)
+    out: Dict[str, Any] = {"problems": problems, "unchecked": [], "bbox": _bbox(verify.box(s))}
     if ext in SURFACES:       # IGES carries the faces, not the solid: compare those
         a, want = float(s.Area), float(shp.Area)
         if abs(a - want) > EXACT_VOLUME_TOL * want + 1e-9:
@@ -159,7 +159,7 @@ def export(name, path: Optional[str] = None, fmt: str = "stl",
     # a STEP header records the file name
     tmpdir = Path(tempfile.mkdtemp(prefix=".export-", dir=out.parent))
     tmp = tmpdir / out.name
-    defl = deflection_for(shp.BoundBox)
+    defl = deflection_for(verify.box(shp))
     try:
         if ext in MESH:
             _write_mesh(shp, tmp, defl)
@@ -179,7 +179,7 @@ def export(name, path: Optional[str] = None, fmt: str = "stl",
         shutil.rmtree(tmpdir, ignore_errors=True)
     r.update(status=verify.UNKNOWN if r["unchecked"] else verify.OK, path=str(out),
              format=ext[1:].upper(), name=obj.Name, bytes=out.stat().st_size,
-             solid_volume=float(shp.Volume), solid_bbox=_bbox(shp.BoundBox))
+             solid_volume=float(shp.Volume), solid_bbox=_bbox(verify.box(shp)))
     if ext in MESH:
         r["deflection_mm"] = defl
     if ext in SURFACES:

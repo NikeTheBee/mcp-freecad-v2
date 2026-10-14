@@ -118,7 +118,7 @@ class SpatialOpsHandler(BaseHandler):
 
             if intersects:
                 lines.append(f"  Intersection volume: {vol:.4f} mm³")
-                bb = common.BoundBox
+                bb = self._exact_bbox(common)
                 lines.append(f"  Intersection bounds: {self._fmt_bb(bb)}")
                 lines.append(f"  Intersection size: "
                              f"{bb.XLength:.2f} × {bb.YLength:.2f} × {bb.ZLength:.2f} mm")
@@ -130,7 +130,8 @@ class SpatialOpsHandler(BaseHandler):
                 # Sliver detection: BB overlaps but common() returned zero volume.
                 # If distance is also sub-tolerance, OCCT may have silently dropped
                 # a real contact thinner than Precision::Confusion() (~1e-7 mm).
-                if s1.BoundBox.intersect(s2.BoundBox) and min_dist < _OCCT_LIN_TOL:
+                if (self._exact_bbox(s1).intersect(self._exact_bbox(s2))
+                        and min_dist < _OCCT_LIN_TOL):
                     lines.append(f"  WARNING: bounding boxes overlap and distance is "
                                  f"~{min_dist:.2e} mm — possible sub-tolerance sliver "
                                  f"below OCCT detection threshold ({_OCCT_LIN_TOL:.0e} mm)")
@@ -203,7 +204,7 @@ class SpatialOpsHandler(BaseHandler):
 
             # Convention: object1 = inner (should be contained), object2 = outer (container)
             inner_name, outer_name = n1, n2
-            inner_bb, outer_bb = s1.BoundBox, s2.BoundBox
+            inner_bb, outer_bb = self._exact_bbox(s1), self._exact_bbox(s2)
 
             lines = [f"Containment: is {inner_name} inside {outer_name}?"]
 
@@ -440,6 +441,8 @@ class SpatialOpsHandler(BaseHandler):
                     warnings.append(w)
 
             names = list(shapes.keys())
+            # exact boxes, once each: a too-small box skipped real collisions
+            boxes = {n: self._exact_bbox(s) for n, s in shapes.items()}
             collisions = []
             clear_pairs = 0
             failed_pairs = []  # pairs where the geometry op raised — never silently "clear"
@@ -448,7 +451,7 @@ class SpatialOpsHandler(BaseHandler):
                 for j in range(i + 1, len(names)):
                     n1, n2 = names[i], names[j]
                     # Quick bounding box pre-check
-                    if not shapes[n1].BoundBox.intersect(shapes[n2].BoundBox):
+                    if not boxes[n1].intersect(boxes[n2]):
                         clear_pairs += 1
                         continue
                     # common() can raise on degenerate geometry — wrap per-pair so
@@ -548,7 +551,7 @@ class SpatialOpsHandler(BaseHandler):
                 lines.append(f"  Status: MISALIGNED by {lateral_offset:.4f} mm")
 
             # Bounding box center alignment (sometimes more useful than CoM)
-            bb1, bb2 = s1.BoundBox, s2.BoundBox
+            bb1, bb2 = self._exact_bbox(s1), self._exact_bbox(s2)
             bbc1 = FreeCAD.Vector((bb1.XMin + bb1.XMax) / 2,
                                   (bb1.YMin + bb1.YMax) / 2,
                                   (bb1.ZMin + bb1.ZMax) / 2)

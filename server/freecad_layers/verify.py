@@ -56,6 +56,21 @@ def _occt_check(s) -> Optional[str]:
     return err
 
 
+def box(shp):
+    """The part's TRUE bounding box. Shape.BoundBox bounds the control points or
+    the triangulation of curved faces: a 30x20 loft measured 37.3x26.8, a tilted
+    torus 8 % too big, a revolved B-spline SMALLER than the part (so a ray or an
+    interference pre-filter could skip a face). AddOptimal measures the surfaces
+    themselves, and is as fast (0.003 s on a plate with 1,600 holes)."""
+    try:
+        bb = shp.optimalBoundingBox(False, False)
+        if bb.isValid():
+            return bb
+    except Exception:  # noqa: BLE001 — never fail a measurement on the better box
+        pass
+    return shp.BoundBox
+
+
 def _resolve(obj_or_name, doc=None):
     if isinstance(obj_or_name, str):
         doc = doc or FreeCAD.ActiveDocument
@@ -121,7 +136,7 @@ def interference(shapes: Iterable, tol: float = 1e-6,
     shapes = list(shapes)
     names = names or [f"solid{i + 1}" for i in range(len(shapes))]
     hits = []
-    boxes = [s.BoundBox for s in shapes]      # computed per access by OCCT: once each
+    boxes = [box(s) for s in shapes]      # exact, and once each
     for (i, a), (j, b) in combinations(enumerate(shapes), 2):
         if not boxes[i].intersect(boxes[j]):
             continue
@@ -176,7 +191,7 @@ def check(obj_or_name, doc=None, min_volume: float = 1e-6,
     valid = True if (not bop_issues and solids_only) else bool(shp.isValid())
     volume = float(shp.Volume)
     closed = (all(s.isClosed() for s in solids) if solids else bool(shp.isClosed()))
-    bb = shp.BoundBox
+    bb = box(shp)
     res.update(valid=valid, solids=len(solids), closed=closed, volume=volume,
                bbox=[round(bb.XLength, 4), round(bb.YLength, 4), round(bb.ZLength, 4)],
                faces=len(shp.Faces), edges=len(shp.Edges), vertexes=len(shp.Vertexes))

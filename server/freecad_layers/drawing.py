@@ -23,7 +23,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 import FreeCAD as App
 import TechDraw
 
-from . import safe_out_path, safe_under
+from . import safe_out_path, safe_under, verify
 
 # Standard projections: view name -> (Direction, XDirection). An explicit,
 # non-parallel XDirection avoids TechDraw's "failed to create projection CS"
@@ -109,7 +109,7 @@ def projected_size(shapes, direction, xdirection=None) -> Tuple[float, float]:
     y = d.cross(x).normalize()
     pts = []
     for s in shapes:
-        bb = s.BoundBox
+        bb = verify.box(s)
         pts += [App.Vector(px, py, pz) for px in (bb.XMin, bb.XMax)
                 for py in (bb.YMin, bb.YMax) for pz in (bb.ZMin, bb.ZMax)]
     if not pts:

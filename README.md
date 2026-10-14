@@ -18,6 +18,10 @@ trusting the AI's reading of it.
   CAD, written only for a part `check` passes. The file is then read back and compared with the
   solid (volume, size, position, closed mesh). A file that does not match is never handed over,
   and never replaces a good one.
+- **Exact sizes on curved parts**: FreeCAD's quick bounding box read a 30×20 loft as 37.3×26.8,
+  and a revolved B-spline as smaller than it is (so a real collision was skipped). Sizes,
+  requirements, bed fit, exports and collision checks now use the exact box, in the layers
+  and in the base.
 - **A feature left out of the part is a FAIL**: a Body whose Tip stops before its last feature, or
   with a suppressed feature, used to check OK (a valid solid, without the hole).
 - **Files land in the project**: a file named without a folder (`plan.dxf`, `part.stl`) used to land

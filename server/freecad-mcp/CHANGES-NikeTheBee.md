@@ -97,6 +97,15 @@ It runs `git subtree pull --squash` on a clean tree. Then run the base's unit te
 | `freecad_crash_report.py` | `_fc_process_info` finds FreeCAD on Windows (psutil, else `tasklist`): `freecad.exe` or the headless `freecadcmd.exe`. | It used `pgrep`, which does not exist on Windows, so every timeout said "crashed and exited". |
 | tests | `TestHeadlessAsyncThread` (answers before the job ends, jobs still serialised, errors recorded, cancel before start, busy read, no deadlock on a nested call, unknown job uptime), `TestRestartManagedHeadless`; the autosave surface gate registers `_restart_managed_headless` (`doc.save`, `doc.saveCopy`), `TestWindowsProcessInfo`. The `server` fixture sets `_headless_async_inline = True` for the upstream tests that inspect a job right after submitting it. | Live checks: `install/mcp_loop_test.py` (a 40 s operation through the real bridge returns its result) `install/base_fixes_test.py` (a read during a 30 s job says busy, then works), and `mcp_loop_test` again (FreeCAD killed mid-operation: reported as lost; `restart_freecad` headless: copied, restarted, usable). |
 
+## 2026-10-14 — NikeTheBee
+
+| File | Change | Why |
+|---|---|---|
+| `AICopilot/handlers/base.py` | `BaseHandler._exact_bbox(shape)`: `optimalBoundingBox(False, False)` (AddOptimal), falling back to `BoundBox` for meshes and mocks. | `Shape.BoundBox` bounds the control points or the triangulation of curved faces: a 30 x 20 loft reads 37.3 x 26.8, a tilted torus 8 % too big, and a revolved B-spline SMALLER than the part. AddOptimal measures the surfaces at the same speed (0.003 s on a plate with 1,600 holes). |
+| `AICopilot/handlers/measurement_ops.py` (`get_bounding_box`), `document_ops.py` (insert report), `mesh_ops.py` (import report) | Report the exact box. | The size the AI reads to check a dimension was wrong on lofts, sweeps and fillets on tilted parts. |
+| `AICopilot/handlers/spatial_ops.py` | `batch_interference` pre-filters on exact boxes (computed once per object); `interference_check`, `containment` and `alignment_check` use them too. | A too-small box made the pre-filter skip a pair that really collides: a revolved B-spline overlapping a block by 0.004 mm3 was reported "No collisions". |
+| tests | `install/base_exactness_test.py` (parent project): `get_bounding_box` on a loft says 30.00 x 20.00; `batch_interference` finds the hidden collision. | Unit tests: same 162 POSIX-only failures as before, no new one. |
+
 ## Test status
 
 Upstream unit tests on Windows, compared with the unmodified upstream version in a sandboxed home:

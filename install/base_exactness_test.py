@@ -217,6 +217,36 @@ def main() -> int:
         assert all(k in txt for k in ("5", "10", "15")), txt
         print("measurements: volume 6000, area 2200, centre (5, 10, 15) OK")
 
+        # curved faces: Shape.BoundBox bounds a loft's control points (37.3 x 26.8 for
+        # this 30 x 20 part) and comes out too SMALL on a revolved B-spline, so the
+        # batch pre-filter skipped a real collision
+        py(inst, SETUP + (
+            "\nimport Part\nV = FreeCAD.Vector\n"
+            "lo = d.addObject('Part::Feature', 'Loft')\n"
+            "lo.Shape = Part.makeLoft([Part.Wire(Part.makeCircle(10)),\n"
+            "    Part.Wire(Part.Ellipse(V(0, 0, 20), 15, 5).toShape())], True)\n"
+            "lo.Placement.Base = V(100, 0, 0)\n"
+            "bs = Part.BSplineCurve()\n"
+            "bs.interpolate([V(5, 0, 0), V(12, 0, 5), V(8, 0, 10), V(14, 0, 15), V(6, 0, 20)])\n"
+            "w = Part.Wire([Part.LineSegment(V(0, 0, 0), V(5, 0, 0)).toShape(), bs.toShape(),\n"
+            "    Part.LineSegment(V(6, 0, 20), V(0, 0, 20)).toShape(),\n"
+            "    Part.LineSegment(V(0, 0, 20), V(0, 0, 0)).toShape()])\n"
+            "va = d.addObject('Part::Feature', 'Vase')\n"
+            "va.Shape = Part.Face(w).revolve(V(0, 0, 0), V(0, 0, 1), 360)\n"
+            "va.Placement.Base = V(-50, 0, 0)\n"
+            "sd = d.addObject('Part::Box', 'Side')\n"
+            "sd.Length, sd.Width, sd.Height = 5, 10, 20\n"
+            "sd.Placement.Base = V(-50 + 15.1, -5, 0)\n"
+            "d.recompute()\n'ok'"))
+        txt = str(op(inst, "measurement_operations", {"operation": "get_bounding_box",
+                                                      "object_name": "Loft"}))
+        assert "length: 30.00" in txt and "width: 20.00" in txt, txt
+        txt = str(op(inst, "spatial_query", {"operation": "batch_interference",
+                                             "objects": ["Vase", "Side", "Box"]}))
+        assert "Collisions: 1" in txt and "Vase ↔ Side" in txt, txt
+        print("curved faces: loft measured 30 x 20, hidden collision found:",
+              txt[:90].replace("\n", " | "))
+
         # PartDesign through the base's tool, volume after each step
         py(inst, PD_SETUP)
         seg = 4 * math.acos(0.5) - math.sqrt(3)             # D4 circle cut 1 mm from its centre

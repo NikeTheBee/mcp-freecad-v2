@@ -393,7 +393,7 @@ class MeshOpsHandler(BaseHandler):
                     for obj_name in sorted(new_objects):
                         obj = doc.getObject(obj_name)
                         if obj and hasattr(obj, 'Shape'):
-                            bb = obj.Shape.BoundBox
+                            bb = self._exact_bbox(obj.Shape)
                             result += f"  {obj_name}: {bb.XLength:.2f} x {bb.YLength:.2f} x {bb.ZLength:.2f} mm\n"
                         else:
                             result += f"  {obj_name}\n"

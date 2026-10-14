@@ -199,6 +199,30 @@ def main() -> int:
     doc.recompute()
     expect("Body", verify.OK)
 
+    # Shape.BoundBox bounds a loft's B-spline control points: 37.3x26.8 for this
+    # 30x20 part (a size requirement could pass on the wrong part)
+    lo = doc.addObject("Part::Feature", "Loft")
+    lo.Shape = Part.makeLoft([Part.Wire(Part.makeCircle(10)),
+                              Part.Wire(Part.Ellipse(V(0, 0, 20), 15, 5).toShape())], True)
+    doc.recompute()
+    assert lo.Shape.BoundBox.XLength > 37, "FreeCAD's box got exact: drop this trap"
+    r = expect("Loft", verify.OK)
+    assert r["bbox"] == [30, 20, 20], r
+    # ...and comes out too SMALL on a revolved B-spline: the interference
+    # pre-filter skipped a real overlap
+    bs = Part.BSplineCurve()
+    bs.interpolate([V(5, 0, 0), V(12, 0, 5), V(8, 0, 10), V(14, 0, 15), V(6, 0, 20)])
+    prof = Part.Wire([Part.LineSegment(V(0, 0, 0), V(5, 0, 0)).toShape(), bs.toShape(),
+                      Part.LineSegment(V(6, 0, 20), V(0, 0, 20)).toShape(),
+                      Part.LineSegment(V(0, 0, 20), V(0, 0, 0)).toShape()])
+    vase = Part.Face(prof).revolve(V(0, 0, 0), V(0, 0, 1), 360)
+    side = Part.makeBox(5, 10, 20, V(15.1, -5, 0))
+    assert vase.BoundBox.XMax < 15.1 < verify.box(vase).XMax, (vase.BoundBox, verify.box(vase))
+    hits = verify.interference([vase, side])
+    assert hits and hits[0]["volume"] > 1e-4, hits
+    print(f"exact boxes: loft 30x20 (BoundBox said 37.3x26.8), hidden overlap "
+          f"{hits[0]['volume']:.3g} mm3 found: OK")
+
     print("VERIFY_OK")
     return 0
 

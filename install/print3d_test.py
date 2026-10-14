@@ -74,6 +74,15 @@ r3 = export.export("Plate", fmt="3mf")                  # default: <project>/exp
 assert Path(r3["path"]) == proj / "exports" / "Plate.3mf" and r3["status"] == "OK", r3
 assert Path(r3["path"]).stat().st_size < f.stat().st_size, "3MF should be the compact one"
 assert export.export("Plate", "named", fmt="STL")["path"].endswith("named.stl")
+# a loft: Shape.BoundBox says 37.3x26.8 for this 30x20 part, the mesh read back
+# says 30x20 -> compared with the exact box, it is the same part
+lo = doc.addObject("Part::Feature", "Loft")
+lo.Shape = Part.makeLoft([Part.Wire(Part.makeCircle(10)),
+                          Part.Wire(Part.Ellipse(FreeCAD.Vector(0, 0, 20), 15, 5).toShape())], True)
+doc.recompute()
+r = export.export("Loft", "out/loft.stl")
+assert r["status"] == "OK" and r["solid_bbox"] == [30, 20, 20], r
+assert all(abs(g - w) < 0.01 for g, w in zip(r["bbox"], (30, 20, 20))), r   # chords: a hair inside
 print("export STL/3MF: placed, measured, relative path in the project: OK")
 
 # --- refusals leave nothing behind ---
@@ -102,7 +111,7 @@ try:
     assert not (proj / "out" / "new.stl").exists(), "bad export left a file"
 finally:
     export._write_mesh = real
-assert [x.name for x in (proj / "out").iterdir()] == ["plate.stl"], "file left behind"
+assert sorted(x.name for x in (proj / "out").iterdir()) == ["loft.stl", "plate.stl"], "file left behind"
 assert export.export("Plate", "out/plate.stl", overwrite=True)["status"] == "OK"
 print("export refusals: FAIL contract, open shell, mismatching file, no clobber: OK")
 print("PRINT3D_OK")
