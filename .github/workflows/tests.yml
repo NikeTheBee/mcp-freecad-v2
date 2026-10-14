@@ -6,6 +6,9 @@ name: tests
 # (they need the Windows install); the windows-full job runs them all on the
 # official FreeCAD Windows build.
 
+# Linux runners pinned to the image the suite is validated on: ubuntu-latest
+# moves to a new release on GitHub's schedule, not ours (Ubuntu 26, 2026-10-19).
+
 on:
   push:
     branches: [main, master]
@@ -16,7 +19,7 @@ jobs:
   # Unit tests of the vendored base (server/freecad-mcp, modified in v2). They
   # are written for Linux/macOS (AF_UNIX, /tmp), so they run here, not on Windows.
   base-unit:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: server/freecad-mcp
@@ -32,7 +35,7 @@ jobs:
 
 
   secrets:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
@@ -42,7 +45,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   freecad-core:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
