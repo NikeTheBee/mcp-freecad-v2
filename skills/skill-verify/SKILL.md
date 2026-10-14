@@ -10,13 +10,13 @@
 | `project_switch(name)` | reopen a project (`default` = the original one) |
 | `recipe(save/list/show)` | keep a verified design (refused unless the contract is OK) / reuse its steps |
 | `require(target, kind, params)` | record a user requirement (bbox, holes, hole_at, volume, mass, solids, min_wall, no_interference, valid); unknown or malformed params are refused. The user changed it: `replaces="S3"` swaps it; `kind="remove", replaces="S3"` deletes it |
-| `check(target)` | geometry verdict + the target's requirements; autosaves when all OK |
+| `check(target)` | geometry verdict + the target's requirements; autosaves when all OK. Check the **Body**, not one of its steps (a step is said so; export/printability/FEM/plans refuse a step). A feature after the Tip or suppressed is FAIL. For a sketch: DoF, open wires, loops that cross (figure-8, overlap) |
 | `analyze(target)` | holes (Ø, position, through/blind, depth, axis), min wall estimate. A counterbore or a stepped bore is one bore per diameter (coaxial): give `diameter` in a `holes` requirement |
 | `check_assembly([...])`, `printability(target)` | overlaps between parts; FDM checks |
 | `export(target, format, path)` | STL/3MF/STEP/BREP/IGES, only when `check` is OK; the file is read back and compared with the solid (volume, size, position, closed mesh) |
 | `fem_static(target, fixed, loads, material)` | CalculiX stress analysis: displacement, von Mises, safety factor (see `skill-fem`) |
 | `render_views(targets, views)` | shaded front/top/right/iso picture, headless — on request or at a milestone only; not a measurement |
-| `record_step(feature, ftype, params, decision)` | memory + autosave after a validated step |
+| `record_step(feature, ftype, params, decision)` | memory + autosave after a validated step (refused if the part is broken) |
 | `checkpoint(save/restore/list)`, `recover(list/open)` | rollback; reopen after a crash |
 | `bill_of_materials`, `drawing_sheet`, `pd_hole` | see `skill-bom`, `skill-techdraw`, `skill-partdesign` |
 
