@@ -181,6 +181,9 @@ class TestVerifySketchConstraintVerdict(unittest.TestCase):
         reset_mocks()
         self.handler = make_handler(SketchOpsHandler)
         mock_Part.Face.return_value.Area = 100.0
+        # verify_sketch builds the whole profile with makeFace (MCP FREECAD v2)
+        mock_Part.makeFace.return_value.Area = 100.0
+        mock_Part.makeFace.return_value.Faces = [MagicMock()]
 
     def _verify(self, sketch):
         mock_FreeCAD.ActiveDocument = make_mock_doc([sketch])

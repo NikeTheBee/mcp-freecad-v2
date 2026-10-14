@@ -133,6 +133,19 @@ class SketchOpsHandler(BaseHandler):
         except Exception as e:
             return f"Error running sketch health check: {e}"
 
+    @staticmethod
+    def _loop_faces(wire) -> int:
+        """How many faces one closed loop makes (1 for a sound loop; a figure-8
+        makes 2, a folded outline 0)."""
+        import Part
+        try:
+            f = Part.makeFace([wire], "Part::FaceMakerBullseye")
+        except Exception:
+            return 0
+        if not isinstance(f.Faces, list):
+            return 1                    # not real geometry (unit-test mocks): no verdict
+        return len(f.Faces) if abs(float(f.Area)) > 1e-9 else 0
+
     def verify_sketch(self, args: dict[str, Any]) -> str:
         """Verify sketch validity for extrusion/pad operations."""
         try:
@@ -150,6 +163,7 @@ class SketchOpsHandler(BaseHandler):
                 return f"Object {sketch_name} is not a sketch (type: {sketch.TypeId})"
 
             results = []
+            profile_problem = None
 
             # Basic info
             geo_count = sketch.GeometryCount
@@ -229,11 +243,25 @@ class SketchOpsHandler(BaseHandler):
                         # first wire alone gave a plate without its holes -- or a
                         # hole's circle -- as "the" face area
                         closed = [w for w in shape.Wires if w.isClosed()]
+                        # loops that cross (MCP FREECAD v2): a figure-8 made two
+                        # faces (the Pad, two solids), overlapping outlines none
+                        crossed = [i + 1 for i, w in enumerate(closed)
+                                   if self._loop_faces(w) != 1]
                         face = Part.makeFace(closed, "Part::FaceMakerBullseye")
-                        results.append("Can create face: Yes")
-                        results.append(f"Face area: {face.Area:.2f} mm² ({len(closed)} closed "
-                                       f"wire(s), inner ones cut out)")
+                        if crossed:
+                            profile_problem = f"loop(s) {crossed} cross themselves (figure-8)"
+                        elif abs(float(face.Area)) <= 1e-9 or not face.isValid():
+                            profile_problem = "the loops overlap or cross each other"
+                        if profile_problem:
+                            results.append(f"Can create face: No - {profile_problem}")
+                        else:
+                            results.append("Can create face: Yes")
+                            results.append(f"Face area: {face.Area:.2f} mm² ({len(closed)} closed "
+                                           f"wire(s), inner ones cut out)")
+                    except (AttributeError, TypeError) as e:   # not real geometry (test stubs)
+                        results.append(f"Can create face: unknown - {e}")
                     except Exception as e:
+                        profile_problem = f"the loops cross each other ({e})"
                         results.append(f"Can create face: No - {e}")
             else:
                 results.append("No valid shape generated from sketch")
@@ -253,6 +281,8 @@ class SketchOpsHandler(BaseHandler):
             # Overall verdict
             if solve_code < 0 or problems:
                 verdict = "INVALID - Conflicting/redundant constraints; fix them first"
+            elif profile_problem:
+                verdict = f"INVALID - {profile_problem}: the Pad would fail or be broken"
             elif dof == 0 and closed_wires > 0 and open_wires == 0:
                 verdict = "VALID - Ready for pad/pocket/extrusion"
             elif closed_wires > 0:
