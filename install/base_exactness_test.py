@@ -396,6 +396,24 @@ def main() -> int:
         assert "misses Far" in r and "z 0..30" in r, r
         print("section of a part 600 mm away: area 200 mm2; a plane off the part is refused: OK")
 
+        # a pocket sketched on the bottom face cuts into empty space by default: it removed
+        # nothing and was replied as made. It is cut on the other side; a profile off the part
+        # is refused and not kept
+        py(inst, PD_SETUP)
+        op(inst, "partdesign_operations", {"operation": "pad", "sketch_name": "Base", "length": 5})
+        py(inst, "import FreeCAD, Part\nd = FreeCAD.ActiveDocument\nbody = d.getObject('Body')\n"
+                 "for name, x in (('Under', 5), ('Off', 50)):\n"
+                 "    s = body.newObject('Sketcher::SketchObject', name)\n"
+                 "    s.AttachmentSupport = [(body.Origin.OriginFeatures[3], '')]; s.MapMode = 'FlatFace'\n"
+                 "    s.addGeometry(Part.Circle(FreeCAD.Vector(x, 5, 0), FreeCAD.Vector(0, 0, 1), 2))\n"
+                 "d.recompute()\n'ok'")
+        r = str(op(inst, "partdesign_operations", {"operation": "pocket", "sketch_name": "Under", "length": 3}))
+        close(500 - body_volume(inst), 12 * math.pi, f"pocket from the bottom face ({r[60:100]}...)", rel=1e-6)
+        assert "other side of the sketch" in r, r
+        r = str(op(inst, "partdesign_operations", {"operation": "pocket", "sketch_name": "Off", "length": 3}))
+        assert "removes no material on either side" in r, r
+        close(500 - body_volume(inst), 12 * math.pi, "a pocket off the part is not kept", rel=1e-6)
+
         # rib of a 10 x 4 rectangle sketched on XY, 3 mm: along the sketch's normal (it went
         # along global Y, within the sketch's plane: a solid of zero volume, replied as made)
         py(inst, "import FreeCAD, Part\nfor _n in list(FreeCAD.listDocuments()):\n"

@@ -34,6 +34,9 @@ trusting the AI's reading of it.
   not at the top of the whole part (on a stepped part it began in the air), and is measured once
   made: through, depth. On a plain Part solid, the base's countersink cut nothing (its cone lay
   under the part) and the counterbore went on the bottom face: both now sit on the top.
+- **A pocket into empty space is not "created"**: sketched on the bottom face, it cut into the
+  air and removed nothing while the reply said it was made. It is now cut on the other side of
+  the sketch (and said so), or refused when no side touches the part.
 - **Extrusions keep their holes**: the base's Part extrude/revolve used the sketch's first wire
   only, so a plate sketch came out without its holes (or as a lone cylinder when a hole was drawn
   first); a rib went along the global Y axis and made solids of zero volume. Both now use the

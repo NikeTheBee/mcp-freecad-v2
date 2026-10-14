@@ -15,7 +15,7 @@ plus the non-selection auto/explicit-edges paths.
 """
 
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from handlers.partdesign_ops import PartDesignOpsHandler
 
@@ -165,15 +165,42 @@ class TestPocket(unittest.TestCase):
         doc = make_mock_doc([body, sketch])
         mock_FreeCAD.ActiveDocument = doc
 
-        result = self.handler.pocket({
-            'sketch_name': 'S', 'length': 8, 'name': 'Hole',
-        })
+        with patch.object(PartDesignOpsHandler, "_solid_volume", side_effect=[1000.0, 900.0]):
+            result = self.handler.pocket({
+                'sketch_name': 'S', 'length': 8, 'name': 'Hole',
+            })
 
         body.newObject.assert_called_with("PartDesign::Pocket", "Hole")
         pocket = body.newObject.return_value
         self.assertEqual(pocket.Profile, sketch)
         self.assertEqual(pocket.Length, 8)
         assert_success_contains(self, result, "S", "8")
+        self.assertNotIn("other side", result)
+
+    def test_pocket_into_air_is_cut_on_the_other_side(self):
+        """MCP FREECAD v2: a pocket cutting into empty space removed nothing and
+        was replied as made. It is tried on the other side of the sketch."""
+        sketch = make_sketch("S")
+        body = make_body("Body", group=[sketch])
+        mock_FreeCAD.ActiveDocument = make_mock_doc([body, sketch])
+        pocket = body.newObject.return_value
+        pocket.Reversed = False
+        pocket.State = []
+        with patch.object(PartDesignOpsHandler, "_solid_volume", side_effect=[1000.0, 1000.0, 962.3]):
+            result = self.handler.pocket({'sketch_name': 'S', 'length': 3})
+        self.assertTrue(pocket.Reversed)
+        assert_success_contains(self, result, "other side of the sketch")
+
+    def test_pocket_that_removes_nothing_either_way_is_not_kept(self):
+        sketch = make_sketch("S")
+        body = make_body("Body", group=[sketch])
+        doc = make_mock_doc([body, sketch])
+        mock_FreeCAD.ActiveDocument = doc
+        body.newObject.return_value.State = []
+        with patch.object(PartDesignOpsHandler, "_solid_volume", side_effect=[1000.0] * 3):
+            result = self.handler.pocket({'sketch_name': 'S', 'length': 3})
+        assert_error_contains(self, result, "removes no material on either side")
+        body.removeObject.assert_called_once()
 
     def test_pocket_invalid_state_diagnoses_open_wires(self):
         """If the pocket's State contains 'Invalid', the handler must call

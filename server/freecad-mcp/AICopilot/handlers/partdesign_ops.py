@@ -115,6 +115,17 @@ class PartDesignOpsHandler(BaseHandler):
             # which endpoints are disconnected and what constraints to add.
             return self._error_with_sketch_diagnosis(f"Error creating pad: {e}", sketch_name)
 
+    @staticmethod
+    def _solid_volume(body):
+        """The Body's volume, or None when it has none or it is not a number
+        (unit-test mocks): the material checks then stay out of the way."""
+        try:
+            shp = body.Shape
+            v = shp.Volume if shp.Solids else 0.0
+        except Exception:
+            return None
+        return float(v) if isinstance(v, (int, float)) else None
+
     def pocket(self, args: dict[str, Any]) -> str:
         """Create a pocket (subtractive extrusion) from a sketch."""
         try:
@@ -137,6 +148,8 @@ class PartDesignOpsHandler(BaseHandler):
             if not body:
                 return f"Sketch {sketch_name} must be in a PartDesign Body"
 
+            v0 = self._solid_volume(body)
+
             # Create pocket
             pocket = body.newObject("PartDesign::Pocket", name)
             pocket.Profile = sketch
@@ -146,14 +159,31 @@ class PartDesignOpsHandler(BaseHandler):
 
             self.recompute(doc)
 
-            rev_msg = " (reversed)" if reversed_dir else ""
-            base_msg = f"Created pocket: {pocket.Name} from {sketch_name} with depth {length}mm{rev_msg}"
-
             err = self._check_feature_state(pocket, "Pocket", sketch=sketch)
             if err:
                 return err
 
-            return base_msg
+            # MCP FREECAD v2 (2026-10-14): a pocket cutting into empty space removed
+            # nothing and was replied "Created pocket ... depth 3mm". Pocketing air
+            # is never the intent: try the other side, else say so and undo.
+            flipped = ""
+            if v0 is not None and v0 - (self._solid_volume(body) or v0) <= 1e-9 * max(v0, 1.0):
+                pocket.Reversed = not pocket.Reversed
+                self.recompute(doc)
+                if (self._check_feature_state(pocket, "Pocket", sketch=sketch) is None
+                        and v0 - (self._solid_volume(body) or v0) > 1e-9 * max(v0, 1.0)):
+                    flipped = " (cut on the other side of the sketch: the asked side is outside the part)"
+                    reversed_dir = pocket.Reversed
+                else:
+                    body.removeObject(pocket)
+                    doc.removeObject(pocket.Name)
+                    self.recompute(doc)
+                    return (f"Error creating pocket: it removes no material on either side of "
+                            f"{sketch_name} (the profile does not overlap the part); pocket not kept")
+
+            rev_msg = " (reversed)" if reversed_dir else ""
+            return (f"Created pocket: {pocket.Name} from {sketch_name} with depth {length}mm"
+                    f"{rev_msg}{flipped}")
 
         except Exception as e:
             return self._error_with_sketch_diagnosis(f"Error creating pocket: {e}", sketch_name)
