@@ -26,6 +26,11 @@ sc.dead_points()                # {'extended': -2.22, ...} -> travel limits/togg
 fb = kin.FourBar(a=(0,0), d=(40,0), r_in=15, coupler=45, r_out=25)
 fb.law([math.radians(t) for t in range(30,120,10)])
 ```
+Assembly mode: a linkage closes two ways (C on either side of line B→D). It is chosen once, at
+`ref_theta` (`elbow_up` = the higher C there; for a slider-crank, the side of `ref_coupler`), and
+kept for every angle — the same input always gives the same output, wherever a sweep starts.
+`law()` outputs are continuous along the sweep: an output that turns fully counts to 360°.
+
 The primitive under both is `kin.circle_intersect(a, ra, c, rc)` (the RRR dyad) — use it to build
 any planar chain. Extract the pivot points from a real model via cylindrical-hole axes (see how
 `examples/` reads them from the STEP), then feed them here.

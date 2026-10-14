@@ -72,6 +72,20 @@ def main() -> int:
         assert abs(math.remainder(got - want, 2 * math.pi)) < 1e-9, (deg, got, want)
     print("four-bar rocker angle = law-of-cosines solution: OK")
 
+    # --- drag link (ground shortest): B goes around D, so "the higher C" changes assembly
+    # mode on the way. The law at 180 deg depended on where the sweep began (-208.5 deg from
+    # 0, +35.7 deg started at 180); the mode is now the side of B->D, fixed at ref_theta.
+    dl = kin.FourBar(a=(0, 0), d=(1, 0), r_in=3, coupler=3.5, r_out=3, ref_theta=0.0)
+    swept = dict(dl.law([math.radians(t) for t in range(0, 361, 10)]))
+    alone = dict(dl.law([math.pi]))
+    assert abs(swept[180.0] - alone[180.0]) < 1e-9, (swept[180.0], alone[180.0])
+    # by hand: B=(-3,0), C below B->D... -> output -122.09 deg, reference +86.42 deg
+    assert abs(swept[180.0] - 151.4934) < 1e-3, swept[180.0]
+    assert abs(swept[360.0] - 360.0) < 1e-9, swept[360.0]     # a double crank: one output turn
+    # same for the slider-crank: one stroke position, wherever the sweep starts
+    assert abs(dict(sc.law([5]))[5] - law[5]) < 1e-9, (sc.law([5]), law[5])
+    print("drag link / slider-crank: same output wherever a sweep starts, full turn = 360 deg: OK")
+
     # --- native solver passthrough (only if FreeCAD present) ---
     try:
         import FreeCAD as App

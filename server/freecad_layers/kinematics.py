@@ -57,6 +57,41 @@ def _pick(branch_points: List[Point], near: Point) -> Optional[Point]:
     return min(branch_points, key=lambda p: (p[0]-near[0])**2 + (p[1]-near[1])**2)
 
 
+def _side(p: Point, q: Point, r: Point) -> float:
+    """> 0 when r is left of p->q. A dyad's two solutions lie on either side of
+    the line through its pinned ends: the side IS the assembly mode, and it
+    cannot change without passing through a toggle (where the two merge)."""
+    return (q[0]-p[0])*(r[1]-p[1]) - (q[1]-p[1])*(r[0]-p[0])
+
+
+def _mode_of(p: Point, q: Point, r: Point) -> Optional[int]:
+    s = _side(p, q, r)
+    return 1 if s > 1e-12 else -1 if s < -1e-12 else None
+
+
+def _on_side(points: List[Point], p: Point, q: Point, mode: int) -> Optional[Point]:
+    """The dyad solution in assembly mode `mode` (+1/-1) of the line p->q."""
+    if not points:
+        return None
+    return max(points, key=lambda r: mode * _side(p, q, r))
+
+
+def _unwrap(values_deg: List[Optional[float]]) -> List[Optional[float]]:
+    """First value in (-180, 180], each next one continuous with the previous:
+    an output that turns fully keeps counting instead of jumping by 360."""
+    out, prev = [], None
+    for v in values_deg:
+        if v is not None:
+            v = (v + 180.0) % 360.0 - 180.0
+            if v == -180.0:
+                v = 180.0
+            if prev is not None:
+                v += 360.0 * round((prev - v) / 360.0)
+            prev = v
+        out.append(v)
+    return out
+
+
 # --- slider-crank (the gripper finger case) -----------------------------------
 class SliderCrank:
     """Crank pinned at `pivot` (length `crank`), coupler `link` to a point that
@@ -84,6 +119,10 @@ class SliderCrank:
         self.ref_angle = math.atan2(self._ref_tip[1]-pivot[1],
                                     self._ref_tip[0]-pivot[0])
         self._prev_tip = self._ref_tip
+        # assembly mode: the side of the pivot->slider line the crank tip is on
+        # (at a toggle at s=0 the tip is ON the line: the hint's side says it).
+        # Tracking the nearest tip instead switched modes on a jump in s.
+        self._mode = _mode_of(pivot, c0, self._ref_tip) or _mode_of(pivot, c0, ref_coupler)
 
     def _slide(self, s: float) -> Point:
         return (self.slider_origin[0] + s*self.slider_dir[0],
@@ -91,8 +130,11 @@ class SliderCrank:
 
     def crank_tip(self, s: float) -> Optional[Point]:
         c = self._slide(s)
-        tip = _pick(circle_intersect(self.pivot, self.crank, c, self.link),
-                    self._prev_tip)
+        pts = circle_intersect(self.pivot, self.crank, c, self.link)
+        if self._mode is not None:
+            tip = _on_side(pts, self.pivot, c, self._mode)
+        else:
+            tip = _pick(pts, self._prev_tip)
         if tip is not None:
             self._prev_tip = tip
         return tip
@@ -106,17 +148,17 @@ class SliderCrank:
     def law(self, s_values) -> List[Tuple[float, Optional[float]]]:
         """[(s, output_angle_deg_relative_to_reference)] over the stroke."""
         self._prev_tip = self._ref_tip
-        out = []
-        for s in s_values:
-            a = self.angle(s)
-            out.append((s, None if a is None else math.degrees(a - self.ref_angle)))
-        return out
+        s_values = list(s_values)
+        angles = [self.angle(s) for s in s_values]
+        rel = _unwrap([None if a is None else math.degrees(a - self.ref_angle) for a in angles])
+        return list(zip(s_values, rel))
 
     def ratio_deg_per_mm(self, s: float = 0.0, eps: float = 0.5) -> Optional[float]:
         a1, a2 = self.angle(s - eps), self.angle(s + eps)
         if a1 is None or a2 is None:
             return None
-        return math.degrees(a2 - a1) / (2 * eps)
+        # across the +-180 deg cut, a2 - a1 read ~360 deg too much
+        return math.degrees(math.remainder(a2 - a1, 2 * math.pi)) / (2 * eps)
 
     def dead_points(self) -> Dict[str, float]:
         """Slider positions where crank & coupler align (reach limits)."""
@@ -164,7 +206,12 @@ class FourBar:
         self.a, self.d = a, d
         self.r_in, self.coupler, self.r_out = r_in, coupler, r_out
         self.elbow_up = elbow_up
-        self._prev_c = None
+        # assembly mode: the side of line B->D the coupler point C is on, chosen
+        # at ref_theta ("elbow up" = the higher C there) and kept for every angle.
+        # Re-choosing "the higher C" (law restarted at its first angle) or the
+        # nearest C switched modes when B passes around D (drag link): the same
+        # crank angle gave two different outputs depending on where a sweep began.
+        self._mode = None
         c = self._coupler_point(ref_theta)
         if c is not None:
             self.ref_out = math.atan2(c[1]-d[1], c[0]-d[0])
@@ -177,11 +224,10 @@ class FourBar:
         pts = circle_intersect(b, self.coupler, self.d, self.r_out)
         if not pts:
             return None
-        if self._prev_c is not None:
-            c = _pick(pts, self._prev_c)
-        else:
-            c = max(pts, key=lambda p: p[1]) if self.elbow_up else min(pts, key=lambda p: p[1])
-        self._prev_c = c
+        if self._mode is not None:
+            return _on_side(pts, b, self.d, self._mode)
+        c = max(pts, key=lambda p: p[1]) if self.elbow_up else min(pts, key=lambda p: p[1])
+        self._mode = _mode_of(b, self.d, c)
         return c
 
     def output_angle(self, theta_in: float) -> Optional[float]:
@@ -191,13 +237,11 @@ class FourBar:
         return math.atan2(c[1]-self.d[1], c[0]-self.d[0])
 
     def law(self, theta_values) -> List[Tuple[float, Optional[float]]]:
-        self._prev_c = None
-        out = []
-        for t in theta_values:
-            a = self.output_angle(t)
-            out.append((math.degrees(t),
-                        None if a is None else math.degrees(a - self.ref_out)))
-        return out
+        """[(crank_deg, output_deg_relative_to_reference)], continuous along the sweep."""
+        theta_values = list(theta_values)
+        angles = [self.output_angle(t) for t in theta_values]
+        rel = _unwrap([None if a is None else math.degrees(a - self.ref_out) for a in angles])
+        return [(math.degrees(t), r) for t, r in zip(theta_values, rel)]
 
 
 # --- native solver passthrough ------------------------------------------------
