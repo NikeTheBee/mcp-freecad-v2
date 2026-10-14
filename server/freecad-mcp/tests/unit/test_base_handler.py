@@ -1329,3 +1329,48 @@ class TestFindGeoForPoint:
         result = base_handler._find_geo_for_point(sketch, vertex)
 
         assert result is None
+
+
+class TestNoMaterialChange:
+    """MCP FREECAD v2: an additive PartDesign feature that adds no material (a
+    pad buried in the part) or a subtractive one that removes none (a pocket
+    or hole off the part) was replied "Created ..." with the part unchanged."""
+
+    @staticmethod
+    def _check(f, label):
+        from handlers.base import BaseHandler
+        return BaseHandler._no_material_change(f, label)
+
+    def _feature(self, type_id, v_base, v_new):
+        body = MagicMock(TypeId="PartDesign::Body")
+        f = MagicMock(TypeId=type_id, Name="F")
+        f.Shape.Volume = v_new
+        f.BaseFeature.Shape.Volume = v_base
+        f.InList = [body]
+        return f, body
+
+    @pytest.mark.parametrize("type_id,v_base,v_new,word", [
+        ("PartDesign::Pad", 500.0, 500.0, "adds no material"),
+        ("PartDesign::Pocket", 500.0, 500.0, "removes no material"),
+        ("PartDesign::SubtractiveCylinder", 500.0, 500.0, "removes no material"),
+        ("PartDesign::AdditiveHelix", 500.0, 500.0, "adds no material"),
+    ])
+    def test_unchanged_part_is_reported_and_the_feature_removed(self, type_id, v_base, v_new, word):
+        f, body = self._feature(type_id, v_base, v_new)
+        msg = self._check(f, "Feature")
+        assert msg is not None and word in msg and "not kept" in msg
+        body.removeObject.assert_called_once_with(f)
+
+    @pytest.mark.parametrize("type_id,v_base,v_new", [
+        ("PartDesign::Pad", 500.0, 700.0), ("PartDesign::Pocket", 500.0, 450.0),
+        ("PartDesign::Fillet", 500.0, 500.0),            # not additive/subtractive: not judged
+    ])
+    def test_a_changed_part_or_another_feature_passes(self, type_id, v_base, v_new):
+        f, body = self._feature(type_id, v_base, v_new)
+        assert self._check(f, "Feature") is None
+        body.removeObject.assert_not_called()
+
+    def test_first_pad_of_a_body_has_no_base(self):
+        f, _ = self._feature("PartDesign::Pad", 0.0, 100.0)
+        f.BaseFeature = None
+        assert self._check(f, "Pad") is None

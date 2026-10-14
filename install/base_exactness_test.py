@@ -413,6 +413,26 @@ def main() -> int:
         r = str(op(inst, "partdesign_operations", {"operation": "pocket", "sketch_name": "Off", "length": 3}))
         assert "removes no material on either side" in r, r
         close(500 - body_volume(inst), 12 * math.pi, "a pocket off the part is not kept", rel=1e-6)
+        # likewise any PartDesign feature that leaves the part unchanged: a pad buried in the
+        # material, a groove in the air -- computed fine, replied "Created", nothing changed
+        py(inst, "import FreeCAD, Part\nd = FreeCAD.ActiveDocument\nbody = d.getObject('Body')\n"
+                 "s = body.newObject('Sketcher::SketchObject', 'Inside')\n"
+                 "s.AttachmentSupport = [(body.Origin.OriginFeatures[3], '')]; s.MapMode = 'FlatFace'\n"
+                 "s.AttachmentOffset = FreeCAD.Placement(FreeCAD.Vector(0, 0, 1), FreeCAD.Rotation())\n"
+                 "s.addGeometry(Part.Circle(FreeCAD.Vector(2, 8, 0), FreeCAD.Vector(0, 0, 1), 1))\n"
+                 "g = body.newObject('Sketcher::SketchObject', 'Air')\n"
+                 "g.AttachmentSupport = [(body.Origin.OriginFeatures[4], '')]; g.MapMode = 'FlatFace'\n"
+                 "P = [FreeCAD.Vector(30, 0, 0), FreeCAD.Vector(32, 0, 0), FreeCAD.Vector(32, 2, 0),"
+                 " FreeCAD.Vector(30, 2, 0)]\n"
+                 "for i in range(4):\n    g.addGeometry(Part.LineSegment(P[i], P[(i + 1) % 4]))\n"
+                 "d.recompute()\n'ok'")
+        v_before = body_volume(inst)
+        r = str(op(inst, "partdesign_operations", {"operation": "pad", "sketch_name": "Inside", "length": 2}))
+        assert "adds no material" in r and "not kept" in r, r
+        r = str(op(inst, "partdesign_operations", {"operation": "groove", "sketch_name": "Air",
+                                                   "angle": 90, "axis": "z"}))
+        assert "removes no material" in r and "not kept" in r, r
+        close(body_volume(inst), v_before, "a buried pad and a groove in the air are not kept", rel=1e-9)
 
         # rib of a 10 x 4 rectangle sketched on XY, 3 mm: along the sketch's normal (it went
         # along global Y, within the sketch's plane: a solid of zero volume, replied as made)

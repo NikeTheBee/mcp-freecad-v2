@@ -159,7 +159,7 @@ class PartDesignOpsHandler(BaseHandler):
 
             self.recompute(doc)
 
-            err = self._check_feature_state(pocket, "Pocket", sketch=sketch)
+            err = self._check_feature_state(pocket, "Pocket", sketch=sketch, material=False)
             if err:
                 return err
 
@@ -170,7 +170,7 @@ class PartDesignOpsHandler(BaseHandler):
             if v0 is not None and v0 - (self._solid_volume(body) or v0) <= 1e-9 * max(v0, 1.0):
                 pocket.Reversed = not pocket.Reversed
                 self.recompute(doc)
-                if (self._check_feature_state(pocket, "Pocket", sketch=sketch) is None
+                if (self._check_feature_state(pocket, "Pocket", sketch=sketch, material=False) is None
                         and v0 - (self._solid_volume(body) or v0) > 1e-9 * max(v0, 1.0)):
                     flipped = " (cut on the other side of the sketch: the asked side is outside the part)"
                     reversed_dir = pocket.Reversed

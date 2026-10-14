@@ -1141,7 +1141,8 @@ class BaseHandler:
         """
         return 'Invalid' in getattr(feature, 'State', [])
 
-    def _check_feature_state(self, feature, feature_label: str, sketch=None) -> str | None:
+    def _check_feature_state(self, feature, feature_label: str, sketch=None,
+                             material: bool = True) -> str | None:
         """Return a diagnostic error string if feature.State contains
         'Invalid' after recompute(), else None.
 
@@ -1153,13 +1154,55 @@ class BaseHandler:
         check instead of duplicating this method verbatim.
         """
         if not self._is_feature_invalid(feature):
-            return None
+            return self._no_material_change(feature, feature_label) if material else None
         err = f"{feature_label} created but failed to compute (State=Invalid)."
         if sketch is not None:
             diagnosis = self._diagnose_open_wires(sketch)
             if diagnosis:
                 err += f"\n\nSketch wire diagnosis:\n{diagnosis}"
         return err
+
+    _ADDITIVE = ("PartDesign::Pad", "PartDesign::Revolution")
+    _SUBTRACTIVE = ("PartDesign::Pocket", "PartDesign::Groove", "PartDesign::Hole")
+
+    @staticmethod
+    def _no_material_change(feature, feature_label: str) -> str | None:
+        """MCP FREECAD v2 (2026-10-14): an additive PartDesign feature that adds
+        no material (a pad buried in the part), or a subtractive one that
+        removes none (a pocket or hole off the part, a groove in the air),
+        computed fine and was replied "Created ..." while the part was
+        unchanged. Compared with the feature it builds on; such a feature is
+        removed from its Body. None when it changed the part, or when that
+        cannot be measured (no numbers: test mocks)."""
+        t = getattr(feature, "TypeId", "")
+        if not isinstance(t, str):
+            return None
+        adds = t in BaseHandler._ADDITIVE or t.startswith("PartDesign::Additive")
+        cuts = t in BaseHandler._SUBTRACTIVE or t.startswith("PartDesign::Subtractive")
+        if not (adds or cuts):
+            return None
+        try:
+            v1 = feature.Shape.Volume
+            base = getattr(feature, "BaseFeature", None)
+            v0 = base.Shape.Volume if base is not None else 0.0
+        except Exception:
+            return None
+        if not all(isinstance(v, (int, float)) for v in (v0, v1)):
+            return None
+        change = (v1 - v0) if adds else (v0 - v1)
+        if change > 1e-9 * max(abs(v0), 1.0):
+            return None
+        try:
+            body = next(o for o in feature.InList if o.TypeId == "PartDesign::Body")
+            body.removeObject(feature)
+            feature.Document.removeObject(feature.Name)
+            body.Document.recompute()
+            kept = "; not kept"
+        except Exception:
+            kept = ""
+        return (f"{feature_label} {'adds' if adds else 'removes'} no material: the part would be "
+                f"unchanged ({'the profile lies inside the part' if adds else 'it does not reach the part'})"
+                + kept)
 
     def bind_expression(self, object_name: str, property_name: str,
                          target_name: str, target_ref: str,

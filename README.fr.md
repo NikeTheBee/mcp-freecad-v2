@@ -39,7 +39,8 @@ au lieu de croire la lecture qu'en fait l'IA.
 - **Une poche dans le vide n'est plus « créée »** : esquissée sur la face du dessous, elle
   creusait dans l'air sans rien enlever, et la réponse la disait faite. Elle est maintenant
   creusée de l'autre côté de l'esquisse (et c'est dit), ou refusée si aucun côté ne touche la
-  pièce.
+  pièce. Toute fonction PartDesign qui laisse la pièce inchangée (un pad noyé dedans, une rainure
+  dans le vide) est refusée aussi.
 - **Les extrusions gardent leurs trous** : l'extrusion/révolution Part de la base n'utilisait que
   le premier contour de l'esquisse, si bien qu'une plaque sortait sans ses trous (ou réduite à un
   cylindre quand un trou était dessiné en premier) ; une nervure partait selon l'axe Y global et
