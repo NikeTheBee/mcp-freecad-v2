@@ -235,24 +235,34 @@ class PartOpsHandler(BaseHandler):
 
             import Part
 
-            # Define section plane
-            if plane == 'XY':
-                section_plane = Part.makePlane(1000, 1000, FreeCAD.Vector(-500, -500, offset))
-            elif plane == 'XZ':
-                section_plane = Part.makePlane(1000, 1000, FreeCAD.Vector(-500, offset, -500), FreeCAD.Vector(0, 1, 0))
-            elif plane == 'YZ':
-                section_plane = Part.makePlane(1000, 1000, FreeCAD.Vector(offset, -500, -500), FreeCAD.Vector(1, 0, 0))
-            else:
+            # MCP FREECAD v2 (2026-10-14): Shape.slice at the plane, exact and
+            # unbounded. A fixed 1000 x 1000 mm plane centred on the origin cut
+            # a part beyond +-500 mm partly or not at all, replied as "Created".
+            normals = {'XY': (0, 0, 1), 'XZ': (0, 1, 0), 'YZ': (1, 0, 0)}
+            if plane not in normals:
                 return f"Invalid plane '{plane}'. Valid options: XY, XZ, YZ"
-
-            # Create section
-            section_shape = obj.Shape.section(section_plane)
+            wires = obj.Shape.slice(FreeCAD.Vector(*normals[plane]), float(offset))
+            if not wires:
+                bb = self._exact_bbox(obj.Shape)
+                axis, lo, hi = {'XY': ('z', bb.ZMin, bb.ZMax), 'XZ': ('y', bb.YMin, bb.YMax),
+                                'YZ': ('x', bb.XMin, bb.XMax)}[plane]
+                return (f"The {plane} plane at {offset} mm misses {object_name} "
+                        f"(it spans {axis} {lo:g}..{hi:g} mm): no section")
+            section_shape = Part.makeCompound(wires)
+            area = ""
+            try:
+                closed = [w for w in wires if w.isClosed()]
+                if closed:
+                    area = (f", area {Part.makeFace(closed, 'Part::FaceMakerBullseye').Area:.2f} mm2 "
+                            f"({len(closed)} closed outline(s))")
+            except Exception:
+                area = ""
             section_obj = doc.addObject("Part::Feature", f"{object_name}_section")
             section_obj.Shape = section_shape
 
             self.recompute(doc)
 
-            return f"Created section of {object_name} at {plane} plane, offset {offset}mm"
+            return f"Created section of {object_name} at {plane} plane, offset {offset}mm{area}"
 
         except Exception as e:
             return f"Error creating section: {e}"

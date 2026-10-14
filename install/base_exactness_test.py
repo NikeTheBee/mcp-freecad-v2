@@ -367,6 +367,19 @@ def main() -> int:
                                              "height": 2, "direction": "z"}))
         assert "lies in the plane" in r, r
 
+        # section of a part beyond 500 mm: cut at the plane, exact (a fixed 1000 x 1000 plane
+        # centred on the origin missed it: an empty section replied as "Created")
+        py(inst, "import FreeCAD\nb = FreeCAD.ActiveDocument.addObject('Part::Box', 'Far')\n"
+                 "b.Length, b.Width, b.Height = 10, 20, 30\nb.Placement.Base = FreeCAD.Vector(600, 0, 0)\n"
+                 "FreeCAD.ActiveDocument.recompute()\n'ok'")
+        r = str(op(inst, "part_operations", {"operation": "section", "object_name": "Far",
+                                             "plane": "XY", "offset": 15}))
+        assert "area 200.00 mm2" in r, r
+        r = str(op(inst, "part_operations", {"operation": "section", "object_name": "Far",
+                                             "plane": "XY", "offset": 100}))
+        assert "misses Far" in r and "z 0..30" in r, r
+        print("section of a part 600 mm away: area 200 mm2; a plane off the part is refused: OK")
+
         # rib of a 10 x 4 rectangle sketched on XY, 3 mm: along the sketch's normal (it went
         # along global Y, within the sketch's plane: a solid of zero volume, replied as made)
         py(inst, "import FreeCAD, Part\nfor _n in list(FreeCAD.listDocuments()):\n"
