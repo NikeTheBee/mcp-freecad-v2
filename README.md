@@ -18,6 +18,10 @@ trusting the AI's reading of it.
   CAD, written only for a part `check` passes. The file is then read back and compared with the
   solid (volume, size, position, closed mesh). A file that does not match is never handed over,
   and never replaces a good one.
+- **Overhangs of curved faces are measured**: each face was judged by its middle normal only,
+  so the ceiling of a horizontal hole, the underside of a sphere or of a rod lying down counted
+  0 mm2. They are now measured over the face (within 1 % of the known values), and a wall
+  exactly at the limit (the 45° chamfer printed without supports) is not counted.
 - **Exact sizes on curved parts**: FreeCAD's quick bounding box read a 30×20 loft as 37.3×26.8,
   and a revolved B-spline as smaller than it is (so a real collision was skipped). Sizes,
   requirements, bed fit, exports and collision checks now use the exact box, in the layers

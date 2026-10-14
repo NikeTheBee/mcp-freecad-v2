@@ -132,6 +132,28 @@ def main() -> int:
     print("tee overhang:", ov)
     assert abs(ov["area_mm2"] - 300) < 1e-6, ov
     assert analysis.overhangs(doc.Plate)["area_mm2"] == 0
+    # curved faces, judged by their middle normal alone, all read 0: the ceiling of a
+    # horizontal hole, the underside of a sphere, a rod lying down. Known values: the
+    # part of the surface whose normal is within 45 deg of straight down.
+    import math
+    lim = 1 - math.cos(math.pi / 4)
+    for what, shp, want in (
+            ("sphere r10 on the bed", Part.makeSphere(10, V(0, 0, 10)), 2 * math.pi * 100 * lim),
+            ("rod r5 L20 lying down", Part.makeCylinder(5, 20, V(0, 0, 5), V(1, 0, 0)), 2 * math.pi * 5 * 20 / 4),
+            ("horizontal hole D6 L20", Part.makeBox(20, 20, 20).cut(
+                Part.makeCylinder(3, 20, V(0, 10, 10), V(1, 0, 0))), 2 * math.pi * 3 * 20 / 4)):
+        got = analysis.overhangs(shp)["area_mm2"]
+        assert abs(got - want) < 0.01 * want, (what, got, want)
+    # exactly at the limit is printable without supports (rounding put half of a 45 deg
+    # cone over it); a 30 deg slope is not
+    cham = Part.makeBox(20, 20, 10)
+    cham = cham.makeChamfer(5, [e for e in cham.Edges if e.BoundBox.ZMax < 1e-9])
+    assert analysis.overhangs(cham)["area_mm2"] == 0
+    assert analysis.overhangs(Part.makeCone(10, 0, 10, V(0, 0, 10), V(0, 0, -1)))["area_mm2"] == 0
+    c30 = Part.makeCone(10 * math.tan(math.radians(60)), 0, 10, V(0, 0, 10), V(0, 0, -1))
+    side = [f for f in c30.Faces if f.Surface.TypeId == "Part::GeomCone"][0]
+    assert abs(analysis.overhangs(c30)["area_mm2"] - side.Area) < 0.01, analysis.overhangs(c30)
+    print("overhangs of curved faces within 1 % (sphere, rod, horizontal hole); 45 deg walls free: OK")
     # assembly: each part sits on its own plate (a pin hanging below a plate made the
     # plate's bottom an "overhang"), and face names stay those of the whole shape
     plate_pin2 = Part.makeCompound([Part.makeBox(60, 40, 8).cut(Part.makeCylinder(3, 8, V(30, 20, 0))),

@@ -425,20 +425,86 @@ def overhangs(obj_or_shape, max_angle_deg: float = 45.0,
 
 
 def _overhangs_of(shp, up, limit: float, index: Dict[int, int]):
-    z_min = min(v.Point.dot(up) for v in shp.Vertexes) if shp.Vertexes else 0.0
+    # the bed: the part's lowest point. Not its lowest VERTEX: a rod lying down
+    # has vertices only on its seam (on top), and everything below read "on the bed"
+    bb = verify.box(shp)
+    z_min = min(App.Vector(x, y, z).dot(up) for x in (bb.XMin, bb.XMax)
+                for y in (bb.YMin, bb.YMax) for z in (bb.ZMin, bb.ZMax))
     area, faces = 0.0, []
     for f in shp.Faces:
-        u0, u1, v0, v1 = f.ParameterRange
-        n = f.normalAt((u0 + u1) / 2, (v0 + v1) / 2)
-        if -n.dot(up) <= limit:
-            continue
-        lowest = min(v.Point.dot(up) for v in f.Vertexes) if f.Vertexes else z_min
-        highest = max(v.Point.dot(up) for v in f.Vertexes) if f.Vertexes else z_min
-        if highest - z_min < 1e-6 and lowest - z_min < 1e-6:
-            continue                    # on the bed
-        area += f.Area
-        faces.append(f"Face{index.get(f.hashCode(), -1) + 1}")
+        a = _face_overhang(f, up, limit, z_min)
+        if a > 1e-9:
+            area += a
+            faces.append(f"Face{index.get(f.hashCode(), -1) + 1}")
     return area, faces
+
+
+# a wall exactly at the limit (the 45 deg chamfer printed WITHOUT supports) is
+# not an overhang: rounding noise put half of an inverted 45 deg cone in it
+_ON_LIMIT = 1e-9
+
+
+def _face_overhang(f, up, limit: float, z_min: float) -> float:
+    """Overhanging area of one face. A plane has one normal: all or nothing
+    (nothing when it lies on the bed). A curved face is judged triangle by
+    triangle: judged by its middle normal alone, the ceiling of a horizontal
+    hole, the underside of a sphere or of a rod lying down all counted 0."""
+    import numpy as np
+
+    s = f.Surface
+    if s.TypeId == "Part::GeomPlane":
+        u0, u1, v0, v1 = f.ParameterRange
+        if -f.normalAt((u0 + u1) / 2, (v0 + v1) / 2).dot(up) <= limit + _ON_LIMIT:
+            return 0.0
+        hs = [v.Point.dot(up) for v in f.Vertexes] or [z_min]
+        return 0.0 if max(hs) - z_min < 1e-6 else f.Area     # on the bed: no support
+    if s.TypeId == "Part::GeomCylinder" and abs(abs(App.Vector(s.Axis).dot(up)) - 1.0) < 1e-9:
+        return 0.0                      # a vertical bore or boss: walls only
+    if s.TypeId == "Part::GeomCone" and abs(abs(App.Vector(s.Axis).dot(up)) - 1.0) < 1e-9:
+        # one slope all round (a countersink, a 45 deg cone under a part): decided
+        # exactly, like a plane -- mesh normals put half of a 45 deg cone over the limit
+        u0, u1, v0, v1 = f.ParameterRange
+        if -f.normalAt((u0 + u1) / 2, (v0 + v1) / 2).dot(up) <= limit + _ON_LIMIT:
+            return 0.0
+        return f.Area
+    pts, tris = f.tessellate(max(verify.box(f).DiagonalLength * 5e-4, 1e-4))
+    if not tris:
+        return 0.0
+    P = np.array([(p.x, p.y, p.z) for p in pts])
+    T = np.array(tris)
+    N = np.cross(P[T[:, 1]] - P[T[:, 0]], P[T[:, 2]] - P[T[:, 0]])
+    A = np.linalg.norm(N, axis=1) / 2.0
+    keep = A > 1e-15
+    if not keep.any():
+        return 0.0
+    N, A, T = N[keep] / (2.0 * A[keep, None]), A[keep], T[keep]
+    # the triangulation's winding against the face's outward normal, once
+    k = int(np.argmax(A))
+    c = App.Vector(*P[T[k]].mean(axis=0))
+    u, v = s.parameter(c)
+    if np.dot(N[k], tuple(f.normalAt(u, v))) < 0:
+        N = -N
+    u_ = np.array((up.x, up.y, up.z))
+    # vertex normals (area-weighted), then how far each vertex is inside the
+    # overhang cone; a triangle across the cone's edge counts the part of its
+    # area where that (linear) measure is positive. Whole triangles in or out
+    # swung the result by a row of triangles (sphere: -4 %, +0 %, -1 %).
+    VN = np.zeros_like(P)
+    for j in range(3):
+        np.add.at(VN, T[:, j], N * A[:, None])
+    VN /= np.maximum(np.linalg.norm(VN, axis=1), 1e-300)[:, None]
+    G = (-(VN @ u_) - limit - _ON_LIMIT)[T]
+    frac = (G > 0).all(axis=1).astype(float)
+    for i in np.nonzero((G > 0).any(axis=1) & ~(G > 0).all(axis=1))[0]:
+        g = G[i]
+        pos = g > 0
+        lone = g[pos][0] if pos.sum() == 1 else g[~pos][0]       # the vertex alone on its side
+        rest = g[~pos] if pos.sum() == 1 else g[pos]
+        part = lone * lone / ((lone - rest[0]) * (lone - rest[1]))
+        frac[i] = part if pos.sum() == 1 else 1.0 - part
+    on_bed = (P[T] @ u_).max(axis=1) - z_min < 1e-6
+    total = A.sum()
+    return float((A * frac)[~on_bed].sum() * (f.Area / total)) if total > 0 else 0.0
 
 
 def printability(obj_or_name, bed_mm: Sequence[float] = (220, 220, 250),

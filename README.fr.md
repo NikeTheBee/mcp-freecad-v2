@@ -17,6 +17,11 @@ au lieu de croire la lecture qu'en fait l'IA.
   pour une autre CAO, écrit seulement pour une pièce que `check` valide. Le fichier est ensuite
   relu et comparé au solide (volume, dimensions, position, maillage fermé). Un fichier qui ne
   correspond pas n'est jamais livré, et ne remplace jamais un bon fichier.
+- **Les porte-à-faux des faces courbes sont mesurés** : chaque face était jugée par sa seule
+  normale médiane, si bien que le plafond d'un trou horizontal, le dessous d'une sphère ou d'un
+  rond couché comptaient 0 mm2. Ils sont maintenant mesurés sur toute la face (à 1 % des valeurs
+  connues), et une paroi pile à la limite (le chanfrein à 45° imprimé sans support) n'est pas
+  comptée.
 - **Dimensions exactes sur les pièces courbes** : la boîte englobante rapide de FreeCAD lisait
   un loft de 30×20 comme 37,3×26,8, et une révolution de B-spline plus petite qu'elle n'est (une
   vraie collision passait alors inaperçue). Dimensions, exigences, plateau, exports et
