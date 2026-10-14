@@ -80,4 +80,16 @@ print(f"VALID={shp.isValid()} SOLIDS={len(shp.Solids)} "
 assert shp.isValid() and len(shp.Solids) == 1, "gear is not a valid solid"
 assert abs(max(bb.XLength, bb.YLength) - tip_d) < 0.6, "tip diameter mismatch"
 assert abs(bb.ZLength - 8.0) < 1e-6, "wrong gear width"
+# the involute itself: tip radius exactly m*z/2 + m, and on the pitch circle the teeth
+# fill half of it (tooth thickness = half the circular pitch), whatever m and z
+for m, z in ((2.0, 20), (1.0, 12), (3.0, 40)):
+    g, tip_d = make_spur_gear(doc, module=m, teeth=z, width=5.0, name=f"G{z}")
+    doc.recompute()
+    radial = max(math.hypot(v.Point.x, v.Point.y) for v in g.Shape.Vertexes)
+    assert abs(radial - tip_d / 2) < 1e-9, (m, z, radial)
+    face = [f for f in g.Shape.Faces if abs(f.CenterOfMass.z) < 1e-9][0]
+    r_pitch = m * z / 2
+    on_pitch = sum(e.Length for e in face.common(Part.makeCircle(r_pitch)).Edges)
+    assert abs(on_pitch / (2 * math.pi * r_pitch) - 0.5) < 0.002, (m, z, on_pitch)
+print("tip radius exact, teeth fill half the pitch circle (m 1-3, z 12-40): OK")
 print("GEAR_OK")
