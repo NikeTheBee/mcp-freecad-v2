@@ -1285,6 +1285,23 @@ class TestLoftProfiles(unittest.TestCase):
         self.assertEqual(list(loft.Sections), [s1, s2])
         assert_success_contains(self, result, "L", "2 profiles")
 
+    def test_sketches_in_a_body_loft_inside_the_body(self):
+        """MCP FREECAD v2: a Part::Loft BESIDE the Body left the Body empty
+        (its Shape invalid) while the reply said "Created loft"."""
+        s1, s2, s3 = make_sketch("S1"), make_sketch("S2"), make_sketch("S3")
+        body = make_body("Body", group=[s1, s2, s3])
+        doc = make_mock_doc([body, s1, s2, s3])
+        mock_FreeCAD.ActiveDocument = doc
+        body.newObject.return_value.State = []
+
+        result = self.handler.loft_profiles({'sketches': ['S1', 'S2', 'S3'], 'ruled': True})
+
+        body.newObject.assert_called_with("PartDesign::AdditiveLoft", "Loft")
+        loft = body.newObject.return_value
+        self.assertEqual((loft.Profile, list(loft.Sections), loft.Ruled), (s1, [s2, s3], True))
+        doc.addObject.assert_not_called()
+        assert_success_contains(self, result, "3 profiles")
+
 
 class TestSweepPath(unittest.TestCase):
     def setUp(self):
@@ -1314,6 +1331,22 @@ class TestSweepPath(unittest.TestCase):
         sweep = doc.Objects[-1]
         self.assertEqual(list(sweep.Sections), [profile])
         self.assertEqual(sweep.Spine, path)
+
+    def test_sketches_in_a_body_sweep_inside_the_body(self):
+        """MCP FREECAD v2: in a Body, a PartDesign::AdditivePipe, not a
+        Part::Sweep beside the Body."""
+        profile, path = make_sketch("P"), make_sketch("Path")
+        body = make_body("Body", group=[profile, path])
+        doc = make_mock_doc([body, profile, path])
+        mock_FreeCAD.ActiveDocument = doc
+        body.newObject.return_value.State = []
+
+        self.handler.sweep_path({'profile_sketch': 'P', 'path_sketch': 'Path'})
+
+        body.newObject.assert_called_with("PartDesign::AdditivePipe", "Sweep")
+        pipe = body.newObject.return_value
+        self.assertEqual((pipe.Profile, pipe.Spine), (profile, path))
+        doc.addObject.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

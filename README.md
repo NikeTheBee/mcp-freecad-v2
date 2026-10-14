@@ -32,7 +32,8 @@ trusting the AI's reading of it.
   under the part) and the counterbore went on the bottom face: both now sit on the top.
 - **Fillets, chamfers and shells land in the part**: "fillet all edges" of a PartDesign part made
   a separate object beside the Body, which kept its sharp edges while the reply said "all 12
-  edges" (same for chamfer and shell). They are now features of the Body, checked against the
+  edges" (same for chamfer, shell, loft and sweep: a loft of a Body's sketches left the Body
+  empty). They are now features of the Body, checked against the
   same operation done directly (to 1e-6). Thickness/shell/draft take `faces=[...]` headless,
   where they used to ask for a selection in a window that does not exist.
 - **Revolve around the axis you name**: on a sketch drawn in the XZ plane, "around y" turned around

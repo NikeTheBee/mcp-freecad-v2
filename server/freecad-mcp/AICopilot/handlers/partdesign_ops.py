@@ -1305,10 +1305,22 @@ class PartDesignOpsHandler(BaseHandler):
                 else:
                     return f"Sketch not found: {sketch_name}"
 
-            loft = doc.addObject("Part::Loft", name)
-            loft.Sections = sketch_objs
-            loft.Solid = closed
-            loft.Ruled = ruled
+            body = next((b for b in (self.find_body_for_object(sk, doc) for sk in sketch_objs) if b), None)
+            if body is not None:
+                # the sketches are in a Body: a PartDesign::AdditiveLoft INSIDE
+                # it (Profile = first, Sections = the rest), like the subtractive
+                # loft. A Part::Loft beside the Body left the Body empty or
+                # unchanged (MCP FREECAD v2, 2026-10-14).
+                loft = body.newObject("PartDesign::AdditiveLoft", name)
+                loft.Profile = sketch_objs[0]
+                loft.Sections = sketch_objs[1:]
+                loft.Ruled = ruled
+                loft.Closed = False
+            else:
+                loft = doc.addObject("Part::Loft", name)
+                loft.Sections = sketch_objs
+                loft.Solid = closed
+                loft.Ruled = ruled
 
             self.recompute(doc)
 
@@ -1340,6 +1352,11 @@ class PartDesignOpsHandler(BaseHandler):
             path = self.get_object(path_sketch, doc)
             if not path:
                 return f"Path sketch not found: {path_sketch}"
+
+            if self.find_body_for_object(profile, doc) or self.find_body_for_object(path, doc):
+                # in a Body: a PartDesign::AdditivePipe INSIDE it (a Part::Sweep
+                # beside the Body left it unchanged -- MCP FREECAD v2, 2026-10-14)
+                return self.additive_pipe(dict(args, name=args.get('name', 'Sweep')))
 
             sweep = doc.addObject("Part::Sweep", name)
             sweep.Sections = [profile]

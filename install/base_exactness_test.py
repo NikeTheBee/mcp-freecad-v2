@@ -314,6 +314,32 @@ def main() -> int:
             close(body_volume(inst), want, f"partdesign {args['operation']} in the Body ({str(r)[:30]}...)",
                   rel=1e-6)
 
+        # loft / sweep of a Body's sketches go INSIDE it (a Part::Loft or Part::Sweep beside
+        # it left the Body empty); helix around the body's Z from an XZ profile (Pappus)
+        body_sk = (
+            "import FreeCAD, Part\nfor _n in list(FreeCAD.listDocuments()):\n    FreeCAD.closeDocument(_n)\n"
+            "d = FreeCAD.newDocument('PD2')\nbody = d.addObject('PartDesign::Body', 'Body')\n"
+            "xy, xz = body.Origin.OriginFeatures[3], body.Origin.OriginFeatures[4]\n"
+            "def circ(name, r, z=0.0, cx=0.0, sup=None):\n"
+            "    s = body.newObject('Sketcher::SketchObject', name)\n"
+            "    s.AttachmentSupport = [(sup or xy, '')]; s.MapMode = 'FlatFace'\n"
+            "    s.AttachmentOffset = FreeCAD.Placement(FreeCAD.Vector(0, 0, z), FreeCAD.Rotation())\n"
+            "    s.addGeometry(Part.Circle(FreeCAD.Vector(cx, 0, 0), FreeCAD.Vector(0, 0, 1), r))\n"
+            "circ('C1', 5)\ncirc('C2', 5, 20)\ncirc('Coil', 1, 0, 10, xz)\n"
+            "p = body.newObject('Sketcher::SketchObject', 'Path')\n"
+            "p.AttachmentSupport = [(xz, '')]; p.MapMode = 'FlatFace'\n"
+            "p.addGeometry(Part.LineSegment(FreeCAD.Vector(0, 0, 0), FreeCAD.Vector(0, 30, 0)))\n"
+            "d.recompute()\n'ok'")
+        for args, want, what in (
+                ({"operation": "loft", "sketches": ["C1", "C2"]}, 500 * math.pi, "loft of two D10 circles 20 apart"),
+                ({"operation": "sweep", "profile_sketch": "C1", "path_sketch": "Path"}, 750 * math.pi,
+                 "sweep of a D10 circle along 30 mm"),
+                ({"operation": "helix", "sketch_name": "Coil", "axis": "z", "pitch": 5, "height": 20},
+                 80 * math.pi ** 2, "helix: D2 profile at R10, 4 turns")):
+            py(inst, body_sk)
+            r = op(inst, "partdesign_operations", args)
+            close(body_volume(inst), want, f"partdesign {what} ({str(r)[:28]}...)", rel=1e-6)
+
         # sketch tools: 20x10 rectangle + D4 circle at its centre, padded 3 mm
         py(inst, "import FreeCAD\nfor _n in list(FreeCAD.listDocuments()):\n    FreeCAD.closeDocument(_n)\n"
                  "d = FreeCAD.newDocument('SK')\nd.addObject('PartDesign::Body', 'Body')\n'ok'")
