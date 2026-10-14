@@ -13,7 +13,8 @@ Checks: recompute state of the object and of everything it depends on
 (a failed recompute keeps the LAST GOOD shape — that must not pass), shape
 validity, presence of a solid, closed shells, inverted/degenerate volume,
 OCCT BOP self-intersection check (it RAISES on problems), one-solid rule
-for PartDesign, and pairwise interference between the solids of a compound.
+for PartDesign, every feature of a Body in its shape (none after the Tip, none
+suppressed), and pairwise interference between the solids of a compound.
 Also returns kernel measurements (volume, bounding box, centre of mass,
 topology counts) so callers can compare them with the requested design.
 """
@@ -86,6 +87,30 @@ def _state_issues(obj) -> List[str]:
     return issues
 
 
+def _body_issues(obj) -> List[str]:
+    """A Body's shape is its Tip's: a feature after the Tip, or suppressed, is
+    NOT in the part, while the Body still checks as a valid solid."""
+    if getattr(obj, "TypeId", "") != "PartDesign::Body":
+        return []
+    feats = [o for o in obj.Group if o.isDerivedFrom("PartDesign::Feature")]
+    if not feats:
+        return []
+    tip = obj.Tip
+    if tip is None:
+        return ["the Body has no Tip: none of its features is in the part"]
+    issues = []
+    if tip in feats:
+        i = feats.index(tip)
+        if feats[i + 1:]:
+            issues.append(f"{', '.join(f.Name for f in feats[i + 1:])} after the Tip ({tip.Name}): "
+                          "not in the part (set the Body's Tip to the last feature, or delete them)")
+        feats = feats[:i + 1]
+    off = [f.Name for f in feats if getattr(f, "Suppressed", False)]
+    if off:
+        issues.append(f"{', '.join(off)} suppressed: not in the part")
+    return issues
+
+
 def interference(shapes: Iterable, tol: float = 1e-6,
                  names: Optional[List[str]] = None) -> List[Dict[str, Any]]:
     """Pairwise overlap volume between solids/shapes (bounding-box pre-filter).
@@ -120,6 +145,7 @@ def check(obj_or_name, doc=None, min_volume: float = 1e-6,
                            "type": getattr(obj, "TypeId", "?"),
                            "issues": [], "unchecked": []}
     res["issues"] += _state_issues(obj)
+    res["issues"] += _body_issues(obj)
 
     shp = getattr(obj, "Shape", None)
     if shp is None or shp.isNull():

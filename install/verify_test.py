@@ -168,6 +168,37 @@ def main() -> int:
     print(verify.sketch_verdict("Conflict", require_closed=False))
     assert r["status"] == verify.FAIL and any("conflicting" in i for i in r["issues"]), r
 
+    # a Body's shape is its Tip's: a hole after the Tip, or suppressed, is not in
+    # the part, yet the Body is a valid solid (it used to check OK at 4000 mm3)
+    body = doc.addObject("PartDesign::Body", "Body")
+    blk = body.newObject("PartDesign::AdditiveBox", "Block")
+    blk.Length, blk.Width, blk.Height = 20, 20, 10
+    hole = body.newObject("PartDesign::SubtractiveCylinder", "Hole")
+    hole.Radius, hole.Height = 3, 10
+    hole.Placement.Base = V(10, 10, 0)
+    doc.recompute()
+    expect("Body", verify.OK)
+    body.Tip = blk
+    doc.recompute()
+    r = expect("Body", verify.FAIL)
+    assert abs(r["volume"] - 4000) < 1e-6 and "Hole after the Tip (Block)" in r["issues"][0], r
+    body.Tip = hole
+    hole.Suppressed = True
+    doc.recompute()
+    r = expect("Body", verify.FAIL)
+    assert r["issues"] == ["Hole suppressed: not in the part"], r
+    hole.Suppressed = False
+    body.Tip = blk                     # a new feature goes in after the Tip: Hole is left out
+    hole2 = body.newObject("PartDesign::SubtractiveCylinder", "Hole2")
+    hole2.Radius, hole2.Height = 2, 10
+    doc.recompute()
+    assert body.Tip == hole2, body.Tip.Name
+    r = expect("Body", verify.FAIL)
+    assert "Hole after the Tip (Hole2)" in r["issues"][0], r
+    body.Tip = hole
+    doc.recompute()
+    expect("Body", verify.OK)
+
     print("VERIFY_OK")
     return 0
 

@@ -18,6 +18,8 @@ trusting the AI's reading of it.
   CAD, written only for a part `check` passes. The file is then read back and compared with the
   solid (volume, size, position, closed mesh). A file that does not match is never handed over,
   and never replaces a good one.
+- **A feature left out of the part is a FAIL**: a Body whose Tip stops before its last feature, or
+  with a suppressed feature, used to check OK (a valid solid, without the hole).
 - **Files land in the project**: a file named without a folder (`plan.dxf`, `part.stl`) used to land
   among the server's code; it now goes to the project folder.
 - **Heavy parts** (measured on a plate with 1,600 holes):

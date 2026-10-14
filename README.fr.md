@@ -17,6 +17,8 @@ au lieu de croire la lecture qu'en fait l'IA.
   pour une autre CAO, écrit seulement pour une pièce que `check` valide. Le fichier est ensuite
   relu et comparé au solide (volume, dimensions, position, maillage fermé). Un fichier qui ne
   correspond pas n'est jamais livré, et ne remplace jamais un bon fichier.
+- **Une fonction laissée hors de la pièce donne FAIL** : un Body dont la Tip s'arrête avant sa
+  dernière fonction, ou avec une fonction supprimée, passait OK (un solide valide, sans le trou).
 - **Les fichiers arrivent dans le projet** : un fichier nommé sans dossier (`plan.dxf`,
   `piece.stl`) atterrissait parmi le code du serveur ; il va maintenant dans le dossier du projet.
 - **Pièces lourdes** (mesuré sur une plaque percée de 1 600 trous) :
