@@ -232,7 +232,9 @@ def summary(max_items: int = 15) -> str:
     if s.get("constraints"):
         lines.append("Constraints: " + "; ".join(s["constraints"][-max_items:]))
     if s.get("specs"):
-        lines.append(f"Design contract: {len(s['specs'])} check(s) - run spec.check_all()")
+        targets = list(dict.fromkeys(str(x.get("target")) for x in s["specs"]))
+        lines.append(f"Design contract: {len(s['specs'])} requirement(s) on "
+                     + ", ".join(targets[:max_items]) + " - check(<target>) evaluates them")
     if s.get("parameters"):
         items = [f"{k}={v}" for k, v in s["parameters"].items()]
         lines.append("Params: " + _tail(items, max_items))
