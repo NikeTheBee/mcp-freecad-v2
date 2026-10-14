@@ -665,20 +665,39 @@ class PartDesignOpsHandler(BaseHandler):
                     f"on {face_ref} of {object_name} (PartDesign::Hole in {body.Name})"
                 )
 
-            # No Body — standalone CSG cylinder cut approach. Heights are
-            # anchored on the part's own bottom (was a fixed z=-2.5, which
-            # missed any part not sitting at z=0 -- MCP FREECAD v2 fix).
-            z0 = base_obj.Shape.BoundBox.ZMin if hasattr(base_obj, "Shape") else 0.0
+            # No Body — standalone CSG cut. Depths are measured from the part's
+            # surface AT (x, y), found by a vertical section (MCP FREECAD v2,
+            # 2026-10-14): the cylinder was anchored on the part's BOTTOM (a
+            # blind depth counted from below, 2.5 mm too deep), the counterbore
+            # sat on the bottom face and the countersink cone lay entirely
+            # under the part, cutting nothing.
+            if not hasattr(base_obj, "Shape") or base_obj.Shape.isNull():
+                return f"Object has no Shape: {object_name}"
+            shp = base_obj.Shape
+            bb = self._exact_bbox(shp)
+            line = Part.LineSegment(FreeCAD.Vector(x, y, bb.ZMax + 1.0),
+                                    FreeCAD.Vector(x, y, bb.ZMin - 1.0)).toShape()
+            zs = [v.Point.z for v in shp.section(line).Vertexes]
+            if not zs:
+                return (f"Error creating hole: no material at ({x}, {y}); {object_name} spans "
+                        f"x {bb.XMin:g}..{bb.XMax:g}, y {bb.YMin:g}..{bb.YMax:g}")
+            top, bottom = max(zs), min(zs)
+            through = not depth or depth >= top - bottom - 1e-9
             hole = doc.addObject("Part::Cylinder", "Hole")
             hole.Radius = diameter / 2
-            hole.Height = depth + 5
-            hole.Placement.Base = FreeCAD.Vector(x, y, z0 - 2.5)
+            if through:
+                hole.Height = bb.ZLength + 2.0
+                hole.Placement.Base = FreeCAD.Vector(x, y, bb.ZMin - 1.0)
+            else:
+                hole.Height = depth + 1.0
+                hole.Placement.Base = FreeCAD.Vector(x, y, top - depth)
+            kind = "through" if through else f"{depth}mm deep from the surface at z={top:g}"
 
             if hole_type == 'counterbore':
                 cb_hole = doc.addObject("Part::Cylinder", "CounterboreHole")
                 cb_hole.Radius = cb_diameter / 2
                 cb_hole.Height = cb_depth + 1
-                cb_hole.Placement.Base = FreeCAD.Vector(x, y, z0 - 0.5)
+                cb_hole.Placement.Base = FreeCAD.Vector(x, y, top - cb_depth)
 
                 combined_hole = doc.addObject("Part::Fuse", "CombinedHole")
                 combined_hole.Base = hole
@@ -690,11 +709,15 @@ class PartDesignOpsHandler(BaseHandler):
                 cut.Tool = combined_hole
 
             elif hole_type == 'countersink':
+                # narrow end down at the countersink's depth, wide end at the
+                # surface, carried 1 mm above it at the same angle (no
+                # coplanar faces for the boolean)
                 cs_cone = doc.addObject("Part::Cone", "CountersinkCone")
-                cs_cone.Radius1 = cb_diameter / 2
-                cs_cone.Radius2 = diameter / 2
-                cs_cone.Height = cb_depth
-                cs_cone.Placement.Base = FreeCAD.Vector(x, y, z0 - cb_depth)
+                flare = (cb_diameter - diameter) / 2 / cb_depth if cb_depth else 0.0
+                cs_cone.Radius1 = diameter / 2
+                cs_cone.Radius2 = cb_diameter / 2 + flare
+                cs_cone.Height = cb_depth + 1
+                cs_cone.Placement.Base = FreeCAD.Vector(x, y, top - cb_depth)
 
                 combined_hole = doc.addObject("Part::Fuse", "CombinedHole")
                 combined_hole.Base = hole
@@ -716,7 +739,8 @@ class PartDesignOpsHandler(BaseHandler):
             if err:
                 return err
 
-            return f"Created {hole_type} hole: {diameter}mm diameter at ({x}, {y}) in {object_name}"
+            return (f"Created {hole_type} hole: {diameter}mm diameter at ({x}, {y}) in "
+                    f"{object_name}, {kind}")
 
         except Exception as e:
             return f"Error creating hole: {e}"

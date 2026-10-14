@@ -247,6 +247,25 @@ def main() -> int:
         print("curved faces: loft measured 30 x 20, hidden collision found:",
               txt[:90].replace("\n", " | "))
 
+        # holes in a plain Part box (CSG path), 20 x 20 x 10: depths from the TOP surface.
+        # The countersink cone used to lie entirely under the part (cut nothing), the
+        # counterbore sat on the bottom face, a blind depth was counted from below.
+        for args, removed in (({"hole_type": "simple", "depth": 4}, 36 * math.pi),
+                              ({"hole_type": "counterbore", "depth": 10, "cb_diameter": 12,
+                                "cb_depth": 4}, 198 * math.pi),
+                              ({"hole_type": "countersink", "depth": 10, "cb_diameter": 12,
+                                "cb_depth": 3}, 126 * math.pi)):
+            py(inst, "import FreeCAD\nfor _n in list(FreeCAD.listDocuments()):\n"
+                     "    FreeCAD.closeDocument(_n)\n"
+                     "d = FreeCAD.newDocument('HW')\nb = d.addObject('Part::Box', 'Blk')\n"
+                     "b.Length, b.Width, b.Height = 20, 20, 10\nd.recompute()\n'ok'")
+            r = op(inst, "partdesign_operations", {"operation": "hole", "object_name": "Blk",
+                                                   "diameter": 6, "x": 10, "y": 10, **args})
+            got = float(py(inst, "import FreeCAD\nround(4000 - [o for o in FreeCAD.ActiveDocument"
+                                 ".Objects if o.TypeId == 'Part::Cut'][-1].Shape.Volume, 6)"))
+            close(got, removed, f"CSG {args['hole_type']} hole: volume removed ({str(r)[:40]}...)",
+                  rel=1e-6)
+
         # PartDesign through the base's tool, volume after each step
         py(inst, PD_SETUP)
         seg = 4 * math.acos(0.5) - math.sqrt(3)             # D4 circle cut 1 mm from its centre

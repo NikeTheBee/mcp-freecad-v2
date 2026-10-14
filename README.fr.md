@@ -28,7 +28,9 @@ au lieu de croire la lecture qu'en fait l'IA.
   extrémité (1 600 trous : moins d'une seconde). Un trou borgne fait par `pd_hole` (ou par le
   trou de la base dans un Body) part de la surface sous lui, pas du sommet de toute la pièce (sur
   une pièce à gradins il commençait dans le vide), et il est mesuré une fois fait : débouchant,
-  profondeur.
+  profondeur. Sur un solide Part simple, le fraisage de la base ne coupait rien (son cône était
+  sous la pièce) et le lamage se faisait sur la face du dessous : les deux sont maintenant
+  dessus.
 - **Une fonction laissée hors de la pièce donne FAIL** : un Body dont la Tip s'arrête avant sa
   dernière fonction, ou avec une fonction supprimée, passait OK (un solide valide, sans le trou).
 - **Les fichiers arrivent dans le projet** : un fichier nommé sans dossier (`plan.dxf`,

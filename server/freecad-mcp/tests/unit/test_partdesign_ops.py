@@ -388,6 +388,7 @@ class TestHoleWizard(unittest.TestCase):
 
     def test_simple_hole_creates_cylinder_and_cut(self):
         box = make_box_object("Plate")
+        _surface_at_xy(box, top=10.0, bottom=0.0)
         doc = make_mock_doc([box])
         mock_FreeCAD.ActiveDocument = doc
 
@@ -402,10 +403,51 @@ class TestHoleWizard(unittest.TestCase):
         self.assertIn("Part::Cut", type_ids_added)
         # Simple hole does NOT create Counterbore or Cone
         self.assertNotIn("Part::Cone", type_ids_added)
-        assert_success_contains(self, result, "simple", "6mm", "Plate")
+        assert_success_contains(self, result, "simple", "6mm", "Plate", "through")
+
+    def test_csg_blind_hole_and_counterbore_measured_from_the_top(self):
+        """MCP FREECAD v2: the CSG path anchored the hole on the part's BOTTOM
+        (a blind depth counted from below, 2.5 mm too deep) and put the
+        counterbore on the bottom face."""
+        box = make_box_object("Plate")
+        _surface_at_xy(box, top=10.0, bottom=0.0)
+        doc = make_mock_doc([box])
+        mock_FreeCAD.ActiveDocument = doc
+        made = {}
+        doc.addObject.side_effect = lambda t, n: made.setdefault(n, MagicMock(Name=n, TypeId=t, State=[]))
+
+        result = self.handler.hole_wizard({
+            'object_name': 'Plate', 'hole_type': 'counterbore',
+            'diameter': 6, 'depth': 7, 'cb_diameter': 12, 'cb_depth': 4,
+        })
+
+        self.assertEqual(made["Hole"].Placement.Base.z, 3.0)            # 10 - 7
+        self.assertEqual(made["Hole"].Height, 8.0)
+        self.assertEqual(made["CounterboreHole"].Placement.Base.z, 6.0)  # 10 - 4, on top
+        assert_success_contains(self, result, "7mm deep from the surface at z=10")
+
+    def test_csg_countersink_cone_flares_up_to_the_surface(self):
+        """MCP FREECAD v2: the cone lay entirely UNDER the part and cut nothing."""
+        box = make_box_object("Plate")
+        _surface_at_xy(box, top=10.0, bottom=0.0)
+        doc = make_mock_doc([box])
+        mock_FreeCAD.ActiveDocument = doc
+        made = {}
+        doc.addObject.side_effect = lambda t, n: made.setdefault(n, MagicMock(Name=n, TypeId=t, State=[]))
+
+        self.handler.hole_wizard({
+            'object_name': 'Plate', 'hole_type': 'countersink',
+            'diameter': 6, 'cb_diameter': 12, 'cb_depth': 3,
+        })
+
+        cone = made["CountersinkCone"]
+        self.assertEqual(cone.Placement.Base.z, 7.0)        # 10 - 3: inside the part
+        self.assertEqual((cone.Radius1, cone.Radius2), (3.0, 7.0))   # narrow end down
+        self.assertEqual(cone.Height, 4.0)                  # 1 mm above the surface
 
     def test_counterbore_creates_two_cylinders_plus_fuse_plus_cut(self):
         box = make_box_object("Plate")
+        _surface_at_xy(box, top=10.0, bottom=0.0)
         doc = make_mock_doc([box])
         mock_FreeCAD.ActiveDocument = doc
 
@@ -424,6 +466,7 @@ class TestHoleWizard(unittest.TestCase):
 
     def test_countersink_creates_cylinder_plus_cone(self):
         box = make_box_object("Plate")
+        _surface_at_xy(box, top=10.0, bottom=0.0)
         doc = make_mock_doc([box])
         mock_FreeCAD.ActiveDocument = doc
 
