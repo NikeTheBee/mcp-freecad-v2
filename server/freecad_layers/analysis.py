@@ -7,6 +7,8 @@ maker-agent / CADSmith). Used by spec.py (design contract) and for
 
 - holes(): concave, full-turn cylindrical surfaces only. A fillet, a boss or
   the outside of a round bar is NOT a hole (the old CAM layer drilled them).
+  A bore stored as a B-spline (a STEP from another CAD, toNurbs) counts too:
+  its points and normals are fitted to a cylinder.
 - min_wall(): sampled ray-casting through the solid (an estimate, labelled so).
 - overhangs(): downward-facing area beyond a printing angle.
 - printability(): one verdict for FDM printing (watertight, bed size, walls,
@@ -49,6 +51,87 @@ def _is_concave(face) -> Optional[bool]:
     return n.dot(radial) < 0           # normal points to the axis -> bore
 
 
+# a freeform face can be a cylinder in disguise: a STEP from another CAD
+_FREEFORM = ("Part::GeomBSplineSurface", "Part::GeomBezierSurface",
+             "Part::GeomSurfaceOfExtrusion")
+
+
+def _fitted_bore(f, tol: float) -> Optional[tuple]:
+    """(center, axis, radius, angular span, tolerance) when a freeform face is
+    the inside of a cylinder: its normals all square to one axis, its points on
+    one circle around it, the normals pointing to that axis. None otherwise."""
+    import numpy as np
+
+    u0, u1, v0, v1 = f.ParameterRange
+    pts, nrm = [], []
+    for i in range(5):
+        for j in range(5):
+            u, v = u0 + (u1 - u0) * (i + 0.5) / 5, v0 + (v1 - v0) * (j + 0.5) / 5
+            n = f.normalAt(u, v)
+            if n.Length > 1e-12:
+                p = f.valueAt(u, v)
+                pts.append((p.x, p.y, p.z))
+                nrm.append(tuple(n.normalize()))
+    if len(pts) < 9:
+        return None
+    P, N = np.array(pts), np.array(nrm)
+    w, vec = np.linalg.eigh(N.T @ N)
+    if w[0] > 1e-6 * len(N) or w[1] < 1e-3 * len(N):
+        return None                     # normals not all square to one axis, or a plane
+    a = vec[:, 0]
+    e1 = np.cross(a, (1.0, 0.0, 0.0) if abs(a[0]) < 0.9 else (0.0, 1.0, 0.0))
+    e1 /= np.linalg.norm(e1)
+    e2 = np.cross(a, e1)
+    x, y = P @ e1, P @ e2
+    (d, e, g), *_ = np.linalg.lstsq(np.c_[x, y, np.ones_like(x)], -(x * x + y * y), rcond=None)
+    cx, cy = -d / 2.0, -e / 2.0
+    r2 = cx * cx + cy * cy - g
+    if r2 <= 0:
+        return None
+    r = math.sqrt(r2)
+    fit_tol = max(tol, 2e-3 * r)
+    rad = np.c_[x - cx, y - cy]
+    dist = np.hypot(rad[:, 0], rad[:, 1])
+    if np.max(np.abs(dist - r)) > fit_tol or np.min(dist) < 1e-9:
+        return None
+    toward = np.einsum("ij,ij->i", np.c_[N @ e1, N @ e2], rad / dist[:, None])
+    if np.max(toward) > -0.99:
+        return None                     # a boss, or not radial: not a bore
+    t = float(np.mean(P @ a))
+    center = App.Vector(*(cx * e1 + cy * e2 + t * a))
+    axis = App.Vector(*a)
+    # angular span: the angles the face reaches (edges + samples); a gap counts
+    # as uncovered only when a point in its middle is not on the face
+    ring = [(q.x, q.y, q.z) for ed in f.Edges for q in ed.discretize(24)] + pts
+    R = np.array(ring) - (cx * e1 + cy * e2)
+    ang = np.sort(np.arctan2(R @ e2, R @ e1))
+    gaps = np.diff(np.r_[ang, ang[0] + _TWO_PI])
+    span = _TWO_PI
+    for k in np.nonzero(gaps > 1e-3)[0]:
+        mid = ang[k] + gaps[k] / 2.0
+        q = App.Vector(*((cx + r * math.cos(mid)) * e1 + (cy + r * math.sin(mid)) * e2 + t * a))
+        if not f.isInside(q, max(10 * fit_tol, 1e-3), True):
+            span -= float(gaps[k])
+    return center, axis, r, span, fit_tol
+
+
+def _bore(f, tol: float) -> Optional[tuple]:
+    """(center, axis, radius, angular span, tolerance) of a face that is the
+    inside of a cylinder, None for any other face."""
+    s = f.Surface
+    if s.TypeId == "Part::GeomCylinder":
+        if not _is_concave(f):
+            return None
+        u0, u1, _v0, _v1 = f.ParameterRange
+        return App.Vector(s.Center), App.Vector(s.Axis).normalize(), s.Radius, u1 - u0, tol
+    if s.TypeId in _FREEFORM:
+        try:
+            return _fitted_bore(f, tol)
+        except Exception:  # noqa: BLE001 — an unreadable face is simply not a bore
+            return None
+    return None
+
+
 def holes(obj_or_shape, tol: float = 1e-4) -> List[Dict[str, Any]]:
     """Cylindrical holes: [{diameter, axis, center, depth, through}], sorted.
 
@@ -69,8 +152,7 @@ def holes(obj_or_shape, tol: float = 1e-4) -> List[Dict[str, Any]]:
 
 def _holes_of(shp, tol: float) -> List[Dict[str, Any]]:
     groups: List[Dict[str, Any]] = []
-    bores = [f for f in shp.Faces
-             if f.Surface.TypeId == "Part::GeomCylinder" and _is_concave(f)]
+    bores = [(f, b) for f in shp.Faces for b in (_bore(f, tol),) if b is not None]
     # Groups are indexed by the cell of their axis line's foot (its point
     # nearest the origin, the same for +axis and -axis). Two lines that pass
     # the test below (within `tol` of each other, directions within ~1.5 mrad)
@@ -78,14 +160,13 @@ def _holes_of(shp, tol: float) -> List[Dict[str, Any]]:
     # from the origin), less than one cell, so the 27 cells around a face
     # hold every candidate: the same test as against all groups, without the
     # n² cost (1600 holes: 2.7 s).
-    reach = max((f.Surface.Center.Length for f in bores), default=0.0)
-    cell = max(1.0, 4 * tol + 4 * reach * 1.5e-3)
+    reach = max((b[0].Length for _f, b in bores), default=0.0)
+    btol = max((b[4] for _f, b in bores), default=tol)
+    fitted = btol > tol                 # fitted axes: directions within ~4.5 mrad
+    cell = max(1.0, 4 * btol + 4 * reach * (4.5e-3 if fitted else 1.5e-3))
     buckets: Dict[tuple, List[Dict[str, Any]]] = {}
-    for f in bores:
-        s = f.Surface
-        axis = App.Vector(s.Axis).normalize()
-        u0, u1, v0, v1 = f.ParameterRange
-        foot = s.Center - axis * s.Center.dot(axis)
+    for f, (center, axis, radius, span, ftol) in bores:
+        foot = center - axis * center.dot(axis)
         key = tuple(math.floor(c / cell) for c in (foot.x, foot.y, foot.z))
         match = None
         for dx in (-1, 0, 1):
@@ -94,41 +175,122 @@ def _holes_of(shp, tol: float) -> List[Dict[str, Any]]:
                     for g in buckets.get((key[0] + dx, key[1] + dy, key[2] + dz), ()):
                         if match is not None and g["index"] > match["index"]:
                             continue            # first-created match wins, as before
-                        same_r = abs(g["radius"] - s.Radius) < tol
-                        parallel = abs(abs(g["axis"].dot(axis)) - 1.0) < 1e-6
-                        d = s.Center - g["origin"]
-                        on_line = (d - g["axis"] * d.dot(g["axis"])).Length < tol
+                        t = max(ftol, g["tol"])
+                        same_r = abs(g["radius"] - radius) < t
+                        parallel = abs(abs(g["axis"].dot(axis)) - 1.0) < (1e-5 if t > tol else 1e-6)
+                        d = center - g["origin"]
+                        on_line = (d - g["axis"] * d.dot(g["axis"])).Length < t
                         if same_r and parallel and on_line:
                             match = g
         if match is not None:
-            match["span"] += (u1 - u0)
+            match["span"] += span
             match["faces"].append(f)
         else:
-            g = {"radius": s.Radius, "axis": axis, "origin": App.Vector(s.Center),
-                 "span": (u1 - u0), "faces": [f], "index": len(groups)}
+            g = {"radius": radius, "axis": axis, "origin": center, "tol": ftol,
+                 "span": span, "faces": [f], "index": len(groups)}
             groups.append(g)
             buckets.setdefault(key, []).append(g)
     out = []
     bb = verify.box(shp)
+    edge_faces = None                   # built once, only if a hole needs it
     for g in groups:
         if g["span"] < _TWO_PI - 1e-3:
             continue                    # partial arc: concave fillet / slot end
         a, o = g["axis"], g["origin"]
-        ts = [(v.Point - o).dot(a) for f in g["faces"] for v in f.Vertexes]
+        ts = _axial_extent(g["faces"], o, a)
         if not ts:
             continue
         t0, t1 = min(ts), max(ts)
         mid = o + a * ((t0 + t1) / 2.0)
-        # through-hole: the bore spans the part's full extent along its axis
+        # through-hole: the bore spans the part's full extent along its axis...
         corners = [App.Vector(x, y, z) for x in (bb.XMin, bb.XMax)
                    for y in (bb.YMin, bb.YMax) for z in (bb.ZMin, bb.ZMax)]
         ext = [(c - o).dot(a) for c in corners]
         through = (t1 - t0) >= (max(ext) - min(ext)) - 1e-3
+        if not through:
+            # ...or neither end is closed: the base of an L-bracket, a bore under
+            # a counterbore, a tilted hole (all read "blind" before)
+            if edge_faces is None:
+                edge_faces, outer = _edge_faces(shp), {}
+            through = not (_closed_end(g["faces"], o, a, g["radius"], t0, -1.0, edge_faces, outer)
+                           or _closed_end(g["faces"], o, a, g["radius"], t1, 1.0, edge_faces, outer))
         out.append({"diameter": round(2 * g["radius"], 4),
                     "axis": [round(x, 6) for x in (a.x, a.y, a.z)],
                     "center": [round(x, 4) for x in (mid.x, mid.y, mid.z)],
                     "depth": round(t1 - t0, 4), "through": through})
     return sorted(out, key=lambda h: (h["diameter"], h["center"]))
+
+
+def _edge_faces(shp) -> Dict[int, List[Any]]:
+    """Edge -> the faces bounded by it (an edge shared by two faces is one
+    TopoDS edge: same hash whatever its orientation)."""
+    out: Dict[int, List[Any]] = {}
+    for f in shp.Faces:
+        for e in f.Edges:
+            out.setdefault(e.hashCode(), []).append(f)
+    return out
+
+
+def _closed_end(faces, o, a, r, t_end, side: float, edge_faces, outer) -> bool:
+    """True when the bore is closed at its end `t_end`: a face meeting it there
+    reaches INSIDE its cross-section (a flat bottom, a drill point's cone, the
+    floor of a counterbore). An open end meets only faces lying outside it (the
+    plate's surface around the hole, a countersink's cone).
+    A plane neighbour is decided by topology: the end edge in its OUTER wire
+    bounds a floor, in an inner wire it is a hole through that face. Any other
+    neighbour: is the point just inside the bore's rim on it? (A solid
+    classifier on the whole part took minutes on 1,600 holes; a point test on
+    a face with 1,520 holes, a minute.)"""
+    own = {f.hashCode() for f in faces}
+    reach = 1e-6 + 1e-6 * r
+    for f in faces:
+        for e in f.Edges:
+            if e.Curve.TypeId == "Part::GeomLine":
+                continue                                    # a seam along the axis
+            ts = [(q - o).dot(a) for q in e.discretize(8)]
+            if (side < 0 and min(ts) > t_end + reach) or (side > 0 and max(ts) < t_end - reach):
+                continue                                    # not at this end
+            for nb in edge_faces.get(e.hashCode(), ()):
+                k = nb.hashCode()
+                if k in own:
+                    continue
+                try:
+                    if k not in outer:          # once per face: Surface is slow on a big one
+                        outer[k] = ({x.hashCode() for x in nb.OuterWire.Edges}
+                                    if nb.Surface.TypeId == "Part::GeomPlane" else None)
+                    if outer[k] is not None:
+                        if e.hashCode() in outer[k]:
+                            return True
+                        continue
+                    u0, u1 = e.ParameterRange
+                    m = e.valueAt((u0 + u1) / 2.0)
+                    w = m - o
+                    radial = w - a * w.dot(a)
+                    if radial.Length < 1e-9:
+                        continue
+                    q = m - radial.normalize() * max(1e-3, 1e-2 * r)   # just inside the rim
+                    u, v = nb.Surface.parameter(q)
+                    if nb.isInside(nb.Surface.value(u, v), 1e-6, True):
+                        return True
+                except Exception:  # noqa: BLE001 — unreadable neighbour: say closed
+                    return True
+    return False
+
+
+def _axial_extent(faces, o, a) -> List[float]:
+    """Positions along the axis reached by the bore's edges. End circles square
+    to the axis and straight seams are exact at their vertices; any other edge
+    (the ellipse of a tilted or slanted end) is sampled."""
+    ts = []
+    for f in faces:
+        for e in f.Edges:
+            c = getattr(e, "Curve", None)
+            kind = getattr(c, "TypeId", "")
+            square = kind == "Part::GeomCircle" and abs(abs(App.Vector(c.Axis).dot(a)) - 1.0) < 1e-9
+            pts = ([v.Point for v in e.Vertexes] if square or kind == "Part::GeomLine"
+                   else e.discretize(24))
+            ts += [(p - o).dot(a) for p in pts]
+    return ts
 
 
 def _face_samples(face, n: int):

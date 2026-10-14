@@ -21,6 +21,11 @@ au lieu de croire la lecture qu'en fait l'IA.
   un loft de 30×20 comme 37,3×26,8, et une révolution de B-spline plus petite qu'elle n'est (une
   vraie collision passait alors inaperçue). Dimensions, exigences, plateau, exports et
   collisions utilisent maintenant la boîte exacte, dans les couches et dans la base.
+- **Des trous bien mesurés sur de vraies pièces** : un trou débouchant dans la semelle d'une
+  équerre en L, sous un lamage ou incliné passait pour « borgne » (comparé à la hauteur de toute
+  la pièce), et un alésage stocké en B-spline (un STEP venu d'un autre CAO) n'était pas vu du
+  tout. « Débouchant » veut maintenant dire ouvert aux deux bouts, jugé sur les faces de chaque
+  extrémité (1 600 trous : moins d'une seconde).
 - **Une fonction laissée hors de la pièce donne FAIL** : un Body dont la Tip s'arrête avant sa
   dernière fonction, ou avec une fonction supprimée, passait OK (un solide valide, sans le trou).
 - **Les fichiers arrivent dans le projet** : un fichier nommé sans dossier (`plan.dxf`,

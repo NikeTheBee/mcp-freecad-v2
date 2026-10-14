@@ -22,6 +22,10 @@ trusting the AI's reading of it.
   and a revolved B-spline as smaller than it is (so a real collision was skipped). Sizes,
   requirements, bed fit, exports and collision checks now use the exact box, in the layers
   and in the base.
+- **Holes measured right on real parts**: a through hole in the base of an L-bracket, under a
+  counterbore or tilted read "blind" (it was compared with the height of the whole part), and
+  a bore stored as a B-spline (a STEP from another CAD) was not seen at all. "Through" now
+  means both ends open, decided on the faces at each end (1,600 holes: under a second).
 - **A feature left out of the part is a FAIL**: a Body whose Tip stops before its last feature, or
   with a suppressed feature, used to check OK (a valid solid, without the hole).
 - **Files land in the project**: a file named without a folder (`plan.dxf`, `part.stl`) used to land

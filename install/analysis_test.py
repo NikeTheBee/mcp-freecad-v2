@@ -62,6 +62,36 @@ def main() -> int:
     assert len(sh) == 1 and sh[0]["diameter"] == 8 and sh[0]["through"], sh
     assert sh[0]["center"] == [5010, -2990, 2010], sh
     print("split bore far from the origin is one hole: OK")
+    # "through" = both ends open onto air, not "as long as the whole part": the
+    # base hole of an L-bracket and the bore under a counterbore read "blind"
+    lb = Part.makeBox(60, 40, 5).fuse(Part.makeBox(5, 40, 50)).removeSplitter()
+    lh = analysis.holes(lb.cut(Part.makeCylinder(3, 5, V(30, 20, 0))))
+    assert len(lh) == 1 and lh[0]["through"] and lh[0]["depth"] == 5, lh
+    cb = Part.makeBox(40, 40, 10).cut(Part.makeCylinder(3, 10, V(20, 20, 0)))
+    ch = analysis.holes(cb.cut(Part.makeCylinder(5.5, 4, V(20, 20, 6))))
+    assert [(h["diameter"], h["through"]) for h in ch] == [(6, True), (11, False)], ch
+    pt = Part.makeBox(40, 40, 10).cut(Part.makeCylinder(3, 6, V(20, 20, 4)))
+    pt = pt.cut(Part.makeCone(3, 0, 1.8, V(20, 20, 4), V(0, 0, -1)))     # 118 deg drill point
+    ph = analysis.holes(pt)
+    assert len(ph) == 1 and not ph[0]["through"], ph
+    cs = Part.makeBox(40, 40, 10).cut(Part.makeCylinder(3, 10, V(20, 20, 0)))
+    cs = cs.cut(Part.makeCone(3, 6, 3, V(20, 20, 7)))                    # countersink
+    sh2 = analysis.holes(cs)
+    assert len(sh2) == 1 and sh2[0]["through"] and sh2[0]["depth"] == 7, sh2
+    # tilted through a 10 mm plate: through, centred mid-plate (vertices alone
+    # missed the ellipse ends: centre at z 5.86)
+    tl = analysis.holes(Part.makeBox(40, 40, 10).cut(
+        Part.makeCylinder(3, 40, V(20, 20, -10), V(0.3, 0, 1))))
+    assert len(tl) == 1 and tl[0]["through"] and abs(tl[0]["center"][2] - 5) < 0.01, tl
+    print("through = both ends open: L-bracket, counterbore, countersink, drill point, tilted: OK")
+    # the same holes stored as B-splines (a STEP from another CAD): same answer;
+    # a boss (convex) is still not a hole
+    nb = plate.toNurbs()
+    assert {type(f.Surface).__name__ for f in nb.Faces} == {"BSplineSurface"}
+    assert analysis.holes(nb) == hs, (analysis.holes(nb), hs)
+    boss = Part.makeBox(20, 20, 5).fuse(Part.makeCylinder(3, 10, V(10, 10, 5))).toNurbs()
+    assert analysis.holes(boss) == [], analysis.holes(boss)
+    print("B-spline bores fitted (same holes as the analytic part), boss rejected: OK")
     # in an assembly, "through" is judged per part: a pin standing in a plate's through
     # hole made the compound taller, and the hole used to read "blind"
     plate_pin = Part.makeCompound([Part.makeBox(60, 40, 8).cut(Part.makeCylinder(3, 8, V(30, 20, 0))),
