@@ -161,8 +161,21 @@ class SpatialOpsHandler(BaseHandler):
             # Touching is a LINEAR condition — compare against the linear OCCT
             # tolerance, not _VOL_TOL (1e-9 mm³), which as a distance threshold is
             # far tighter than OCCT's own resolution and misreports contact as a gap.
+            # A zero distance is also what overlapping (or nested) solids give:
+            # their shared volume tells contact from interference.
             if min_dist < _OCCT_LIN_TOL:
-                lines.append("  Status: TOUCHING (zero clearance)")
+                try:
+                    shared = s1.common(s2).Volume if (s1.Solids and s2.Solids) else 0.0
+                except Exception:
+                    shared = None
+                if shared is None:
+                    lines.append("  Status: ZERO DISTANCE (touching or overlapping: "
+                                 "their shared volume could not be computed)")
+                elif shared > _VOL_TOL:
+                    lines.append(f"  Status: INTERFERING — they overlap by {shared:.4f} mm³ "
+                                 f"(no clearance)")
+                else:
+                    lines.append("  Status: TOUCHING (zero clearance)")
             else:
                 lines.append(f"  Status: {min_dist:.4f} mm gap")
 
@@ -351,8 +364,17 @@ class SpatialOpsHandler(BaseHandler):
             except (ValueError, IndexError) as e:
                 return f"Invalid face reference: {e}"
 
-            n1_vec = f1.normalAt(0, 0)
-            n2_vec = f2.normalAt(0, 0)
+            def _planar(f):
+                try:
+                    import Part
+                    return isinstance(f.Surface, Part.Plane)
+                except Exception:
+                    return True  # surface unknown: treat as a plane, as before
+
+            # at each face's centre: normalAt(0, 0) is arbitrary on a curved face
+            n1_vec = self._face_normal(f1)
+            n2_vec = self._face_normal(f2)
+            planar = _planar(f1) and _planar(f2)
             c1 = f1.CenterOfMass
             c2 = f2.CenterOfMass
 
@@ -373,7 +395,12 @@ class SpatialOpsHandler(BaseHandler):
             lines.append(f"  {n2}.{face2_id}: normal={self._fmt_vec(n2_vec, 4)} "
                          f"center={self._fmt_vec(c2)} area={f2.Area:.2f}mm²")
             lines.append(f"  Angle between normals: {angle_deg:.2f}°")
-            lines.append(f"  Parallel: {parallel}")
+            if not planar:
+                lines.append("  Parallel: n/a (curved face: its normal varies; "
+                             "normals above are at the face's centre)")
+                parallel = False
+            else:
+                lines.append(f"  Parallel: {parallel}")
 
             if parallel:
                 lines.append(f"  Facing each other: {facing}")
@@ -387,23 +414,26 @@ class SpatialOpsHandler(BaseHandler):
                 coplanar = plane_dist < 0.01
                 lines.append(f"  Coplanar: {coplanar}")
 
-            # Try to compute overlap area via section
+            # Shared area = the common of the two faces. Their section only
+            # gives the boundary edges of an overlap (never a closed wire), so
+            # the old section-based area was never reported.
             try:
-                section = f1.section(f2)
-                if section.Edges:
-                    # Section produced edges — faces share area
-                    try:
-                        # Try to build a face from the section wires
-                        import Part
-                        if section.Wires:
-                            overlap_face = Part.Face(section.Wires[0])
-                            lines.append(f"  Overlap area: {overlap_face.Area:.4f} mm²")
-                        else:
-                            lines.append(f"  Overlap: edges found ({len(section.Edges)}) but no closed wire")
-                    except Exception:
-                        lines.append(f"  Overlap: {len(section.Edges)} shared edges (area computation failed)")
+                common = f1.common(f2)
+                shared = sum(f.Area for f in common.Faces)
+                if shared > 1e-9:
+                    lines.append(f"  Overlap area: {shared:.4f} mm²")
                 else:
-                    lines.append("  Overlap: none (faces don't share area)")
+                    section = f1.section(f2)
+                    edges = list(section.Edges)
+                    points = list(section.Vertexes)
+                    if edges:
+                        length = sum(e.Length for e in edges)
+                        lines.append(f"  Overlap: none — the faces meet along {len(edges)} "
+                                     f"edge(s), {length:.4f} mm long")
+                    elif points:
+                        lines.append(f"  Overlap: none — the faces touch at {len(points)} point(s)")
+                    else:
+                        lines.append("  Overlap: none (faces don't share area)")
             except Exception:
                 lines.append("  Overlap: could not compute")
 
@@ -444,6 +474,7 @@ class SpatialOpsHandler(BaseHandler):
             # exact boxes, once each: a too-small box skipped real collisions
             boxes = {n: self._exact_bbox(s) for n, s in shapes.items()}
             collisions = []
+            touching = []  # zero distance, no shared volume
             clear_pairs = 0
             failed_pairs = []  # pairs where the geometry op raised — never silently "clear"
 
@@ -465,23 +496,29 @@ class SpatialOpsHandler(BaseHandler):
                     if vol > _VOL_TOL:
                         collisions.append((n1, n2, vol))
                     else:
-                        # Sliver detection: BB overlaps but common() returned zero.
-                        # Check if shapes are actually touching (sub-tolerance contact).
+                        # BB overlaps but common() returned zero: parts in contact
+                        # (flush faces) — or an overlap thinner than OCCT's
+                        # tolerance. Not a collision, but never silently "clear".
                         try:
                             dist = shapes[n1].distToShape(shapes[n2])[0]
                             if dist < _OCCT_LIN_TOL:
-                                collisions.append((n1, n2, 0.0, "SUB-TOL"))
+                                touching.append((n1, n2))
                             else:
                                 clear_pairs += 1
                         except Exception:
                             # A distToShape failure is NOT a clear pair — count it
-                            # as failed so collisions+clear+failed == total_pairs.
+                            # as failed so collisions+touching+clear+failed == total_pairs.
                             failed_pairs.append((n1, n2))
 
             total_pairs = len(names) * (len(names) - 1) // 2
             lines = [f"Batch interference: {len(names)} objects, {total_pairs} pairs checked"]
             lines.extend(warnings)
             lines.append(f"  Collisions: {len(collisions)}")
+            if touching:
+                lines.append(f"  Touching (contact, no shared volume): {len(touching)}")
+                for n1, n2 in touching:
+                    lines.append(f"    {n1} ↔ {n2}: zero gap, zero overlap volume (flush contact, "
+                                 f"or an overlap thinner than OCCT's {_OCCT_LIN_TOL:.0e} mm)")
             lines.append(f"  Clear: {clear_pairs}")
             if failed_pairs:
                 lines.append(f"  Failed (geometry error): {len(failed_pairs)}")
@@ -490,14 +527,8 @@ class SpatialOpsHandler(BaseHandler):
 
             if collisions:
                 lines.append("  Colliding pairs:")
-                for entry in collisions:
-                    if len(entry) == 4 and entry[3] == "SUB-TOL":
-                        n1, n2 = entry[0], entry[1]
-                        lines.append(f"    {n1} ↔ {n2}: POSSIBLE SUB-TOLERANCE CONTACT "
-                                     f"(BB overlap, zero volume — sliver below OCCT threshold)")
-                    else:
-                        n1, n2, vol = entry
-                        lines.append(f"    {n1} ↔ {n2}: {vol:.4f} mm³")
+                for n1, n2, vol in collisions:
+                    lines.append(f"    {n1} ↔ {n2}: {vol:.4f} mm³")
             else:
                 lines.append("  No collisions detected")
 

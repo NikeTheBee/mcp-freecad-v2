@@ -368,6 +368,18 @@ def check_assembly(objects: Iterable, tol: float = 1e-6) -> Dict[str, Any]:
         raise ValueError(f"object(s) listed more than once: {dup}")
     if len(objs) < 2:   # nothing to compare: an OK here would verify nothing
         raise ValueError(f"an interference check needs 2 or more parts (got {names})")
+    for o in objs:
+        body = body_of(o)
+        if body is not None:   # a step overlaps its own Body by its whole volume
+            raise ValueError(f"{o.Name} is a step of {body.Name}, not the whole part: "
+                             f"list {body.Name}")
+        s = getattr(o, "Shape", None)
+        if s is None or s.isNull():
+            raise ValueError(f"{o.Name} has no shape: an interference check needs solid parts")
+        if not s.Solids:
+            # a sketch overlaps nothing (silent OK); a shell's "overlap volume" is not one
+            raise ValueError(f"{o.Name} is a {s.ShapeType}, not a solid: an interference "
+                             f"check needs solid parts")
     shapes = [o.Shape for o in objs]
     hits = interference(shapes, tol, names=[o.Name for o in objs])
     return {"status": FAIL if hits else OK, "parts": len(objs), "interferences": hits}

@@ -406,6 +406,21 @@ class TestClearance(unittest.TestCase):
         result = self.handler.clearance({'object1': 'A', 'object2': 'B'})
         self.assertIn("TOUCHING", result)
 
+    def test_overlap_reported_as_interfering_not_touching(self):
+        """Overlapping solids are at distance 0 too: the shared volume must
+        turn the verdict into INTERFERING."""
+        box1 = make_box("A", 0, 0, 0)
+        box2 = make_box("B", 5, 0, 0)
+        box1.Shape.distToShape = MagicMock(return_value=(
+            0.0, [(FakeVector(5, 0, 0), FakeVector(5, 0, 0))]))
+        box1.Shape.common = MagicMock(return_value=MagicMock(Volume=500.0))
+        self.fc.ActiveDocument = make_mock_doc([box1, box2])
+
+        result = self.handler.clearance({'object1': 'A', 'object2': 'B'})
+        self.assertIn("INTERFERING", result)
+        self.assertIn("500.0000 mm³", result)
+        self.assertNotIn("TOUCHING", result)
+
     def test_sub_linear_tolerance_reports_touching(self):
         """A gap below OCCT's linear tolerance is contact — must report TOUCHING.
         The old threshold was _VOL_TOL (1e-9 mm³) used as a distance, far tighter
@@ -579,6 +594,36 @@ class TestFaceRelationship(unittest.TestCase):
         self.assertIn("Parallel: True", result)
         self.assertIn("Coplanar: True", result)
 
+    def test_overlap_area_from_common(self):
+        """The shared area is the common of the faces; their section has
+        only the overlap's boundary edges and no closed wire."""
+        box1 = make_box("A", 0, 0, 0, 10, 10, 10)
+        box2 = make_box("B", 10, 5, 5, 10, 10, 10)
+        box1.Shape.Faces[1].common = MagicMock(return_value=MagicMock(Faces=[MagicMock(Area=25.0)]))
+        box1.Shape.Faces[1].section = MagicMock(
+            return_value=MagicMock(Edges=[MagicMock()] * 4, Wires=[]))
+        self.fc.ActiveDocument = make_mock_doc([box1, box2])
+
+        result = self.handler.face_relationship({
+            'object1': 'A', 'object2': 'B',
+            'face1': 'Face2', 'face2': 'Face1'
+        })
+        self.assertIn("Overlap area: 25.0000", result)
+
+    def test_faces_meeting_along_an_edge(self):
+        box1 = make_box("A", 0, 0, 0, 10, 10, 10)
+        box2 = make_box("B", 10, 10, 0, 10, 10, 10)
+        box1.Shape.Faces[1].common = MagicMock(return_value=MagicMock(Faces=[]))
+        box1.Shape.Faces[1].section = MagicMock(
+            return_value=MagicMock(Edges=[MagicMock(Length=10.0)], Vertexes=[MagicMock()] * 2))
+        self.fc.ActiveDocument = make_mock_doc([box1, box2])
+
+        result = self.handler.face_relationship({
+            'object1': 'A', 'object2': 'B',
+            'face1': 'Face2', 'face2': 'Face1'
+        })
+        self.assertIn("meet along 1 edge(s), 10.0000 mm long", result)
+
 
 class TestBatchInterference(unittest.TestCase):
 
@@ -643,16 +688,19 @@ class TestBatchInterference(unittest.TestCase):
         result = self.handler.batch_interference({'objects': ['A', 'B']})
         self.assertNotIn("WARNING", result)
 
-    def test_sliver_detected_in_batch(self):
-        # BB overlaps, common() returns zero, distToShape returns sub-tolerance distance
+    def test_contact_reported_as_touching_not_collision(self):
+        # BB overlaps, common() returns zero, distToShape returns zero: flush
+        # contact — listed, never "clear", but not counted as a collision.
         box1 = make_box("A", 0, 0, 0)
         box2 = make_box("B", 0, 0, 0)
         box1.Shape.BoundBox.intersect = MagicMock(return_value=True)
         box1.Shape.distToShape = MagicMock(return_value=(0.0, []))
         self.fc.ActiveDocument = make_mock_doc([box1, box2])
         result = self.handler.batch_interference({'objects': ['A', 'B']})
-        self.assertIn("SUB-TOL", result)
-        self.assertIn("Collisions: 1", result)
+        self.assertIn("Touching (contact, no shared volume): 1", result)
+        self.assertIn("A ↔ B: zero gap", result)
+        self.assertIn("Collisions: 0", result)
+        self.assertIn("Clear: 0", result)
 
     def test_common_failure_counted_as_failed_not_clear(self):
         """A common() failure on one pair must be reported as failed — not abort

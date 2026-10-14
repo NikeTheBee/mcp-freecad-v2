@@ -413,15 +413,11 @@ class MeasurementOpsHandler(BaseHandler):
             lines = [f"Faces of {object_name} ({len(obj.Shape.Faces)} total):"]
             for i, face in enumerate(obj.Shape.Faces):
                 try:
-                    # MCP FREECAD v2: the normal at the middle of the face's own
-                    # parameters (at (0, 0) a curved face gave an arbitrary one --
-                    # a bore read "(+1, 0, 0)"), with the surface kind, and a
-                    # cylinder's radius and axis: what picks a face to drill or open
-                    try:
-                        u0, u1, v0, v1 = face.ParameterRange
-                        n = face.normalAt((u0 + u1) / 2, (v0 + v1) / 2)
-                    except Exception:
-                        n = face.normalAt(0, 0)
+                    # MCP FREECAD v2: the normal at the face's centre (at (0, 0) a
+                    # curved face gave an arbitrary one -- a dome read "(+1, 0, 0)"),
+                    # with the surface kind, and a cylinder's radius and axis: what
+                    # picks a face to drill or open
+                    n = self._face_normal(face)
                     c = face.CenterOfMass
                     kind = getattr(face.Surface, "TypeId", "")
                     kind = kind.replace("Part::Geom", "").lower() if isinstance(kind, str) else ""

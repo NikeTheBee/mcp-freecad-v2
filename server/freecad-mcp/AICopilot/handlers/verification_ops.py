@@ -239,7 +239,9 @@ class VerificationOpsHandler(BaseHandler):
 
             for i, face in enumerate(faces):
                 try:
-                    normal = face.normalAt(0, 0)
+                    # at the face's centre (MCP FREECAD v2): at (0, 0) a dome
+                    # facing +Z read its equator's horizontal normal and failed
+                    normal = self._face_normal(face)
                     dot = _dot(_normalize(normal), axis)
                     area = getattr(face, 'Area', 1.0)
                     face_dots.append((dot, area))

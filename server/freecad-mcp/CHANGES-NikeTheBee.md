@@ -129,6 +129,10 @@ It runs `git subtree pull --squash` on a clean tree. Then run the base's unit te
 | `AICopilot/handlers/sketch_ops.py` (`verify_sketch`, again) | Closed loops that cross give `INVALID`: each loop alone must make one face with an area, all together a valid face with an area. | A figure-8 outline (the Pad made two solids) or two overlapping outlines (zero area) read "VALID - Ready for pad". Unit-test stubs without real geometry give "Can create face: unknown", never a verdict. |
 | `AICopilot/handlers/sketch_ops.py` (`verify_sketch`) | "Face area" is that of the whole profile, holes subtracted. | It was the first wire's: a plate with holes reported the plain rectangle -- or one hole's circle. |
 | tests | `test_part_ops`: in-plane refused, x on a YZ sketch (strict reply); `_freecad_mocks._PART_SPEC` lists `makeFace`; `install/base_exactness_test.py`: plate with 2 holes (circle first) = (200 - 2 pi) x 3 mm3, XZ sketch 80 mm3 along -y; `verify_sketch` of that plate says 193.72 mm2. | |
+| `AICopilot/handlers/spatial_ops.py` (`face_relationship`) | The overlap area is that of the faces' common; faces that only meet along an edge or at a point say so. Normals are taken at the middle of each face; a curved face says "Parallel: n/a". | The area was built from the faces' section, which only holds the overlap's boundary edges (never a closed wire): two coplanar faces sharing 25 mm2 read "edges found (4) but no closed wire". `normalAt(0, 0)` is an arbitrary point of a curved face. |
+| `AICopilot/handlers/spatial_ops.py` (`clearance`, `batch_interference`) | At zero distance, `clearance` measures the shared volume: `INTERFERING — they overlap by V mm3` or `TOUCHING`. `batch_interference` lists flush contacts under "Touching (contact, no shared volume)", not as collisions. | Two cubes overlapping by 500 mm3 (or one inside the other) read "TOUCHING (zero clearance)"; two parts merely resting on each other counted as a collision. |
+| `AICopilot/handlers/base.py` (`_face_normal`), `verification_ops.py` (`verify_orientation`), `measurement_ops.py` (`list_faces`), `spatial_ops.py` (`face_relationship`) | A face's direction is its normal where the surface is closest to the face's centroid (then mid-parameters, then (0, 0)). | `normalAt(0, 0)` is an arbitrary point of a curved face: a dome facing +Z read its equator's horizontal normal, `verify_orientation(+Z)` failed it. |
+| tests | `test_spatial_ops`: overlap area from the common, edge contact, overlap reported as interfering, contact as touching; `install/base_exactness_test.py`: coplanar faces share 25 mm2, flush cubes touch (no collision), overlapping cubes interfere by 500 mm3, a dome passes `verify_orientation(+Z)` (dot 1.0); `test_base_handler`: `_face_normal` at the centroid, then mid-parameters. | |
 | tests | `test_partdesign_ops`: loft and sweep of a Body's sketches; `install/base_exactness_test.py`: loft 500 pi, sweep 750 pi, helix 80 pi^2 (Pappus) mm3. A sweep of the remaining operations found the others exact (primitives, Part extrude/revolve/loft/sweep, rotate, mirror, Draft arrays, polar pattern, PartDesign::Hole counterbore/countersink on a face). | |
 
 ## Test status
@@ -139,7 +143,7 @@ Upstream unit tests on Windows, compared with the unmodified upstream version in
 |---|---|---|---|
 | v8.2.3 + changes | 2118 | 0 | 9 (instance registry writes) |
 | v8.3.0 + changes | 2191 | 0 | 9 |
-| v8.3.0 + changes (2026-10-14) | 2241 | 0 | 9 |
+| v8.3.0 + changes (2026-10-14) | 2254 | 0 | 9 |
 
 - The remaining ~123 failures and 39 errors also exist on the unmodified upstream version: those
   tests use AF_UNIX sockets, `/tmp` and POSIX paths. On Linux, CI runs them all green.

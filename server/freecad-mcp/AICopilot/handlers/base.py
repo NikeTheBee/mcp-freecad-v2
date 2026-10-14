@@ -1034,6 +1034,23 @@ class BaseHandler:
         return shape.BoundBox
 
     @staticmethod
+    def _face_normal(face):
+        """The direction a face points (MCP FREECAD v2): its normal where the
+        surface is closest to the face's centroid. normalAt(0, 0) is an
+        arbitrary point of a curved face: a dome's equator (horizontal), often
+        a point outside the face. Falls back to mid-parameters, then (0, 0)."""
+        try:
+            u, v = face.Surface.parameter(face.CenterOfMass)
+            return face.normalAt(u, v)
+        except Exception:
+            pass
+        try:
+            u0, u1, v0, v1 = face.ParameterRange
+            return face.normalAt((u0 + u1) / 2, (v0 + v1) / 2)
+        except Exception:
+            return face.normalAt(0, 0)
+
+    @staticmethod
     def _resolve_path(path: str) -> str:
         """Canonicalize a caller-supplied path the same way for every
         allowlist check in this class: expand ~, make absolute, resolve

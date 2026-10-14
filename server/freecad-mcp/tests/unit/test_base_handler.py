@@ -1374,3 +1374,29 @@ class TestNoMaterialChange:
         f, _ = self._feature("PartDesign::Pad", 0.0, 100.0)
         f.BaseFeature = None
         assert self._check(f, "Pad") is None
+
+
+class TestFaceNormal:
+    """MCP FREECAD v2: normalAt(0, 0) is an arbitrary point of a curved face (a
+    dome facing +Z read its equator's horizontal normal): the normal is taken
+    where the surface is closest to the face's centroid."""
+
+    @staticmethod
+    def _normal(face):
+        from handlers.base import BaseHandler
+        return BaseHandler._face_normal(face)
+
+    def test_normal_at_the_centroid_parameters(self):
+        face = MagicMock()
+        face.Surface.parameter = MagicMock(return_value=(1.5, 0.75))
+        face.normalAt = MagicMock(return_value="n")
+        assert self._normal(face) == "n"
+        face.normalAt.assert_called_once_with(1.5, 0.75)
+
+    def test_falls_back_to_mid_parameters(self):
+        face = MagicMock()
+        face.Surface.parameter = MagicMock(side_effect=RuntimeError("no projection"))
+        face.ParameterRange = (0.0, 2.0, 0.0, 4.0)
+        face.normalAt = MagicMock(return_value="n")
+        self._normal(face)
+        face.normalAt.assert_called_once_with(1.0, 2.0)

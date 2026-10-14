@@ -142,6 +142,22 @@ def main() -> int:
     print("assembly:", asm)
     assert asm["status"] == verify.FAIL and len(asm["interferences"]) == 1, asm
     assert abs(asm["interferences"][0]["volume"] - 200) < 1e-6, asm
+    # parts without a solid are refused: a sketch "overlapped nothing" (silent OK), a
+    # shell gave 400 mm3 for a 500 mm3 overlap, an empty Body raised a bounding-box error
+    sh = doc.addObject("Part::Feature", "AsmShell")
+    sh.Shape = Part.makeBox(10, 10, 10, V(5, 0, 0)).Shells[0]
+    sk = doc.addObject("Sketcher::SketchObject", "AsmSketch")
+    sk.addGeometry(Part.Circle(V(5, 5, 0), V(0, 0, 1), 3))
+    doc.addObject("PartDesign::Body", "AsmEmpty")
+    doc.recompute()
+    for other, why in (("AsmShell", "not a solid"), ("AsmSketch", "not a solid"),
+                       ("AsmEmpty", "no shape")):
+        try:
+            verify.check_assembly(["PartA", other])
+            raise AssertionError(f"check_assembly accepted {other}")
+        except ValueError as e:
+            assert why in str(e), e
+    print("assembly: parts without a solid refused: OK")
 
     # sketches: the base's verify_sketch calls an under-constrained sketch
     # "fully constrained" (it reads solve()'s 0); ours uses DoF and the
@@ -227,6 +243,11 @@ def main() -> int:
     body.Tip = hole
     doc.recompute()
     expect("Body", verify.OK)
+    try:   # a step "overlaps" its own Body by its whole volume
+        verify.check_assembly(["Body", "Block"])
+        raise AssertionError("check_assembly accepted a step of its Body")
+    except ValueError as e:
+        assert "Block is a step of Body" in str(e), e
 
     # Shape.BoundBox bounds a loft's B-spline control points: 37.3x26.8 for this
     # 30x20 part (a size requirement could pass on the wrong part)

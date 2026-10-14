@@ -491,6 +491,38 @@ def main() -> int:
                                              "object1": "Box", "object2": "Cyl"}))
         print("interference:", txt[:160])
         assert f"{V_COMMON:.1f}" in txt or f"{V_COMMON:.2f}" in txt or "848.2" in txt, txt
+
+        # face_relationship: two 10 mm cubes side by side, B shifted (5, 5) -> the touching
+        # faces share a 5x5 square (the old section-based area never reported one)
+        py(inst, "import FreeCAD\nfor _n in list(FreeCAD.listDocuments()):\n    FreeCAD.closeDocument(_n)\n"
+                 "d = FreeCAD.newDocument('FR')\nd.addObject('Part::Box', 'A')\n"
+                 "b = d.addObject('Part::Box', 'B')\nb.Placement.Base = FreeCAD.Vector(10, 5, 5)\n"
+                 "d.recompute()\n'ok'")
+        fa, fb = eval(py(inst, "import FreeCAD\nd = FreeCAD.ActiveDocument\n"
+                               "tuple([i + 1 for i, f in enumerate(o.Shape.Faces)"
+                               " if abs(f.CenterOfMass.x - 10) < 1e-9][0] for o in (d.A, d.B))"))
+        txt = str(op(inst, "spatial_query", {"operation": "face_relationship", "object1": "A",
+                                             "object2": "B", "face1": f"Face{fa}", "face2": f"Face{fb}"}))
+        assert "Coplanar: True" in txt and "Overlap area: 25.0000" in txt, txt
+        # flush cubes touch, they don't collide; shifted 5 mm into A they overlap by 500 mm3
+        # (clearance used to call both "TOUCHING", batch counted the contact as a collision)
+        txt = str(op(inst, "spatial_query", {"operation": "batch_interference", "objects": ["A", "B"]}))
+        assert "Collisions: 0" in txt and "Touching (contact, no shared volume): 1" in txt, txt
+        txt = str(op(inst, "spatial_query", {"operation": "clearance", "object1": "A", "object2": "B"}))
+        assert "TOUCHING" in txt, txt
+        py(inst, "import FreeCAD\nd = FreeCAD.ActiveDocument\n"
+                 "d.B.Placement.Base = FreeCAD.Vector(5, 0, 0)\nd.recompute()\n'ok'")
+        txt = str(op(inst, "spatial_query", {"operation": "clearance", "object1": "A", "object2": "B"}))
+        assert "INTERFERING" in txt and "500.0000 mm³" in txt, txt
+
+        # a dome faces +Z: its normal at parameters (0, 0) is on the equator (horizontal),
+        # verify_orientation failed it; the normal at the face's centre is +Z
+        py(inst, "import FreeCAD\nd = FreeCAD.ActiveDocument\n"
+                 "s = d.addObject('Part::Sphere', 'Dome')\ns.Radius = 10\ns.Angle1 = 0\n"
+                 "d.recompute()\n'ok'")
+        txt = str(op(inst, "geometric_verification", {"operation": "verify_orientation",
+                                                      "object_name": "Dome", "expected_axis": "+Z"}))
+        assert '"ok": true' in txt and "dot = 1.0000" in txt, txt
     finally:
         inst.stop()
     print("BASE_EXACT_OK")
