@@ -7,6 +7,15 @@ import FreeCAD
 from .base import NO_ACTIVE_DOCUMENT_ERROR, BaseHandler
 
 
+
+def _volume(obj):
+    """The object's volume when it is a real number, else None (unit-test mocks)."""
+    try:
+        v = obj.Shape.Volume
+    except Exception:
+        return None
+    return float(v) if isinstance(v, (int, float)) else None
+
 class BooleanOpsHandler(BaseHandler):
     """Handler for boolean operations (fuse, cut, common)."""
 
@@ -51,7 +60,9 @@ class BooleanOpsHandler(BaseHandler):
             for obj in objs:
                 obj.Visibility = False
 
-            return f"Created fusion: {fusion.Name} from {len(objects)} objects"
+            v = _volume(fusion)
+            return (f"Created fusion: {fusion.Name} from {len(objects)} objects"
+                    + (f", volume {v:.6g} mm³" if v is not None else ""))
 
         except Exception as e:
             return f"Error fusing objects: {e}"
@@ -111,7 +122,16 @@ class BooleanOpsHandler(BaseHandler):
             for obj in tool_objs:
                 obj.Visibility = False
 
-            return f"Created cut: {cut.Name} from {base} minus {len(tools)} tools"
+            # MCP FREECAD v2: say what the cut removed -- a tool placed beside the
+            # base removed nothing and was replied "Created cut"
+            v0, v1 = _volume(base_obj), _volume(cut)
+            if v0 is None or v1 is None:
+                return f"Created cut: {cut.Name} from {base} minus {len(tools)} tools"
+            if v0 - v1 <= 1e-9 * max(v0, 1.0):
+                return (f"Created cut: {cut.Name}, but it removed NOTHING: the tool(s) do not "
+                        f"overlap {base} (check their placement)")
+            return (f"Created cut: {cut.Name} from {base} minus {len(tools)} tools: "
+                    f"removed {v0 - v1:.6g} mm³, volume {v1:.6g} mm³")
 
         except Exception as e:
             return f"Error cutting objects: {e}"
@@ -156,7 +176,9 @@ class BooleanOpsHandler(BaseHandler):
             for obj in objs:
                 obj.Visibility = False
 
-            return f"Created intersection: {common.Name} from {len(objects)} objects"
+            v = _volume(common)
+            return (f"Created intersection: {common.Name} from {len(objects)} objects"
+                    + (f", volume {v:.6g} mm³" if v is not None else ""))
 
         except Exception as e:
             return f"Error finding intersection: {e}"

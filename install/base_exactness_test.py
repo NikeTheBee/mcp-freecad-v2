@@ -113,6 +113,13 @@ def main() -> int:
             v, _, _, name, valid = shape_of(inst, f"R_{operation}")
             assert valid, (operation, r)
             close(v, want, f"part {operation} volume ({name})", rel=1e-4)
+            assert f"{want:.6g} mm³" in str(r) or operation == "cut", r           # said, measured
+        # a cut whose tool does not touch the base removed nothing: said so (it read "Created cut")
+        py(inst, SETUP + "\nd.getObject('Cyl').Placement.Base = FreeCAD.Vector(100, 0, 0)\n"
+                         "d.recompute()\n'ok'")
+        r = str(op(inst, "part_operations", {"operation": "cut", "base": "Box", "tools": ["Cyl"]}))
+        assert "removed NOTHING" in r, r
+        print("booleans report their volume; a cut that removes nothing says so: OK")
 
         # transforms
         py(inst, SETUP)
