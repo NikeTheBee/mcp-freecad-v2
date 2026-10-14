@@ -6,6 +6,11 @@ from typing import Any
 from .base import OCCT_CONFUSION_TOLERANCE_DEFAULT, BaseHandler
 
 
+def _vec_str(v) -> str:
+    """(+x.xx, +y.yy, +z.zz) without "-0.00" (a rounded -1e-17 printed as a sign)."""
+    return "({:+.2f}, {:+.2f}, {:+.2f})".format(*(round(c, 2) + 0.0 for c in (v.x, v.y, v.z)))
+
+
 class MeasurementOpsHandler(BaseHandler):
     """Handler for measurement and analysis operations."""
 
@@ -408,12 +413,26 @@ class MeasurementOpsHandler(BaseHandler):
             lines = [f"Faces of {object_name} ({len(obj.Shape.Faces)} total):"]
             for i, face in enumerate(obj.Shape.Faces):
                 try:
-                    n = face.normalAt(0, 0)
+                    # MCP FREECAD v2: the normal at the middle of the face's own
+                    # parameters (at (0, 0) a curved face gave an arbitrary one --
+                    # a bore read "(+1, 0, 0)"), with the surface kind, and a
+                    # cylinder's radius and axis: what picks a face to drill or open
+                    try:
+                        u0, u1, v0, v1 = face.ParameterRange
+                        n = face.normalAt((u0 + u1) / 2, (v0 + v1) / 2)
+                    except Exception:
+                        n = face.normalAt(0, 0)
                     c = face.CenterOfMass
-                    normal_str = f"({n.x:+.2f}, {n.y:+.2f}, {n.z:+.2f})"
+                    kind = getattr(face.Surface, "TypeId", "")
+                    kind = kind.replace("Part::Geom", "").lower() if isinstance(kind, str) else ""
+                    extra = ""
+                    if kind == "cylinder":
+                        extra = f"  r={face.Surface.Radius:.2f} axis={_vec_str(face.Surface.Axis)}"
+                    normal_str = _vec_str(n)
                     centroid_str = f"({c.x:.2f}, {c.y:.2f}, {c.z:.2f})"
                     lines.append(
-                        f"  Face{i+1}: normal={normal_str}  centroid={centroid_str}  area={face.Area:.2f}mm²"
+                        f"  Face{i+1}: {kind + ' ' if kind else ''}normal={normal_str}  "
+                        f"centroid={centroid_str}  area={face.Area:.2f}mm²{extra}"
                     )
                 except Exception as fe:
                     lines.append(f"  Face{i+1}: error reading face — {fe}")

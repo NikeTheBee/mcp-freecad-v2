@@ -265,6 +265,14 @@ def main() -> int:
                                  ".Objects if o.TypeId == 'Part::Cut'][-1].Shape.Volume, 6)"))
             close(got, removed, f"CSG {args['hole_type']} hole: volume removed ({str(r)[:40]}...)",
                   rel=1e-6)
+        # list_faces says what each face is: the D6 bore of the last part is a cylinder r=3
+        # around Z (its "normal" was taken at parameters (0, 0): arbitrary on a curved face)
+        cut = py(inst, "import FreeCAD\n[o.Name for o in FreeCAD.ActiveDocument.Objects"
+                       " if o.TypeId == 'Part::Cut'][-1]").strip("'\"")
+        txt = str(op(inst, "measurement_operations", {"operation": "list_faces", "object_name": cut}))
+        assert "cylinder normal=" in txt and "r=3.00 axis=(+0.00, +0.00, " in txt, txt
+        assert "plane normal=(+0.00, +0.00, +1.00)" in txt, txt
+        print("list_faces: plane/cylinder kinds, bore radius and axis: OK")
 
         # PartDesign through the base's tool, volume after each step
         py(inst, PD_SETUP)
