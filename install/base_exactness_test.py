@@ -542,6 +542,18 @@ def main() -> int:
         txt = str(op(inst, "geometric_verification", {"operation": "verify_no_self_intersection",
                                                       "object_name": "Overlap2"}))
         assert '"ok": false' in txt, txt
+        # its material: 1500 mm3 centred at x = 7.5 (Shape.Volume summed 2000; a compound
+        # has no CenterOfMass); an open shell (5 faces of a cube) has no volume (it read 800)
+        txt = str(op(inst, "measurement_operations", {"operation": "get_volume", "object_name": "Overlap2"}))
+        assert "1500.00 mm³" in txt and "overlap" in txt, txt
+        txt = str(op(inst, "measurement_operations", {"operation": "get_center_of_mass",
+                                                      "object_name": "Overlap2"}))
+        assert "(7.50, 5.00, 5.00)" in txt, txt
+        py(inst, "import FreeCAD, Part\nd = FreeCAD.ActiveDocument\n"
+                 "d.addObject('Part::Feature', 'OpenShell').Shape = Part.Shell(Part.makeBox(10, 10, 10).Faces[:5])\n"
+                 "d.recompute()\n'ok'")
+        txt = str(op(inst, "measurement_operations", {"operation": "get_volume", "object_name": "OpenShell"}))
+        assert "has no volume" in txt and "800" not in txt, txt
 
         # mesh -> solid: a closed 10x20x30 mesh gives 6000 mm3; with one triangle missing
         # it used to give an invalid "solid" of 5478 mm3

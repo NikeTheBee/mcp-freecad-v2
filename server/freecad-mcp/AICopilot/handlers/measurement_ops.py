@@ -292,8 +292,11 @@ class MeasurementOpsHandler(BaseHandler):
             if err:
                 return err
 
-            volume = obj.Shape.Volume
-            return f"Volume of {object_name}: {volume:.2f} mm³"
+            m = self._material(obj.Shape)
+            if m["volume"] is None:
+                return f"{object_name} has no volume: {m['note']}"
+            note = f" ({m['note']})" if m["note"] else ""
+            return f"Volume of {object_name}: {m['volume']:.2f} mm³{note}"
 
         except Exception as e:
             return f"Error calculating volume: {e}"
@@ -328,19 +331,23 @@ class MeasurementOpsHandler(BaseHandler):
                 return err
 
             shape = obj.Shape
-            volume = shape.Volume
-            center_of_mass = shape.CenterOfMass
+            m = self._material(shape)
 
             # shape.Area is a single C++ GProp pass over the whole shape --
             # equivalent to summing face.Area per face in a Python loop,
             # without the per-face Python<->C++ round trip.
             area = shape.Area
 
+            com = m["com"]
+            vol_str = f"{m['volume']:.2f} mm³" if m["volume"] is not None else "none"
+            com_str = (f"({com.x:.2f}, {com.y:.2f}, {com.z:.2f})" if com is not None
+                       else "none (no solid)")
+            note = f"\n  Note: {m['note']}" if m["note"] else ""
             return (
                 f"Mass properties of {object_name}:\n"
-                f"  Volume: {volume:.2f} mm³\n"
+                f"  Volume: {vol_str}\n"
                 f"  Surface Area: {area:.2f} mm²\n"
-                f"  Center of Mass: ({center_of_mass.x:.2f}, {center_of_mass.y:.2f}, {center_of_mass.z:.2f})"
+                f"  Center of Mass: {com_str}{note}"
             )
 
         except Exception as e:
@@ -372,8 +379,12 @@ class MeasurementOpsHandler(BaseHandler):
             if err:
                 return err
 
-            com = obj.Shape.CenterOfMass
-            return f"Center of mass of {object_name}: ({com.x:.2f}, {com.y:.2f}, {com.z:.2f}) mm"
+            m = self._material(obj.Shape)
+            com = m["com"]
+            if com is None:
+                return f"{object_name} has no center of mass: {m['note']}"
+            note = f" ({m['note']})" if m["note"] else ""
+            return f"Center of mass of {object_name}: ({com.x:.2f}, {com.y:.2f}, {com.z:.2f}) mm{note}"
 
         except Exception as e:
             return f"Error calculating center of mass: {e}"

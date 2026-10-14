@@ -1422,3 +1422,25 @@ class TestRecomputeErrors:
         doc = MagicMock()
         doc.Objects = [MagicMock(Name="Pad", State=["Up-to-date"])]
         assert self._errors(doc) == ""
+
+
+class TestMaterial:
+    """MCP FREECAD v2: Shape.Volume of an open shell is a number (5 faces of a
+    10 mm cube: 800 mm3); there is no material to measure there."""
+
+    @staticmethod
+    def _material(shape):
+        from handlers.base import BaseHandler
+        return BaseHandler._material(shape)
+
+    def test_open_shell_has_no_volume(self):
+        shape = MagicMock(Solids=[], ShapeType="Shell", Faces=[MagicMock()] * 5, Volume=800.0)
+        shape.isClosed.return_value = False
+        m = self._material(shape)
+        assert m["volume"] is None and m["com"] is None and "not a closed solid" in m["note"]
+
+    def test_closed_shell_gives_the_volume_it_encloses(self):
+        shape = MagicMock(Solids=[], ShapeType="Shell", Faces=[MagicMock()] * 6, Volume=1000.0)
+        shape.isClosed.return_value = True
+        m = self._material(shape)
+        assert m["volume"] == 1000.0 and m["com"] is None and "encloses" in m["note"]

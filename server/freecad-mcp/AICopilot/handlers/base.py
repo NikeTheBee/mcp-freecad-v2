@@ -191,6 +191,11 @@ def autosave_before(doc, reason: str) -> str:
         return 'failed'
 
 
+def _a(word: str) -> str:
+    """"a" or "an" before a word."""
+    return "an" if word[:1].upper() in "AEIOU" else "a"
+
+
 class BaseHandler:
     """Base class for all FreeCAD operation handlers.
 
@@ -1050,6 +1055,51 @@ class BaseHandler:
         except Exception:  # meshes, mocks: the plain box
             pass
         return shape.BoundBox
+
+    _UNION_MAX_SOLIDS = 50
+
+    @staticmethod
+    def _material(shape) -> dict:
+        """{volume, com, note} of the material a shape holds (MCP FREECAD v2).
+
+        Shape.Volume of a shape without a solid is still a number (an open
+        shell of 5 faces of a 10 mm cube: 800 mm3); a compound sums its solids
+        and counts their overlaps twice (two cubes overlapping by half: 2000 mm3
+        for 1500 of material); a compound has no CenterOfMass at all. volume
+        and com are None when there is no material to measure."""
+        solids = getattr(shape, "Solids", None)
+        if not isinstance(solids, (list, tuple)):      # unit-test stubs: as before
+            return {"volume": shape.Volume, "com": shape.CenterOfMass, "note": ""}
+        if not solids:
+            kind = shape.ShapeType
+            if shape.Faces and shape.isClosed():
+                return {"volume": shape.Volume, "com": None,
+                        "note": f"a closed {kind}, not a solid: the volume it encloses"}
+            return {"volume": None, "com": None,
+                    "note": f"{_a(kind)} {kind}, not a closed solid: it has no volume"}
+        if len(solids) == 1:
+            com = getattr(shape, "CenterOfMass", None)
+            return {"volume": shape.Volume,
+                    "com": com if com is not None else solids[0].CenterOfMass, "note": ""}
+
+        def weighted(ss):
+            tot = sum(s.Volume for s in ss)
+            return (sum((s.CenterOfMass * (s.Volume / tot) for s in ss), FreeCAD.Vector())
+                    if tot else None)
+
+        n, total = len(solids), sum(s.Volume for s in solids)
+        if n > BaseHandler._UNION_MAX_SOLIDS:
+            return {"volume": total, "com": weighted(solids),
+                    "note": f"{n} solids, volumes summed (overlaps not checked above "
+                            f"{BaseHandler._UNION_MAX_SOLIDS} solids)"}
+        boxes = [BaseHandler._exact_bbox(s) for s in solids]
+        if any(boxes[i].intersect(boxes[j]) for i in range(n) for j in range(i + 1, n)):
+            union = solids[0].multiFuse(solids[1:])
+            if total - union.Volume > max(1e-6, total * 1e-9):
+                return {"volume": union.Volume, "com": weighted(union.Solids),
+                        "note": f"{n} solids that overlap: their volumes sum to "
+                                f"{total:.2f} mm³, the overlap is counted once here"}
+        return {"volume": total, "com": weighted(solids), "note": f"{n} separate solids"}
 
     @staticmethod
     def _face_normal(face):
