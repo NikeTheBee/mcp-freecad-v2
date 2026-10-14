@@ -155,7 +155,13 @@ def spawn(freecadcmd: Path) -> subprocess.Popen:
     flags = 0
     if sys.platform == "win32":   # survive the launcher; no console window
         flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
-    logf = _log_path().with_name("freecad_headless.log").open("ab")
+    headless_log = _log_path().with_name("freecad_headless.log")
+    try:   # FreeCAD's own output (mesh checks print progress bars): bounded like launcher.log
+        if headless_log.exists() and headless_log.stat().st_size > 5_000_000:
+            headless_log.replace(headless_log.with_suffix(".log.1"))
+    except OSError:
+        pass                                   # still held by a FreeCAD that is exiting
+    logf = headless_log.open("ab")
     # MANAGED: this FreeCAD is started again by us when it exits (supervisor, or
     # the next ensure()), so the base's restart_freecad may restart it by exiting.
     env = dict(os.environ, FREECAD_MCP_PORT=str(PORT), MCP_FREECAD_MANAGED="1")
