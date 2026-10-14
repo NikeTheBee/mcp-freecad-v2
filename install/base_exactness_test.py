@@ -340,6 +340,22 @@ def main() -> int:
             r = op(inst, "partdesign_operations", args)
             close(body_volume(inst), want, f"partdesign {what} ({str(r)[:28]}...)", rel=1e-6)
 
+        # rib of a 10 x 4 rectangle sketched on XY, 3 mm: along the sketch's normal (it went
+        # along global Y, within the sketch's plane: a solid of zero volume, replied as made)
+        py(inst, "import FreeCAD, Part\nfor _n in list(FreeCAD.listDocuments()):\n"
+                 "    FreeCAD.closeDocument(_n)\nd = FreeCAD.newDocument('Rib')\n"
+                 "s = d.addObject('Sketcher::SketchObject', 'S')\n"
+                 "P = [FreeCAD.Vector(0, 0, 0), FreeCAD.Vector(10, 0, 0), FreeCAD.Vector(10, 4, 0),"
+                 " FreeCAD.Vector(0, 4, 0)]\n"
+                 "for i in range(4):\n    s.addGeometry(Part.LineSegment(P[i], P[(i + 1) % 4]))\n"
+                 "d.recompute()\n'ok'")
+        r = op(inst, "partdesign_operations", {"operation": "rib", "sketch_name": "S", "thickness": 3})
+        close(float(py(inst, "import FreeCAD\nFreeCAD.ActiveDocument.getObject('Rib').Shape.Volume")), 120.0,
+              f"rib along the sketch's normal ({str(r)[:24]}...)", rel=1e-9)
+        r = str(op(inst, "partdesign_operations", {"operation": "rib", "sketch_name": "S",
+                                                   "direction": "horizontal", "name": "Rib2"}))
+        assert "zero volume" in r, r
+
         # sketch tools: 20x10 rectangle + D4 circle at its centre, padded 3 mm
         py(inst, "import FreeCAD\nfor _n in list(FreeCAD.listDocuments()):\n    FreeCAD.closeDocument(_n)\n"
                  "d = FreeCAD.newDocument('SK')\nd.addObject('PartDesign::Body', 'Body')\n'ok'")

@@ -2000,30 +2000,42 @@ class PartDesignOpsHandler(BaseHandler):
             if not sketch:
                 return f"Sketch not found: {sketch_name}"
 
-            # "Part::Extrude" is not a real FreeCAD document-object type -
-            # doc.addObject raised "not a document object type" on every
-            # call. Confirmed live: the real type is "Part::Extrusion",
-            # which has the exact same Base/Dir/LengthFwd/Solid properties
-            # this method already sets.
-            rib = doc.addObject("Part::Extrusion", name)
-            rib.Base = sketch
-
+            # MCP FREECAD v2 (2026-10-14): "normal" is the SKETCH's normal. It
+            # was the global Y axis: an XY sketch (normal Z) was swept within its
+            # own plane, a solid of ZERO volume replied as "Created rib ... 3mm
+            # thickness". A direction lying in the sketch's plane is refused.
             direction_lower = direction.lower() if isinstance(direction, str) else direction
-            if direction_lower == 'horizontal':
-                rib.Dir = (1, 0, 0)
-            elif direction_lower == 'vertical':
-                rib.Dir = (0, 0, 1)
-            elif direction_lower == 'normal':
-                rib.Dir = (0, 1, 0)
-            else:
+            normal = sketch.Placement.Rotation.multVec(FreeCAD.Vector(0, 0, 1))
+            dirs = {'normal': normal, 'vertical': FreeCAD.Vector(0, 0, 1),
+                    'horizontal': FreeCAD.Vector(1, 0, 0)}
+            vec = dirs.get(direction_lower)
+            if vec is None:
                 # No fallback: an unrecognized direction used to silently
                 # fall into the 'normal' case while the success message
                 # still echoed the requested (wrong) direction string.
-                doc.removeObject(rib.Name)
                 return f"Invalid direction '{direction}': must be 'horizontal', 'vertical', or 'normal'"
-            rib.LengthFwd = thickness
+            if abs(vec.dot(normal)) < 1e-9:
+                return (f"Invalid direction '{direction}': it lies in the plane of {sketch_name}, "
+                        "so the rib would have no thickness (zero volume); use 'normal'")
 
-            rib.Solid = True
+            body = self.find_body_for_object(sketch, doc)
+            if body is not None:
+                # a Body's sketch: a Pad INSIDE the Body (an extrusion beside it
+                # left the Body unchanged)
+                rib = body.newObject("PartDesign::Pad", name)
+                rib.Profile = sketch
+                rib.Length = thickness
+                if direction_lower != 'normal':
+                    rib.UseCustomVector = True
+                    rib.Direction = vec
+            else:
+                # "Part::Extrude" is not a real FreeCAD document-object type;
+                # the real type is "Part::Extrusion" (confirmed live).
+                rib = doc.addObject("Part::Extrusion", name)
+                rib.Base = sketch
+                rib.Dir = vec
+                rib.LengthFwd = thickness
+                rib.Solid = True
 
             self.recompute(doc)
 

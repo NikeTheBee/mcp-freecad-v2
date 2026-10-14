@@ -1642,19 +1642,46 @@ class TestCreateRib(unittest.TestCase):
 
         doc.addObject.assert_called_with("Part::Extrusion", "Rib")
         rib = doc.Objects[-1]
-        self.assertEqual(rib.Dir, (0, 1, 0))
+        # MCP FREECAD v2: the sketch's own normal (was the global Y axis, which
+        # swept an XY sketch within its plane: zero volume)
+        self.assertEqual((rib.Dir.x, rib.Dir.y, rib.Dir.z), (0, 0, 1))
         self.assertEqual(rib.LengthFwd, 5)
         assert_success_contains(self, result, "S", "5mm", "normal")
 
-    def test_horizontal_direction(self):
+    def test_normal_follows_an_xz_sketch(self):
         sketch = make_sketch("S")
+        sketch.Placement = _Placement(rotation=_Rotation(_Vec(1, 0, 0), 90))
         doc = make_mock_doc([sketch])
         mock_FreeCAD.ActiveDocument = doc
 
-        self.handler.create_rib({'sketch_name': 'S', 'direction': 'horizontal'})
+        self.handler.create_rib({'sketch_name': 'S', 'thickness': 2})
 
         rib = doc.Objects[-1]
-        self.assertEqual(rib.Dir, (1, 0, 0))
+        self.assertEqual([round(c, 9) for c in (rib.Dir.x, rib.Dir.y, rib.Dir.z)], [0, -1, 0])
+
+    def test_direction_in_the_sketch_plane_is_refused(self):
+        sketch = make_sketch("S")                      # XY plane
+        doc = make_mock_doc([sketch])
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.create_rib({'sketch_name': 'S', 'direction': 'horizontal'})
+
+        assert_error_contains(self, result, "zero volume", "normal")
+        doc.addObject.assert_not_called()
+
+    def test_rib_of_a_body_sketch_is_a_pad_in_the_body(self):
+        sketch = make_sketch("S")
+        body = make_body("Body", group=[sketch])
+        doc = make_mock_doc([body, sketch])
+        mock_FreeCAD.ActiveDocument = doc
+        body.newObject.return_value.State = []
+
+        self.handler.create_rib({'sketch_name': 'S', 'thickness': 4})
+
+        body.newObject.assert_called_with("PartDesign::Pad", "Rib")
+        pad = body.newObject.return_value
+        self.assertEqual((pad.Profile, pad.Length), (sketch, 4))
+        doc.addObject.assert_not_called()
 
     def test_invalid_state_errors_instead_of_false_success(self):
         sketch = make_sketch("S")
