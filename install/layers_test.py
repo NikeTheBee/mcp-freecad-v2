@@ -157,6 +157,22 @@ assert rel.is_relative_to(Path(_tmp).resolve()), rel
 assert rel.is_file() and rel.parent.name == "rel", rel
 print("output gate: streams/device names refused, atomic reservation, relative -> project: OK")
 
+# --- a solid built on a Body's feature but OUTSIDE the Body is said by check ---
+from freecad_layers import gate
+bd = FreeCAD.newDocument("Beside")
+body = bd.addObject("PartDesign::Body", "Body")
+pad = body.newObject("PartDesign::AdditiveBox", "Pad")
+bd.recompute()
+assert "note:" not in gate.check_target("Body", autosave=False)["text"]
+fil = bd.addObject("Part::Fillet", "Fillet")
+fil.Base = pad
+fil.Edges = [(i + 1, 1, 1) for i in range(12)]
+bd.recompute()
+txt = gate.check_target("Body", autosave=False)["text"]
+assert "note: Fillet (Part::Fillet) is built on Pad outside Body -- the Body does not include it" in txt, txt
+FreeCAD.closeDocument("Beside")
+print("check says when a solid is built on the Body but outside it: OK")
+
 # --- secure-by-design: a tampered state.json must not escape /checkpoints --
 s = state.load()
 s["checkpoints"].append({"name": "evil", "file": "..\\..\\outside.FCStd",

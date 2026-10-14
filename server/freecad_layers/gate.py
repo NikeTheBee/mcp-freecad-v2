@@ -13,6 +13,27 @@ import FreeCAD
 from . import recovery, spec, state, verify
 
 
+def _built_beside(obj) -> list:
+    """Solids built on this Body's features but standing OUTSIDE the Body (a
+    Part::Fillet of its Pad, a Part::Cut of the Body...): what they add is not
+    in the Body. The base made such objects for "fillet all edges", loft,
+    sweep, shell; a script still can. Said, not judged: it may be intended."""
+    if getattr(obj, "TypeId", "") != "PartDesign::Body":
+        return []
+    own = {o.Name for o in obj.Group} | {obj.Name}
+    out = []
+    for o in obj.Document.Objects:
+        if o.Name in own or o.TypeId.startswith(("Sketcher::", "App::", "Spreadsheet::", "TechDraw::",
+                                                 "Fem::", "Assembly::", "Mesh::")):
+            continue                    # links, plans, analyses, assemblies: they use it
+        used = list(dict.fromkeys(d.Name for d in (getattr(o, "OutList", None) or [])
+                                  if d.Name in own and not d.TypeId.startswith("Sketcher::")))
+        shp = getattr(o, "Shape", None)
+        if used and hasattr(shp, "Solids") and not shp.isNull() and shp.Solids:
+            out.append(f"{o.Name} ({o.TypeId}) is built on {', '.join(used)} outside {obj.Name}")
+    return out
+
+
 def check_target(name: str, expect_solid: bool = True, autosave: bool = True) -> Dict[str, Any]:
     """Returns {status, text, autosaved}. status is OK only if every check passed."""
     obj = verify._resolve(name)
@@ -22,6 +43,10 @@ def check_target(name: str, expect_solid: bool = True, autosave: bool = True) ->
 
     v = verify.check(obj, expect_solid=expect_solid)
     lines = [verify.verdict(obj, expect_solid=expect_solid)]
+    beside = _built_beside(obj)
+    if beside:
+        lines.append("note: " + "; ".join(beside) + " -- the Body does not include "
+                     + ("them" if len(beside) > 1 else "it"))
     status = v["status"]
     if any(s["target"] == obj.Name or s["target"] == name for s in state.load()["specs"]):
         c = spec.check_all(name)

@@ -44,7 +44,8 @@ au lieu de croire la lecture qu'en fait l'IA.
 - **Congés, chanfreins et coques sont dans la pièce** : « congé sur toutes les arêtes » d'une pièce
   PartDesign créait un objet à côté du Body, qui gardait ses arêtes vives alors que la réponse
   disait « all 12 edges » (de même pour chanfrein, coque, lissage et balayage : un lissage des
-  esquisses d'un Body laissait le Body vide). Ce sont maintenant des fonctions du Body, vérifiées contre la même opération faite directement (à 1e-6). Coque/évidement/dépouille
+  esquisses d'un Body laissait le Body vide). Ce sont maintenant des fonctions du Body (et `check`
+  signale tout solide encore construit sur une fonction du Body en dehors de lui), vérifiées contre la même opération faite directement (à 1e-6). Coque/évidement/dépouille
   prennent `faces=[...]` sans interface, là où ils demandaient une sélection dans une fenêtre
   inexistante.
 - **Révolution autour de l'axe nommé** : sur une esquisse du plan XZ, « autour de y » tournait
