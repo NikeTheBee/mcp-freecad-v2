@@ -444,9 +444,10 @@ def pd_hole(body: str, diameter: float, x: float, y: float, through: bool = True
             depth: float = 0.0, name: str = "Hole") -> str:
     """Real PartDesign hole INSIDE a Body, vertical along the Body's Z, at (x, y) in the
     Body's own coordinates (the global ones unless the Body was moved): through, or
-    blind `depth` mm from the top. A hole that cuts nothing or breaks the part is
-    not kept (FAIL, Body unchanged)."""
+    blind `depth` mm from the part's surface AT (x, y). The hole is measured once made;
+    one that cuts nothing, breaks the part or misses its depth is not kept (FAIL)."""
     return _run("""
+import Part
 _doc = FreeCAD.ActiveDocument
 _b = _doc.getObject(_a['body'])
 if _b is None or _b.TypeId != 'PartDesign::Body':
@@ -458,7 +459,16 @@ if _b.Shape.isNull() or not _b.Shape.Solids:
 # feature placements are relative to the Body: measure it in its own frame
 _local = _b.Shape.copy()
 _local.Placement = _b.Placement.inverse().multiply(_local.Placement)
-_bb = _local.BoundBox
+_bb = verify.box(_local)
+# the surface AT (x, y), not the top of the whole part: on a stepped part or an
+# L-bracket, a blind hole started from the highest point was too short or in the air
+_zs = [_p.Point.z for _p in _local.section(Part.LineSegment(
+    FreeCAD.Vector(_a['x'], _a['y'], _bb.ZMax + 1.0),
+    FreeCAD.Vector(_a['x'], _a['y'], _bb.ZMin - 1.0)).toShape()).Vertexes]
+if not _zs:
+    raise ValueError(f"no material at ({_a['x']:g}, {_a['y']:g}); the body spans "
+                     f"x {_bb.XMin:g}..{_bb.XMax:g}, y {_bb.YMin:g}..{_bb.YMax:g}")
+_top = max(_zs)
 _v0 = _b.Shape.Volume
 _c = _b.newObject('PartDesign::SubtractiveCylinder', _a['name'])
 _c.Radius = _a['diameter'] / 2.0
@@ -467,15 +477,33 @@ if _a['through']:
     _c.Placement.Base = FreeCAD.Vector(_a['x'], _a['y'], _bb.ZMin - 1.0)
 else:
     _c.Height = _a['depth'] + 1.0
-    _c.Placement.Base = FreeCAD.Vector(_a['x'], _a['y'], _bb.ZMax - _a['depth'])
+    _c.Placement.Base = FreeCAD.Vector(_a['x'], _a['y'], _top - _a['depth'])
 _doc.recompute()
 _v = verify.verdict(_b)
 _why = None
 if not _v.startswith('OK'):
     _why = f"the part would be broken ({_v[:200]})"
 elif _v0 - _b.Shape.Volume <= 1e-9 * max(_v0, 1.0):
-    _why = (f"it cuts no material at ({_a['x']:g}, {_a['y']:g}); the body spans "
-            f"x {_bb.XMin:g}..{_bb.XMax:g}, y {_bb.YMin:g}..{_bb.YMax:g}")
+    _why = f"it cuts no material at ({_a['x']:g}, {_a['y']:g})"
+else:   # measure the hole that was made
+    _p = _b.Placement.multVec(FreeCAD.Vector(_a['x'], _a['y'], _top))
+    _got = None
+    for _h in analysis.holes(_b):
+        _ax, _ctr = FreeCAD.Vector(*_h['axis']), FreeCAD.Vector(*_h['center'])
+        _d = _p - _ctr
+        if abs(_h['diameter'] - _a['diameter']) < 1e-6 and (_d - _ax * _d.dot(_ax)).Length < 1e-3:
+            _got = _h
+    if _got is None:
+        _why = "no full round hole came out (it breaks into an edge or another feature)"
+    elif _a['through'] and not _got['through']:
+        _why = "the hole does not come out on both sides"
+    elif not _a['through'] and _got['through']:
+        _why = f"a {_a['depth']:g} mm deep hole goes right through the part at ({_a['x']:g}, {_a['y']:g})"
+    elif not _a['through'] and abs(_got['depth'] - _a['depth']) > 1e-3:
+        _why = f"the hole is {_got['depth']:g} mm deep, not {_a['depth']:g}"
+    else:
+        _v += (f" | hole D{_a['diameter']:g} at ({_a['x']:g}, {_a['y']:g}): "
+               + ("through" if _got['through'] else f"{_got['depth']:g} mm deep from z {_top:g}"))
 if _why:
     _b.removeObject(_c)
     _doc.removeObject(_c.Name)

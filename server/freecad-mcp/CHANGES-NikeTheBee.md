@@ -105,6 +105,8 @@ It runs `git subtree pull --squash` on a clean tree. Then run the base's unit te
 | `AICopilot/handlers/measurement_ops.py` (`get_bounding_box`), `document_ops.py` (insert report), `mesh_ops.py` (import report) | Report the exact box. | The size the AI reads to check a dimension was wrong on lofts, sweeps and fillets on tilted parts. |
 | `AICopilot/handlers/spatial_ops.py` | `batch_interference` pre-filters on exact boxes (computed once per object); `interference_check`, `containment` and `alignment_check` use them too. | A too-small box made the pre-filter skip a pair that really collides: a revolved B-spline overlapping a block by 0.004 mm3 was reported "No collisions". |
 | tests | `install/base_exactness_test.py` (parent project): `get_bounding_box` on a loft says 30.00 x 20.00; `batch_interference` finds the hidden collision. | Unit tests: same 162 POSIX-only failures as before, no new one. |
+| `AICopilot/handlers/partdesign_ops.py` (`_body_simple_hole`) | A blind hole starts at the part's surface AT (x, y), found by a vertical section of the Body in its own frame; "through" when the depth reaches the bottom there; "no material at (x, y)" refused before any feature is made. | It started from the top of the whole Body, measured in the GLOBAL frame: on a stepped part or an L-bracket a 3 mm hole began in the air and cut nothing (or came out too short), and a moved Body put it at the wrong height. |
+| tests | `test_partdesign_ops`: the surface under (x, y), no material; `install/base_fixes_test.py`: stepped Body, the hole removes exactly pi x 2^2 x 3 mm3. | |
 
 ## Test status
 

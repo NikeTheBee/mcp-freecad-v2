@@ -176,7 +176,7 @@ async def run(inst: Instance, project: str, out: str) -> None:
             # a hole that cuts nothing / would break the part is not kept
             vol = await call("check", target="Body")
             txt = await call("pd_hole", body="Body", diameter=3, x=1e9, y=0)
-            assert txt.startswith("FAIL pd_hole: it cuts no material") and "not kept" in txt, txt
+            assert txt.startswith("ERROR no material at (1e+09, 0)"), txt
             txt = await call("pd_hole", body="Body", diameter=500, x=0, y=0)
             assert txt.startswith("FAIL pd_hole: the part would be broken"), txt
             assert (await call("check", target="Body")).splitlines()[0] == vol.splitlines()[0]
@@ -205,6 +205,25 @@ async def run(inst: Instance, project: str, out: str) -> None:
             txt = await call("analyze", target="Moved")
             assert "D4.0 @ [105.0, 5.0, 55.0]" in txt, txt
             print("pd_hole in a moved Body lands where asked, through the part: OK")
+            # a stepped part (top at z 15 on one half, 5 on the other): a blind hole starts
+            # at the surface under it, not at the highest point (it cut nothing / too short)
+            inst.call("execute_python_sync", {"code": (
+                "import FreeCAD\n"
+                "d = FreeCAD.ActiveDocument\n"
+                "b = d.addObject('PartDesign::Body', 'Step')\n"
+                "p = b.newObject('PartDesign::AdditiveBox', 'Base')\n"
+                "p.Length, p.Width, p.Height = 40, 20, 5\n"
+                "q = b.newObject('PartDesign::AdditiveBox', 'Riser')\n"
+                "q.Length, q.Width, q.Height = 20, 20, 10\n"
+                "q.Placement.Base = FreeCAD.Vector(0, 0, 5)\n"
+                "d.recompute()\n'ok'")})
+            txt = await call("pd_hole", body="Step", diameter=3, x=30, y=10, through=False, depth=3)
+            assert txt.startswith("OK Step") and "3 mm deep from z 5" in txt, txt
+            txt = await call("pd_hole", body="Step", diameter=3, x=10, y=10, through=False, depth=4)
+            assert txt.startswith("OK Step") and "4 mm deep from z 15" in txt, txt
+            txt = await call("pd_hole", body="Step", diameter=2, x=35, y=5, through=False, depth=7)
+            assert txt.startswith("FAIL pd_hole: a 7 mm deep hole goes right through"), txt
+            print("pd_hole on a stepped part: blind holes start at the surface under them: OK")
 
             # headless FreeCAD runs a call to the end whatever its timeout: what limits a
             # heavy check is our socket wait (hence 300 s for the analysis tools)

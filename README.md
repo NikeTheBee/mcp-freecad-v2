@@ -26,6 +26,9 @@ trusting the AI's reading of it.
   counterbore or tilted read "blind" (it was compared with the height of the whole part), and
   a bore stored as a B-spline (a STEP from another CAD) was not seen at all. "Through" now
   means both ends open, decided on the faces at each end (1,600 holes: under a second).
+  A blind hole made by `pd_hole` (or the base's hole on a Body) starts at the surface under it,
+  not at the top of the whole part (on a stepped part it began in the air), and is measured once
+  made: through, depth.
 - **A feature left out of the part is a FAIL**: a Body whose Tip stops before its last feature, or
   with a suppressed feature, used to check OK (a valid solid, without the hole).
 - **Files land in the project**: a file named without a folder (`plan.dxf`, `part.stl`) used to land

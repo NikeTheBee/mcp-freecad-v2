@@ -481,15 +481,29 @@ class PartDesignOpsHandler(BaseHandler):
     def _body_simple_hole(self, doc, body, object_name: str, hole_type: str,
                           diameter: float, depth: float, x: float, y: float) -> str:
         """Vertical hole as a PartDesign::SubtractiveCylinder inside `body`
-        (MCP FREECAD v2). `depth` is measured from the top face; a depth
-        reaching the bottom (or 0/None) gives a through-hole."""
+        (MCP FREECAD v2). `depth` is measured from the part's surface AT (x, y)
+        (not from the top of the whole part: on a stepped part a blind hole came
+        out too short, or in the air); a depth reaching the bottom there (or
+        0/None) gives a through-hole. Positions are in the Body's own frame."""
         if str(hole_type).lower() != 'simple':
             return (f"A {hole_type} hole on a PartDesign Body needs face_index (the face "
                     "to drill from); use measurement_operations list_faces to pick it")
         if not diameter or diameter <= 0:
             return "Error creating hole: diameter must be > 0"
-        bb = body.Shape.BoundBox
-        through = not depth or depth >= bb.ZLength - 1e-9
+        if body.Shape.isNull() or not body.Shape.Solids:
+            return f"Error creating hole: {body.Name} has no solid to drill yet"
+        # feature placements are relative to the Body: measure it in its own frame
+        local = body.Shape.copy()
+        local.Placement = body.Placement.inverse().multiply(local.Placement)
+        bb = self._exact_bbox(local)
+        line = Part.LineSegment(FreeCAD.Vector(x, y, bb.ZMax + 1.0),
+                                FreeCAD.Vector(x, y, bb.ZMin - 1.0)).toShape()
+        zs = [v.Point.z for v in local.section(line).Vertexes]
+        if not zs:
+            return (f"Error creating hole: no material at ({x}, {y}); {body.Name} spans "
+                    f"x {bb.XMin:g}..{bb.XMax:g}, y {bb.YMin:g}..{bb.YMax:g}")
+        top, bottom = max(zs), min(zs)
+        through = not depth or depth >= top - bottom - 1e-9
         cyl = body.newObject("PartDesign::SubtractiveCylinder", f"{object_name}_Hole")
         cyl.Radius = diameter / 2
         if through:
@@ -497,12 +511,12 @@ class PartDesignOpsHandler(BaseHandler):
             cyl.Placement.Base = FreeCAD.Vector(x, y, bb.ZMin - 1.0)
         else:
             cyl.Height = depth + 1.0
-            cyl.Placement.Base = FreeCAD.Vector(x, y, bb.ZMax - depth)
+            cyl.Placement.Base = FreeCAD.Vector(x, y, top - depth)
         self.recompute(doc)
         err = self._check_feature_state(cyl, "Hole")
         if err:
             return err
-        kind = "through" if through else f"{depth}mm deep from the top"
+        kind = "through" if through else f"{depth}mm deep from the surface at z={top:g}"
         return (f"Created simple hole: {diameter}mm diameter at ({x}, {y}), {kind} "
                 f"(PartDesign::SubtractiveCylinder in {body.Name})")
 

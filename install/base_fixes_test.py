@@ -114,6 +114,24 @@ def main() -> int:
                                                 "diameter": 6})
         print("counterbore, no face:", str(r)[:120])
         assert "needs face_index" in str(r), r
+        # 1b. stepped Body (top at z 15 over x 0..20, z 5 beyond): a 3 mm blind hole at
+        # x 30 starts at z 5 under it -- it used to start at z 12, in the air, cutting nothing
+        inst.call("execute_python_sync", {"code": (
+            "import FreeCAD\nd = FreeCAD.ActiveDocument\n"
+            "b = d.addObject('PartDesign::Body', 'Stp')\n"
+            "p = b.newObject('PartDesign::AdditiveBox', 'StpBase')\n"
+            "p.Length, p.Width, p.Height = 40, 20, 5\n"
+            "q = b.newObject('PartDesign::AdditiveBox', 'StpRiser')\n"
+            "q.Length, q.Width, q.Height = 20, 20, 10\n"
+            "q.Placement.Base = FreeCAD.Vector(0, 0, 5)\nd.recompute()\n'ok'")})
+        vol = "import FreeCAD\nround(FreeCAD.ActiveDocument.getObject('Stp').Shape.Volume, 6)"
+        v0 = float(inst.call("execute_python_sync", {"code": vol})["result"])
+        r = op(inst, "partdesign_operations", {"operation": "hole", "object_name": "Stp",
+                                                "hole_type": "simple", "diameter": 4, "depth": 3,
+                                                "x": 30, "y": 10})
+        print("stepped blind hole:", str(r)[:140])
+        v1 = float(inst.call("execute_python_sync", {"code": vol})["result"])
+        assert "surface at z=5" in str(r) and abs((v0 - v1) - math.pi * 4 * 3) < 1e-6, (r, v0, v1)
 
         # 2. verify_sketch on a closed, free quadrilateral (16 params - 4x2 coincident = 8 DoF)
         r = op(inst, "sketch_operations", {"operation": "verify_sketch", "sketch_name": "Free"})

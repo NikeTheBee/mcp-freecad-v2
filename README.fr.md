@@ -25,7 +25,10 @@ au lieu de croire la lecture qu'en fait l'IA.
   équerre en L, sous un lamage ou incliné passait pour « borgne » (comparé à la hauteur de toute
   la pièce), et un alésage stocké en B-spline (un STEP venu d'un autre CAO) n'était pas vu du
   tout. « Débouchant » veut maintenant dire ouvert aux deux bouts, jugé sur les faces de chaque
-  extrémité (1 600 trous : moins d'une seconde).
+  extrémité (1 600 trous : moins d'une seconde). Un trou borgne fait par `pd_hole` (ou par le
+  trou de la base dans un Body) part de la surface sous lui, pas du sommet de toute la pièce (sur
+  une pièce à gradins il commençait dans le vide), et il est mesuré une fois fait : débouchant,
+  profondeur.
 - **Une fonction laissée hors de la pièce donne FAIL** : un Body dont la Tip s'arrête avant sa
   dernière fonction, ou avec une fonction supprimée, passait OK (un solide valide, sans le trou).
 - **Les fichiers arrivent dans le projet** : un fichier nommé sans dossier (`plan.dxf`,

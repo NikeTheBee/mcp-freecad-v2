@@ -65,6 +65,15 @@ def _make_next_newobject_invalid(body, type_id):
 # Pad / pocket
 # ---------------------------------------------------------------------------
 
+
+def _surface_at_xy(body, top, bottom):
+    """The vertical section through (x, y) meets the Body at z top..bottom
+    (None: misses it). Placement made algebra-capable for the body frame."""
+    from unittest.mock import MagicMock as _MM
+    body.Placement = _MM()
+    pts = [] if top is None else [_MM(Point=_Vec(0, 0, top)), _MM(Point=_Vec(0, 0, bottom))]
+    body.Shape.section = _MM(return_value=_MM(Vertexes=pts))
+
 class TestPadSketch(unittest.TestCase):
     def setUp(self):
         reset_mocks()
@@ -557,6 +566,7 @@ class TestHoleWizard(unittest.TestCase):
         (through-hole when depth reaches the bottom)."""
         box = make_box_object("Pad")
         body = make_body("Body", group=[box])
+        _surface_at_xy(body, top=10.0, bottom=0.0)
         doc = make_mock_doc([body, box])
         mock_FreeCAD.ActiveDocument = doc
         cyl = body.newObject.return_value
@@ -575,9 +585,13 @@ class TestHoleWizard(unittest.TestCase):
         self.assertNotIn("Part::Cut", type_ids_added)
         assert_success_contains(self, result, "simple", "6mm", "through", "Body")
 
-    def test_no_face_index_in_body_blind_hole_starts_at_top(self):
+    def test_no_face_index_in_body_blind_hole_starts_at_the_surface_under_it(self):
+        """MCP FREECAD v2: a blind hole starts at the part's surface AT (x, y),
+        found by a vertical section -- not at the top of the whole part (on a
+        stepped part it came out too short, or in the air)."""
         box = make_box_object("Pad")
         body = make_body("Body", group=[box])
+        _surface_at_xy(body, top=5.0, bottom=0.0)        # the part is 10 tall elsewhere
         doc = make_mock_doc([body, box])
         mock_FreeCAD.ActiveDocument = doc
         cyl = body.newObject.return_value
@@ -588,7 +602,22 @@ class TestHoleWizard(unittest.TestCase):
         })
 
         self.assertEqual(cyl.Height, 4.0)
-        assert_success_contains(self, result, "3mm deep from the top")
+        self.assertEqual(cyl.Placement.Base.z, 2.0)     # 5 - 3, not 10 - 3
+        assert_success_contains(self, result, "3mm deep from the surface at z=5")
+
+    def test_no_face_index_in_body_no_material_under_xy(self):
+        box = make_box_object("Pad")
+        body = make_body("Body", group=[box])
+        _surface_at_xy(body, top=None, bottom=None)
+        doc = make_mock_doc([body, box])
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.hole_wizard({
+            'object_name': 'Pad', 'hole_type': 'simple', 'diameter': 4, 'x': 500, 'y': 0,
+        })
+
+        assert_error_contains(self, result, "no material at (500")
+        body.newObject.assert_not_called()
 
     def test_no_face_index_in_body_counterbore_asks_for_a_face(self):
         box = make_box_object("Pad")

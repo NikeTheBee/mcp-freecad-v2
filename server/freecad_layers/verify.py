@@ -193,7 +193,9 @@ def check(obj_or_name, doc=None, min_volume: float = 1e-6,
     closed = (all(s.isClosed() for s in solids) if solids else bool(shp.isClosed()))
     bb = box(shp)
     res.update(valid=valid, solids=len(solids), closed=closed, volume=volume,
-               bbox=[round(bb.XLength, 4), round(bb.YLength, 4), round(bb.ZLength, 4)],
+               # an empty shape has no box (it printed "-infx-infx-inf")
+               bbox=[round(bb.XLength, 4), round(bb.YLength, 4), round(bb.ZLength, 4)]
+               if bb.isValid() else None,
                faces=len(shp.Faces), edges=len(shp.Edges), vertexes=len(shp.Vertexes))
     if solids:
         total = sum(s.Volume for s in solids) or 1.0
