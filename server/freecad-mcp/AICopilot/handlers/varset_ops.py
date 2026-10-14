@@ -263,7 +263,7 @@ class VarSetOpsHandler(BaseHandler):
                     return f"Error setting property: object not found: {value}"
                 setattr(varset, name, target)
                 self.recompute(doc)
-                return f"Set {varset_name}.{name} = {value}"
+                return f"Set {varset_name}.{name} = {value}" + self._recompute_errors(doc)
 
             # Unit-bearing types (Length, Angle, Volume, ...) accept a bare
             # number or a unit string ("10 in") the same way FreeCAD's own
@@ -272,7 +272,7 @@ class VarSetOpsHandler(BaseHandler):
             setattr(varset, name, value)
             self.recompute(doc)
 
-            return f"Set {varset_name}.{name} = {value}"
+            return f"Set {varset_name}.{name} = {value}" + self._recompute_errors(doc)
 
         except Exception as e:
             return f"Error setting property: {e}"

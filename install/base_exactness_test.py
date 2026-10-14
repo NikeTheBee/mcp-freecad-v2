@@ -162,6 +162,14 @@ def main() -> int:
                                             "cell": "A1", "value": "40"})
         py(inst, "import FreeCAD\nFreeCAD.ActiveDocument.recompute()\n'ok'")
         close(shape_of(inst, "Box")[0], 40 * 20 * 30, "spreadsheet len=40 drives Box again")
+        # a value that breaks the box: the reply says so (it was a plain "Set Sheet.A1 = 0"
+        # while the Box stayed in error with its last good shape)
+        r = str(op(inst, "spreadsheet_operations", {"operation": "set_cell", "spreadsheet_name": "Sheet",
+                                                    "cell": "A1", "value": "0"}))
+        assert "WARNING" in r and "Box" in r, r
+        r = str(op(inst, "spreadsheet_operations", {"operation": "set_cell", "spreadsheet_name": "Sheet",
+                                                    "cell": "A1", "value": "40"}))
+        assert "WARNING" not in r, r
 
         # Draft array: count/spacing from the schema (ignored before v2: always 2 x 100 mm)
         py(inst, SETUP)

@@ -422,6 +422,24 @@ class BaseHandler:
         if doc:
             doc.recompute()
 
+    @staticmethod
+    def _recompute_errors(doc, limit: int = 6) -> str:
+        """MCP FREECAD v2: '' when every object computed, else a warning line
+        naming those in error. recompute() never raises: a spreadsheet value
+        that breaks the Pad it drives (0, text) was replied "Set Sheet.A1 = 0"
+        while the Pad stayed Invalid and the Body kept its last good shape."""
+        try:
+            bad = [o.Name for o in doc.Objects
+                   if 'Invalid' in (getattr(o, 'State', None) or [])]
+        except Exception:
+            return ""
+        if not bad:
+            return ""
+        more = f" (+{len(bad) - limit} more)" if len(bad) > limit else ""
+        return (f"\n  WARNING: after the recompute {len(bad)} object(s) are in error: "
+                f"{', '.join(bad[:limit])}{more} -- they keep their last good shape, "
+                f"the model does NOT reflect this value")
+
     def find_font(self, font_file: str = '') -> str:
         """Find a usable .ttf font file, trying the given path then common system locations.
 

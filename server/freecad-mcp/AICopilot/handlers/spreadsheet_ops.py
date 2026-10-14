@@ -94,7 +94,7 @@ class SpreadsheetOpsHandler(BaseHandler):
             spreadsheet.set(cell, '' if value is None else str(value))
             self.recompute(doc)
 
-            return f"Set {spreadsheet_name}.{cell} = {value}"
+            return f"Set {spreadsheet_name}.{cell} = {value}" + self._recompute_errors(doc)
 
         except Exception as e:
             return f"Error setting cell: {e}"
@@ -146,7 +146,7 @@ class SpreadsheetOpsHandler(BaseHandler):
             spreadsheet.setAlias(cell, alias)
             self.recompute(doc)
 
-            return f"Set alias '{alias}' for {spreadsheet_name}.{cell}"
+            return f"Set alias '{alias}' for {spreadsheet_name}.{cell}" + self._recompute_errors(doc)
 
         except Exception as e:
             return f"Error setting alias: {e}"
@@ -184,7 +184,7 @@ class SpreadsheetOpsHandler(BaseHandler):
             spreadsheet.clear(cell)
             self.recompute(doc)
 
-            return f"Cleared {spreadsheet_name}.{cell}"
+            return f"Cleared {spreadsheet_name}.{cell}" + self._recompute_errors(doc)
 
         except Exception as e:
             return f"Error clearing cell: {e}"
@@ -222,7 +222,8 @@ class SpreadsheetOpsHandler(BaseHandler):
 
             self.recompute(doc)
 
-            return f"Set {cells_set} cells in {spreadsheet_name} starting at {start_cell}"
+            return (f"Set {cells_set} cells in {spreadsheet_name} starting at {start_cell}"
+                    + self._recompute_errors(doc))
 
         except Exception as e:
             return f"Error setting cell range: {e}"
@@ -397,7 +398,8 @@ class SpreadsheetOpsHandler(BaseHandler):
 
             self.recompute(doc)
 
-            return f"Imported {cells_set} cells from CSV into {spreadsheet_name}"
+            return (f"Imported {cells_set} cells from CSV into {spreadsheet_name}"
+                    + self._recompute_errors(doc))
 
         except Exception as e:
             return f"Error importing CSV: {e}"

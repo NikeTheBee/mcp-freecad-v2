@@ -135,6 +135,8 @@ It runs `git subtree pull --squash` on a clean tree. Then run the base's unit te
 | `AICopilot/handlers/verification_ops.py` (`verify_no_self_intersection`) | Runs `shape.check(True)`: BRepCheck plus the boolean (BOP) argument check. | Plain `check()` does not look for faces or solids crossing each other: a compound of two overlapping solids read "valid: no self-intersections detected". |
 | `AICopilot/handlers/mesh_ops.py` (`mesh_to_solid`, `get_mesh_info`) | A converted solid must be valid and closed, else sewing is tried, else the shape is kept as a shell, said to be NOT a solid, with no volume. `get_mesh_info` marks an open mesh's volume as not a real one. | `Part.makeSolid` does not refuse an open mesh: one missing triangle gave an invalid "solid" of 5478 mm3 for a 6000 mm3 box, replied "Converted mesh ... to solid". |
 | `AICopilot/handlers/fixture_ops.py` | Fixtures record the exact bounding box (`bbox_method: exact`); a box mismatch against an older fixture says it may only need re-saving. | `Shape.BoundBox` of curved faces changes once the shape is meshed, and `save_fixture` meshes it (STL): the unchanged loft compared right after saving "DIFFERS ... bbox". |
+| `AICopilot/handlers/base.py` (`_recompute_errors`), `spreadsheet_ops.py`, `varset_ops.py` | `set_cell`, `set_cell_range`, `clear_cell`, `set_alias`, `import_csv` and VarSet `set_property` replies name the objects left in error by the recompute. | `recompute()` never raises: a cell set to 0 under the Box it drives was replied "Set Sheet.A1 = 0" while the Box stayed Invalid with its last good shape. |
+| tests | `test_base_handler` (`_recompute_errors`); `install/base_exactness_test.py`: the driving cell set to 0 warns about the Box, back to 40 does not. | |
 | tests | `test_verification_ops` (BOP check), `test_mesh_ops` (open mesh kept as a shell, no volume), `test_fixture_ops` (exact method, note for old fixtures); `install/base_exactness_test.py`: overlapping compound fails `verify_no_self_intersection`, closed mesh -> 6000 mm3 solid, open mesh -> shell, loft fixture saved then compared OK. | |
 | tests | `test_spatial_ops`: overlap area from the common, edge contact, overlap reported as interfering, contact as touching; `install/base_exactness_test.py`: coplanar faces share 25 mm2, flush cubes touch (no collision), overlapping cubes interfere by 500 mm3, a dome passes `verify_orientation(+Z)` (dot 1.0); `test_base_handler`: `_face_normal` at the centroid, then mid-parameters. | |
 | tests | `test_partdesign_ops`: loft and sweep of a Body's sketches; `install/base_exactness_test.py`: loft 500 pi, sweep 750 pi, helix 80 pi^2 (Pappus) mm3. A sweep of the remaining operations found the others exact (primitives, Part extrude/revolve/loft/sweep, rotate, mirror, Draft arrays, polar pattern, PartDesign::Hole counterbore/countersink on a face). | |
@@ -147,7 +149,7 @@ Upstream unit tests on Windows, compared with the unmodified upstream version in
 |---|---|---|---|
 | v8.2.3 + changes | 2118 | 0 | 9 (instance registry writes) |
 | v8.3.0 + changes | 2191 | 0 | 9 |
-| v8.3.0 + changes (2026-10-14) | 2261 | 0 | 9 |
+| v8.3.0 + changes (2026-10-14) | 2263 | 0 | 9 |
 
 - The remaining ~123 failures and 39 errors also exist on the unmodified upstream version: those
   tests use AF_UNIX sockets, `/tmp` and POSIX paths. On Linux, CI runs them all green.

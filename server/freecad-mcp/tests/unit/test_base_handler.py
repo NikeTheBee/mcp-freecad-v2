@@ -1400,3 +1400,25 @@ class TestFaceNormal:
         face.normalAt = MagicMock(return_value="n")
         self._normal(face)
         face.normalAt.assert_called_once_with(1.0, 2.0)
+
+
+class TestRecomputeErrors:
+    """MCP FREECAD v2: a value that breaks what it drives (a spreadsheet cell at
+    0 under a Pad) was replied "Set ..." -- recompute() never raises."""
+
+    @staticmethod
+    def _errors(doc):
+        from handlers.base import BaseHandler
+        return BaseHandler._recompute_errors(doc)
+
+    def test_names_the_objects_left_invalid(self):
+        doc = MagicMock()
+        doc.Objects = [MagicMock(Name="Sheet", State=["Up-to-date"]),
+                       MagicMock(Name="Pad", State=["Touched", "Invalid"])]
+        msg = self._errors(doc)
+        assert "1 object(s) are in error: Pad" in msg and "Sheet" not in msg
+
+    def test_nothing_when_all_computed(self):
+        doc = MagicMock()
+        doc.Objects = [MagicMock(Name="Pad", State=["Up-to-date"])]
+        assert self._errors(doc) == ""
