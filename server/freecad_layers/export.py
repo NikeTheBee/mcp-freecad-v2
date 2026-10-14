@@ -80,7 +80,10 @@ def _verify_mesh(tmp: Path, shp, defl: float) -> Dict[str, Any]:
     if not m.isSolid():
         problems.append("mesh is not closed (not watertight)")
     if m.hasNonManifolds():
-        problems.append("non-manifold edges")
+        n_sol = len(shp.Solids)
+        problems.append("non-manifold edges" + (
+            f" ({n_sol} solids touch each other: make them overlap and fuse them into one "
+            "solid, or export them separately)" if n_sol > 1 else ""))
     if m.hasNonUniformOrientedFacets():
         problems.append("inconsistently oriented triangles")
     if n <= MAX_SELF_INTERSECTION_FACETS:
