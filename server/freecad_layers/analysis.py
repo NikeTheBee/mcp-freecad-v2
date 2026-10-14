@@ -539,9 +539,12 @@ def _face_overhang(f, up, limit: float, z_min: float) -> float:
     # the triangulation's winding against the face's outward normal, once
     k = int(np.argmax(A))
     c = App.Vector(*P[T[k]].mean(axis=0))
-    u, v = s.parameter(c)
-    if np.dot(N[k], tuple(f.normalAt(u, v))) < 0:
-        N = -N
+    try:
+        u, v = s.parameter(c)
+        if np.dot(N[k], tuple(f.normalAt(u, v))) < 0:
+            N = -N
+    except Exception:  # noqa: BLE001 — keep the triangulation's own winding
+        pass
     u_ = np.array((up.x, up.y, up.z))
     # vertex normals (area-weighted), then how far each vertex is inside the
     # overhang cone; a triangle across the cone's edge counts the part of its
