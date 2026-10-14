@@ -172,7 +172,8 @@ def export(name, path: Optional[str] = None, fmt: str = "stl",
             r = _verify_exact(tmp, shp, ext)
         if r["problems"]:
             raise ValueError(f"not exported: the {ext[1:].upper()} file read back does not match "
-                             f"{obj.Name}: " + "; ".join(r["problems"]))
+                             f"{obj.Name}: " + "; ".join(r["problems"])
+                             + (" -- IGES cannot carry this part: export STEP" if ext in SURFACES else ""))
         os.replace(tmp, out)
     except BaseException:
         if not overwrite:               # the empty name reserved by safe_out_path
