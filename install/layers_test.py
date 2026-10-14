@@ -170,6 +170,9 @@ fil.Edges = [(i + 1, 1, 1) for i in range(12)]
 bd.recompute()
 txt = gate.check_target("Body", autosave=False)["text"]
 assert "note: Fillet (Part::Fillet) is built on Pad outside Body -- the Body does not include it" in txt, txt
+# checking a feature instead of the Body: said, with the Body to check
+txt = gate.check_target("Pad", autosave=False)["text"]
+assert "note: Pad is a step of Body, not the whole part: check Body" in txt, txt
 FreeCAD.closeDocument("Beside")
 print("check says when a solid is built on the Body but outside it: OK")
 

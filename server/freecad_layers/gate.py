@@ -13,6 +13,16 @@ import FreeCAD
 from . import recovery, spec, state, verify
 
 
+def _body_of(obj):
+    """The PartDesign Body a feature belongs to (None for a Body or a free object)."""
+    if getattr(obj, "TypeId", "") == "PartDesign::Body" or not obj.TypeId.startswith("PartDesign::"):
+        return None
+    for o in obj.InList:
+        if o.TypeId == "PartDesign::Body" and obj in o.Group:
+            return o
+    return None
+
+
 def _built_beside(obj) -> list:
     """Solids built on this Body's features but standing OUTSIDE the Body (a
     Part::Fillet of its Pad, a Part::Cut of the Body...): what they add is not
@@ -43,6 +53,12 @@ def check_target(name: str, expect_solid: bool = True, autosave: bool = True) ->
 
     v = verify.check(obj, expect_solid=expect_solid)
     lines = [verify.verdict(obj, expect_solid=expect_solid)]
+    body = _body_of(obj)
+    if body is not None:
+        later = obj not in (body.Tip, None)
+        lines.append(f"note: {obj.Name} is a step of {body.Name}, not the whole part"
+                     + (" (later features are not in it)" if later else "")
+                     + f": check {body.Name} -- its requirements are checked there")
     beside = _built_beside(obj)
     if beside:
         lines.append("note: " + "; ".join(beside) + " -- the Body does not include "
