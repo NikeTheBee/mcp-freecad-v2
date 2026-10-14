@@ -51,6 +51,9 @@ trusting the AI's reading of it.
 - **"No interference" includes the part it is set on**: `require("Plate", "no_interference",
   objects=[pins])` checked the pins against each other only, so an oversize pin in the plate
   passed.
+- **A step is not the part**: `export`, `printability`, `fem_static` and `drawing_sheet` on a
+  PartDesign step ("Pad") worked on that step: `export("Pad")` after drilling wrote the part
+  without its holes. They now refuse it and name the Body; `check` and `require` on a step say so.
 - **A feature left out of the part is a FAIL**: a Body whose Tip stops before its last feature, or
   with a suppressed feature, used to check OK (a valid solid, without the hole).
 - **Files land in the project**: a file named without a folder (`plan.dxf`, `part.stl`) used to land

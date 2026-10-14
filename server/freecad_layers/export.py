@@ -150,7 +150,7 @@ def export(name, path: Optional[str] = None, fmt: str = "stl",
     ext = _ext(path, fmt)
     if obj.TypeId == "Sketcher::SketchObject":
         raise ValueError(f"{obj.Name} is a sketch: export the solid made from it")
-    body = gate._body_of(obj)
+    body = verify.body_of(obj)
     if body is not None:   # a step's shape: export("Pad") after drilling wrote a part without holes
         raise ValueError(f"{obj.Name} is a step of {body.Name}, not the whole part: "
                          f"export {body.Name}")

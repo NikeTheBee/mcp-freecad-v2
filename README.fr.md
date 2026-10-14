@@ -55,6 +55,10 @@ au lieu de croire la lecture qu'en fait l'IA.
 - **« Pas d'interférence » inclut la pièce visée** : `require("Plaque", "no_interference",
   objects=[goupilles])` ne comparait que les goupilles entre elles, si bien qu'une goupille trop
   grosse dans la plaque passait.
+- **Une étape n'est pas la pièce** : `export`, `printability`, `fem_static` et `drawing_sheet` sur
+  une étape PartDesign (« Pad ») travaillaient sur cette étape : `export("Pad")` après perçage
+  écrivait la pièce sans ses trous. Ils la refusent maintenant en nommant le Body ; `check` et
+  `require` sur une étape le signalent.
 - **Une fonction laissée hors de la pièce donne FAIL** : un Body dont la Tip s'arrête avant sa
   dernière fonction, ou avec une fonction supprimée, passait OK (un solide valide, sans le trou).
 - **Les fichiers arrivent dans le projet** : un fichier nommé sans dossier (`plan.dxf`,

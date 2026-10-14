@@ -282,6 +282,10 @@ def static(target, fixed: Sequence[str], loads: Sequence[Dict[str, Any]],
     issues: List[str] = []
     advisories: List[str] = []
     obj = verify._resolve(target)
+    _step = verify.body_of(obj)
+    if _step is not None:   # a step of a Body is not the part (later features are missing)
+        raise ValueError(f"{obj.Name} is a step of {_step.Name}, not the whole part: "
+                         f"analyze {_step.Name}")
     doc = obj.Document
     chk = verify.check(obj)
     if chk["status"] != verify.OK or not chk.get("closed"):

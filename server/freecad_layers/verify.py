@@ -84,6 +84,16 @@ def _resolve(obj_or_name, doc=None):
     return obj_or_name
 
 
+def body_of(obj):
+    """The PartDesign Body a feature belongs to (None for a Body or a free object)."""
+    if getattr(obj, "TypeId", "") == "PartDesign::Body" or not obj.TypeId.startswith("PartDesign::"):
+        return None
+    for o in obj.InList:
+        if o.TypeId == "PartDesign::Body" and obj in o.Group:
+            return o
+    return None
+
+
 def _bad_state(obj) -> List[str]:
     return [s for s in (getattr(obj, "State", None) or []) if s in _BAD_STATES]
 

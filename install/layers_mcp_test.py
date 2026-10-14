@@ -190,6 +190,13 @@ async def run(inst: Instance, project: str, out: str) -> None:
                                   ("render_views", {"targets": []}, "at least one"),
                                   ("printability", {"target": "Body", "bed_mm": [-1, 5]}, "bed_mm"),
                                   ("recover", {"action": "bogus"}, "list or open"),
+                                  # a step of the Body is not the part (later features missing)
+                                  ("printability", {"target": "Pad"}, "is a step of Body"),
+                                  ("fem_static", {"target": "Pad", "fixed": ["xmin"],
+                                                  "loads": [{"faces": "xmax", "force_N": 1}]},
+                                   "is a step of Body"),
+                                  ("drawing_sheet", {"target": "Pad"}, "is a step of Body"),
+                                  ("export", {"target": "Pad"}, "is a step of Body"),
                                   ("record_step", {"feature": "", "ftype": ""}, "must name")):
                 txt = await call(tool, **kw)
                 assert txt.startswith("ERROR") and why in txt, (tool, txt)

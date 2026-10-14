@@ -273,7 +273,7 @@ else:
         spec.remove(_r)
         _out += f" (replaces {_r})"
     _t = FreeCAD.ActiveDocument and FreeCAD.ActiveDocument.getObject(_a['target'])
-    _b = gate._body_of(_t) if _t is not None else None
+    _b = verify.body_of(_t) if _t is not None else None
     if _b is not None:   # checked only by check(<that step>): the part is the Body
         _out += (f" -- note: {_t.Name} is a step of {_b.Name}; a requirement on the part goes "
                  f"on {_b.Name} (replaces='{_out.split()[0]}')")

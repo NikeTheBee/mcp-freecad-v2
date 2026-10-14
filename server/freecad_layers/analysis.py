@@ -524,6 +524,12 @@ def printability(obj_or_name, bed_mm: Sequence[float] = (220, 220, 250),
         raise ValueError(f"bed_mm must be [x, y, z] in mm, all > 0 (got {bed_mm!r})")
     if not isinstance(min_wall_mm, (int, float)) or min_wall_mm < 0:
         raise ValueError(f"min_wall_mm must be a number >= 0 (got {min_wall_mm!r})")
+    if isinstance(obj_or_name, str) or hasattr(obj_or_name, "TypeId"):
+        _o = verify._resolve(obj_or_name)
+        _step = verify.body_of(_o)
+        if _step is not None:   # a step of a Body is not the part (later features are missing)
+            raise ValueError(f"{_o.Name} is a step of {_step.Name}, not the whole part: "
+                             f"judge {_step.Name}")
     r = verify.check(obj_or_name)
     issues = [f"verify: {i}" for i in r["issues"]]
     advisories: List[str] = []

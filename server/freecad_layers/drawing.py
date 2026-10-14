@@ -225,6 +225,10 @@ def sheet_for(obj, dxf_path: Optional[str] = None,
     standard scale (1:1, 1:2, 1:5, 2:1...) at which every view fits its slot.
     Returns a compact summary dict (token-minimal).
     """
+    _step = verify.body_of(obj)
+    if _step is not None:   # a step of a Body is not the part (later features are missing)
+        raise ValueError(f"{obj.Name} is a step of {_step.Name}, not the whole part: "
+                         f"draw {_step.Name}")
     for v in views:
         _resolve_direction(v)                     # fail before creating anything
     doc = obj.Document
