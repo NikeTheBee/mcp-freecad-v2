@@ -270,6 +270,34 @@ def watertight(obj_or_name, doc=None) -> bool:
     return r["ok"] and r["solids"] >= 1 and r["closed"]
 
 
+def _profile_problem(loops) -> Optional[str]:
+    """Why the closed loops cannot make the face a Pad/Pocket would, or None.
+    Closed loops can still cross themselves (a figure-8) or each other (two
+    overlapping squares, a hole circle cutting the outline): the sketch read
+    OK and the Pad failed or made a broken solid. Built as PartDesign builds
+    it (FaceMakerBullseye), then the OCCT check of that face."""
+    import Part
+    for i, w in enumerate(loops, 1):
+        try:
+            one = Part.makeFace([w], "Part::FaceMakerBullseye")
+        except Exception:  # noqa: BLE001
+            one = None
+        # a figure-8 makes two regions (the Pad, two solids); a folded loop, none
+        if one is None or len(one.Faces) != 1 or abs(one.Area) <= 1e-9:
+            return f"loop {i} crosses itself (a figure-8 or folded outline)"
+    try:
+        face = Part.makeFace(loops, "Part::FaceMakerBullseye")
+    except Exception as e:  # noqa: BLE001 — the reason IS the finding
+        return ("the loops cross each other, no face can be made: "
+                + " ".join(str(e).split())[:120])
+    if face.isNull() or not face.Faces or abs(face.Area) <= 1e-9:
+        return "the loops overlap each other: no area left to pad"
+    err = _occt_check(face)
+    if err is not None or not face.isValid():
+        return f"a loop crosses itself or another: {err or 'invalid face'}"
+    return None
+
+
 def sketch_check(obj_or_name, doc=None, require_closed: bool = True,
                  require_fully_constrained: bool = False) -> Dict[str, Any]:
     """Sketch health before a Pad/Pocket: conflicting / redundant / malformed
@@ -304,6 +332,10 @@ def sketch_check(obj_or_name, doc=None, require_closed: bool = True,
         issues.append(f"{opened} open wire(s): cannot Pad/Pocket")
     if require_closed and not closed:
         issues.append("no closed profile")
+    if require_closed and closed and not opened:
+        problem = _profile_problem([w for w in wires if w.isClosed()])
+        if problem:
+            issues.append(problem)
     issues += _state_issues(sk)
     return {"status": FAIL if issues else OK, "name": sk.Name, "issues": issues,
             "advisories": advisories, "dof": dof, "wires_closed": closed,

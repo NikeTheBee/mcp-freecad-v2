@@ -59,6 +59,9 @@ au lieu de croire la lecture qu'en fait l'IA.
   une étape PartDesign (« Pad ») travaillaient sur cette étape : `export("Pad")` après perçage
   écrivait la pièce sans ses trous. Ils la refusent maintenant en nommant le Body ; `check` et
   `require` sur une étape le signalent.
+- **Une esquisse dont les contours se croisent est arrêtée avant le Pad** : un « 8 » (le Pad
+  faisait deux solides), deux contours qui se chevauchent (aire nulle) ou un trou qui coupe le
+  bord passaient OK.
 - **Une fonction laissée hors de la pièce donne FAIL** : un Body dont la Tip s'arrête avant sa
   dernière fonction, ou avec une fonction supprimée, passait OK (un solide valide, sans le trou).
 - **Les fichiers arrivent dans le projet** : un fichier nommé sans dossier (`plan.dxf`,

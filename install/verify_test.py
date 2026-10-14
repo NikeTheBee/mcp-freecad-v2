@@ -167,6 +167,32 @@ def main() -> int:
     r = verify.sketch_check("Conflict", require_closed=False)
     print(verify.sketch_verdict("Conflict", require_closed=False))
     assert r["status"] == verify.FAIL and any("conflicting" in i for i in r["issues"]), r
+    # closed loops that cross: they read OK and the Pad failed or made a broken solid
+    # (a figure-8 -> two solids; overlapping squares -> zero area; a hole cutting the edge)
+    def loops(name, segs, circles=()):
+        s = doc.addObject("Sketcher::SketchObject", name)
+        for a, b in segs:
+            s.addGeometry(Part.LineSegment(V(*a, 0), V(*b, 0)))
+        for c, rad in circles:
+            s.addGeometry(Part.Circle(V(*c, 0), V(0, 0, 1), rad))
+        return s
+    sq = [((0, 0), (10, 0)), ((10, 0), (10, 10)), ((10, 10), (0, 10)), ((0, 10), (0, 0))]
+    sq2 = [((a[0] + 5, a[1] + 5), (b[0] + 5, b[1] + 5)) for a, b in sq]
+    far = [((a[0] + 20, a[1]), (b[0] + 20, b[1])) for a, b in sq]
+    for name, segs, circles, why in (
+            ("SkFig8", [((0, 0), (10, 10)), ((10, 10), (10, 0)), ((10, 0), (0, 10)), ((0, 10), (0, 0))],
+             (), "crosses itself"),
+            ("SkOverlap", sq + sq2, (), "overlap each other"),
+            ("SkCutting", sq, (((10, 5), 2),), "crosses itself or another")):
+        loops(name, segs, circles)
+        doc.recompute()
+        r = verify.sketch_check(name)
+        assert r["status"] == verify.FAIL and any(why in i for i in r["issues"]), (name, r)
+    for name, segs, circles in (("SkHoled", sq, (((5, 5), 2),)), ("SkIslands", sq + far, ())):
+        loops(name, segs, circles)
+        doc.recompute()
+        assert verify.sketch_check(name)["status"] == verify.OK, (name, verify.sketch_verdict(name))
+    print("crossing loops caught at the sketch (figure-8, overlap, hole on the edge): OK")
 
     # a Body's shape is its Tip's: a hole after the Tip, or suppressed, is not in
     # the part, yet the Body is a valid solid (it used to check OK at 4000 mm3)
