@@ -74,12 +74,16 @@ class TransformsHandler(BaseHandler):
                 # "around Q-axis" while actually rotating around Z.
                 return f"Invalid axis '{axis}': must be 'x', 'y', or 'z'"
 
-            # Rotate object
+            # Rotate object around the GLOBAL axis through its placement point
+            # (MCP FREECAD v2): old * new turned an already-rotated object around
+            # its OWN axis while the reply named the global one
             rotation = FreeCAD.Rotation(axis_vector, angle)
-            obj.Placement.Rotation = obj.Placement.Rotation.multiply(rotation)
+            obj.Placement.Rotation = rotation.multiply(obj.Placement.Rotation)
             self.recompute(doc)
 
-            return f"Rotated {object_name} by {angle}° around {axis.upper()}-axis"
+            b = obj.Placement.Base
+            return (f"Rotated {object_name} by {angle}° around the {axis.upper()}-axis through its "
+                    f"placement point ({b.x:g}, {b.y:g}, {b.z:g})")
 
         except Exception as e:
             return f"Error rotating object: {e}"

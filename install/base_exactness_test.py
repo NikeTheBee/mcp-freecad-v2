@@ -121,6 +121,19 @@ def main() -> int:
         assert "removed NOTHING" in r, r
         print("booleans report their volume; a cut that removes nothing says so: OK")
 
+        # rotations compose around the GLOBAL axes: 10x20x30 turned 90 about X then 90 about Z
+        # is 30 x 10 x 20 (turning around the object's own Z gave 20 x 30 x 10, while the reply
+        # named the Z axis)
+        py(inst, SETUP)
+        op(inst, "part_operations", {"operation": "rotate", "object_name": "Box", "axis": "x", "angle": 90})
+        r = str(op(inst, "part_operations", {"operation": "rotate", "object_name": "Box", "axis": "z",
+                                             "angle": 90}))
+        size = json.loads(py(inst, "import FreeCAD, json\nb = FreeCAD.ActiveDocument.getObject('Box')"
+                                   ".Shape.BoundBox\njson.dumps([round(b.XLength, 6), round(b.YLength, 6),"
+                                   " round(b.ZLength, 6)])").strip("'\""))
+        assert size == [30, 10, 20] and "placement point (0, 0, 0)" in r, (size, r)
+        print("rotations around the global axes, pivot stated: OK")
+
         # transforms
         py(inst, SETUP)
         op(inst, "part_operations", {"operation": "move", "object_name": "Box", "x": 10, "y": 0, "z": 0})
