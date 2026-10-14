@@ -123,6 +123,15 @@ def main() -> int:
         assert abs(we["min_mm"] - wall) < 1e-6, (wall, we)
     assert analysis.printability(edge.copy())["status"] == "FAIL"     # 0.5 < 0.8 mm
     print("thin wall between a hole and an edge: exact (0.3, 0.5 mm), printability FAIL: OK")
+    # crossing holes leave a knife edge where they meet (it thins to 0 at their edge):
+    # a corner, not a wall -- it read 0.03 mm and failed printability. The thinnest real
+    # wall here is the D6 hole to the x=0 face: 7 mm
+    cross = Part.makeBox(40, 30, 20).cut(Part.makeCylinder(3, 20, V(10, 15, 0)))
+    cross = cross.cut(Part.makeCylinder(2, 8, V(30, 15, 12)))
+    cross = cross.cut(Part.makeCylinder(2.5, 40, V(0, 15, 10), V(1, 0, 0)))
+    wx = analysis.min_wall(cross)
+    assert abs(wx["min_mm"] - 7.0) < 1e-6, wx
+    print("crossing holes: the knife edge where they meet is not a wall (7 mm, was 0.03): OK")
     # a thin spot on the LAST faces of a many-faced part is still found (the
     # old version stopped sampling after the first faces)
     grid = Part.makeBox(120, 120, 10)

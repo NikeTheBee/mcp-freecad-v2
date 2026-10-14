@@ -307,7 +307,8 @@ def _face_samples(face, n: int):
 def _exit_distance(p, d, surfs, faces, lo, hi, limit, eps, tol):
     """Distance from p along unit direction d to the nearest face the ray
     LEAVES the material through, if nearer than `limit` (else `limit`).
-    Returns (distance, number of faces whose intersection raised)."""
+    Returns (distance, number of faces whose intersection raised, index of
+    that face or None)."""
     import numpy as np
 
     o = np.array((p.x, p.y, p.z))
@@ -323,9 +324,9 @@ def _exit_distance(p, d, surfs, faces, lo, hi, limit, eps, tol):
             tf[:, ax] = np.where(inside, np.inf, -np.inf)
     tnear, tfar = tn.max(axis=1), tf.min(axis=1)
     cand = np.nonzero((tnear <= tfar) & (tfar > eps) & (tnear < limit))[0]
-    errors = 0
+    errors, hit = 0, None
     if not len(cand):
-        return limit, errors
+        return limit, errors, hit
     line = Part.Line(p, p + d)
     for j in cand[np.argsort(tnear[cand], kind="stable")]:
         if tnear[j] >= limit:
@@ -339,13 +340,22 @@ def _exit_distance(p, d, surfs, faces, lo, hi, limit, eps, tol):
                     continue
                 u, v = surfs[j].parameter(q)
                 if faces[j].normalAt(u, v).dot(d) > 1e-9:   # leaving, not entering or grazing
-                    limit = t
+                    limit, hit = t, int(j)
         except Exception:  # noqa: BLE001 — counted and reported, never silent
             errors += 1
-    return limit, errors
+    return limit, errors, hit
 
 
-def _closest_walls(faces, lo, hi, limit: float, tol: float):
+def _adjacent_pairs(faces) -> set:
+    """(i, j), i < j, for every two faces sharing an edge."""
+    by_edge: Dict[int, List[int]] = {}
+    for i, f in enumerate(faces):
+        for e in f.Edges:
+            by_edge.setdefault(e.hashCode(), []).append(i)
+    return {(a, b) for fs in by_edge.values() for a in fs for b in fs if a < b}
+
+
+def _closest_walls(faces, lo, hi, limit: float, tol: float, adjacent: Optional[set] = None):
     """(thickness, point) of the thinnest wall between two faces that do not
     share an edge, closer than `limit`, with the MATERIAL between them (each
     face's outward normal at its closest point faces away from the other);
@@ -354,11 +364,8 @@ def _closest_walls(faces, lo, hi, limit: float, tol: float):
     import numpy as np
 
     n = len(faces)
-    by_edge: Dict[int, List[int]] = {}
-    for i, f in enumerate(faces):
-        for e in f.Edges:
-            by_edge.setdefault(e.hashCode(), []).append(i)
-    adjacent = {(a, b) for fs in by_edge.values() for a in fs for b in fs if a < b}
+    if adjacent is None:
+        adjacent = _adjacent_pairs(faces)
     best, where = limit, None
     for i in range(n - 1):
         gap = np.maximum(0.0, np.maximum(lo[i + 1:] - hi[i], lo[i] - hi[i + 1:]))
@@ -415,8 +422,9 @@ def min_wall(obj_or_shape, per_face: Optional[int] = None, max_samples: int = 20
         bbs = [verify.box(f) for f in faces]     # never too small: no face skipped
         lo = np.array([(b.XMin, b.YMin, b.ZMin) for b in bbs]) - tol
         hi = np.array([(b.XMax, b.YMax, b.ZMax) for b in bbs]) + tol
-        per_solid.append((faces, lo, hi))
-        for face in faces:
+        adjacent = _adjacent_pairs(faces)
+        per_solid.append((faces, lo, hi, adjacent))
+        for i, face in enumerate(faces):
             k += 1
             if k % stride:
                 continue
@@ -425,14 +433,20 @@ def min_wall(obj_or_shape, per_face: Optional[int] = None, max_samples: int = 20
                 if nrm.Length < 1e-12:
                     continue
                 count += 1
-                t, err = _exit_distance(p, -nrm, surfs, faces, lo, hi, best, eps, tol)
+                t, err, hit = _exit_distance(p, -nrm, surfs, faces, lo, hi, best, eps, tol)
                 errors += err
+                # leaving through a face that shares an edge with the start face is the
+                # corner those two faces make (it thins to 0 at their edge: holes that
+                # cross, a hole into a chamfer), not a wall; walls are between faces
+                # that do not meet
+                if hit is not None and (min(i, hit), max(i, hit)) in adjacent:
+                    continue
                 if t < best:
                     best, where = t, p
     # the rays only see walls under their sample points: a hole 0.3 mm from an edge
     # read 0.81 mm. Faces closer than that are measured exactly, two by two.
-    for faces, lo, hi in per_solid:
-        t, p = _closest_walls(faces, lo, hi, best if best < math.inf else diag, tol)
+    for faces, lo, hi, adjacent in per_solid:
+        t, p = _closest_walls(faces, lo, hi, best if best < math.inf else diag, tol, adjacent)
         if p is not None and t < best:
             best, where = t, p
     out = {"min_mm": None if best is math.inf else round(best, 4),
@@ -620,8 +634,13 @@ def report(obj_or_name) -> str:
     v = verify.verdict(obj_or_name)
     hs = holes(obj_or_name)
     w = min_wall(obj_or_name)
-    hole_txt = ", ".join(f"D{h['diameter']}{'' if h['through'] else ' blind'} @ {h['center']}"
-                         for h in hs[:10]) or "none"
+
+    def _one(h):
+        ax = h["axis"]
+        along = "" if abs(abs(ax[2]) - 1.0) < 1e-6 else f" along {ax}"
+        kind = "" if h["through"] else f" blind {h['depth']:g} deep"
+        return f"D{h['diameter']}{kind}{along} @ {h['center']}"
+    hole_txt = ", ".join(_one(h) for h in hs[:10]) or "none"
     if len(hs) > 10:
         hole_txt += f", ... ({len(hs)} total)"
     return f"{v}\nholes ({len(hs)}): {hole_txt}\nmin wall ~{w['min_mm']} mm ({w['method']})"

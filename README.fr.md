@@ -66,7 +66,8 @@ au lieu de croire la lecture qu'en fait l'IA.
 - **Pièces lourdes** (mesuré sur une plaque percée de 1 600 trous) :
   - épaisseur de paroi : 73 s → 1,1 s, et désormais exacte (les rayons rencontrent les vraies
     surfaces, sans maillage ; les faces plus proches que ce qu'ont trouvé les rayons sont mesurées
-    deux à deux : un trou à 0,3 mm d'un bord était lu 0,81 mm) ;
+    deux à deux : un trou à 0,3 mm d'un bord était lu 0,81 mm ; et l'arête vive où deux trous se
+    croisent est un coin, pas une paroi : elle était lue 0,03 mm) ;
   - `printability` : 129 s → 2 s ; `analyze` : 132 s → 2 s ; `render_views` : 48 s → 13 s ;
   - détection des trous : 2,7 s → 0,2 s (même résultat, sans comparer chaque paire) ;
   - `check` ne refait l'analyse OCCT, lente, qu'une fois par version de la forme ;

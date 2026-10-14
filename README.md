@@ -60,7 +60,8 @@ trusting the AI's reading of it.
   among the server's code; it now goes to the project folder.
 - **Heavy parts** (measured on a plate with 1,600 holes):
   - wall thickness: 73 s → 1.1 s, and now exact (rays meet the real surfaces, no mesh; faces
-    closer than the rays found are measured two by two: a hole 0.3 mm from an edge read 0.81 mm);
+    closer than the rays found are measured two by two: a hole 0.3 mm from an edge read 0.81 mm;
+    and the knife edge where two holes cross is a corner, not a wall: it read 0.03 mm);
   - `printability`: 129 s → 2 s; `analyze`: 132 s → 2 s; `render_views`: 48 s → 13 s;
   - hole detection: 2.7 s → 0.2 s (same result, without comparing every pair);
   - `check` runs the slow OCCT analysis once per shape version;
