@@ -39,7 +39,9 @@ DIRECTIONS = {
 }
 
 # Normalised drawing scales, largest first (ISO 5455).
-STANDARD_SCALES = (10.0, 5.0, 2.0, 1.0, 0.5, 0.2, 0.1, 0.05, 0.02, 0.01, 0.005, 0.002, 0.001)
+# ISO 5455: enlargements 50:1 .. 2:1, full size, reductions 1:2 .. 1:1000
+STANDARD_SCALES = (50.0, 20.0, 10.0, 5.0, 2.0, 1.0, 0.5, 0.2, 0.1, 0.05, 0.02, 0.01, 0.005,
+                   0.002, 0.001)
 
 
 def _val(q, default: float = 0.0) -> float:
