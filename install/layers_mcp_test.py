@@ -251,6 +251,19 @@ async def run(inst: Instance, project: str, out: str) -> None:
             txt = await call("pd_hole", body="Step", diameter=2, x=35, y=5, through=False, depth=7)
             assert txt.startswith("FAIL pd_hole: a 7 mm deep hole goes right through"), txt
             print("pd_hole on a stepped part: blind holes start at the surface under them: OK")
+            # a blind hole above an existing coaxial one drilled from below, 1 mm of
+            # material between: measured on its own bore (both read as ONE through hole,
+            # so the right hole was refused as "goes right through")
+            inst.call("execute_python_sync", {"code": (
+                "import FreeCAD\n"
+                "d = FreeCAD.ActiveDocument\n"
+                "c = d.Step.newObject('PartDesign::SubtractiveCylinder', 'Under')\n"
+                "c.Radius, c.Height = 1.5, 3\n"
+                "c.Placement.Base = FreeCAD.Vector(36, 15, -1)\n"
+                "d.recompute()\n'ok'")})
+            txt = await call("pd_hole", body="Step", diameter=3, x=36, y=15, through=False, depth=2)
+            assert txt.startswith("OK Step") and "2 mm deep from z 5" in txt, txt
+            print("pd_hole over a coaxial hole from below: its own bore measured: OK")
 
             # headless FreeCAD runs a call to the end whatever its timeout: what limits a
             # heavy check is our socket wait (hence 300 s for the analysis tools)

@@ -511,7 +511,8 @@ else:   # measure the hole that was made
     for _h in analysis.holes(_b):
         _ax, _ctr = FreeCAD.Vector(*_h['axis']), FreeCAD.Vector(*_h['center'])
         _d = _p - _ctr
-        if abs(_h['diameter'] - _a['diameter']) < 1e-6 and (_d - _ax * _d.dot(_ax)).Length < 1e-3:
+        if (abs(_h['diameter'] - _a['diameter']) < 1e-6 and (_d - _ax * _d.dot(_ax)).Length < 1e-3
+                and abs(_d.dot(_ax)) <= _h['depth'] / 2.0 + 1e-3):   # the bore it enters by
             _got = _h
     if _got is None:
         _why = "no full round hole came out (it breaks into an edge or another feature)"
