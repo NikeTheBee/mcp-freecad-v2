@@ -253,7 +253,7 @@ def require(target: str, kind: str, params: dict | None = None, note: str = "",
     """Record a user requirement checked automatically by `check`.
     kind: bbox{size:[x,y,z],tol?,any_orientation?} | volume{value,tol|min|max} |
     mass{density_g_cm3,value,tol|min|max} | solids{count} |
-    holes{count?,diameter?,through?,tol?} | hole_at{diameter,center:[x,y,z|null] = a point of its axis,tol?} |
+    holes{count?,diameter?,through?,tol?} (a counterbored hole counts once) | hole_at{diameter,center:[x,y,z|null] = a point of its axis,tol?} |
     min_wall{min} | no_interference{objects:[...], the target included} | valid{}.
     The user changed a requirement: replaces="S3" swaps it in one step;
     kind="remove" with replaces="S3" only deletes it."""

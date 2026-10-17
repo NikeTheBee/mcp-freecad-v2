@@ -71,6 +71,22 @@ def main() -> int:
     assert hole_at([1, 0, 8]) == verify.FAIL and hole_at([0, 0, 8], d=5) == verify.FAIL
     print("hole_at: entry face, exit face and middle all on the axis; off it: FAIL: OK")
 
+    # a counterbored hole is ONE hole: 4 x (D5 through + D9 x 3 counterbore) on a plate
+    # read 8 holes, so "4 holes" failed on the right part; a diameter still counts bores
+    cbp = Part.makeBox(60, 40, 8)
+    for x, y in ((10, 10), (50, 10), (10, 30), (50, 30)):
+        cbp = cbp.cut(Part.makeCylinder(2.5, 20, V(x, y, -5))).cut(Part.makeCylinder(4.5, 3, V(x, y, 5)))
+    doc.addObject("Part::Feature", "CB").Shape = cbp
+    doc.recompute()
+
+    def holes(**p):
+        r = spec._eval_spec({"id": "T", "kind": "holes", "target": "CB", "params": p})
+        return r["status"], r["measured"]
+    assert holes(count=4) == (verify.OK, 4) and holes(count=4, through=True) == (verify.OK, 4)
+    assert holes(count=4, diameter=9, through=False) == (verify.OK, 4)
+    assert holes(count=4, diameter=5) == (verify.OK, 4) and holes(count=8)[0] == verify.FAIL
+    print("holes: 4 counterbored holes count 4 (and 4 with a D9 or a D5 bore): OK")
+
     # requirements survive a "new session" (they live in state.json)
     assert len(spec.list_specs()) == 4
     # unknown target -> FAIL, never silently skipped
@@ -115,7 +131,6 @@ def main() -> int:
 
     # no_interference names the TARGET too: "the plate must not interfere with the pins"
     # checked the pins against each other only, so an oversize pin in the plate passed
-    import Part
     for i, (x, r) in enumerate(((-10, 2.0), (20, 2.5))):
         pin = doc.addObject("Part::Feature", f"Pin{i + 1}")
         pin.Shape = Part.makeCylinder(r, 30, V(x, 0, -10))

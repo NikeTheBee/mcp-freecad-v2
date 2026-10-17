@@ -70,6 +70,27 @@ def main() -> int:
     cb = Part.makeBox(40, 40, 10).cut(Part.makeCylinder(3, 10, V(20, 20, 0)))
     ch = analysis.holes(cb.cut(Part.makeCylinder(5.5, 4, V(20, 20, 6))))
     assert [(h["diameter"], h["through"]) for h in ch] == [(6, True), (11, False)], ch
+    # ... and the bore and its counterbore are ONE hole (same "hole" number)
+    assert ch[0]["hole"] == ch[1]["hole"], ch
+    assert "holes (1, 2 bores)" in analysis.report(cb.cut(Part.makeCylinder(5.5, 4, V(20, 20, 6))))
+    # one pin hole through both flanges of a clevis: two 4 mm bores (it read ONE
+    # 24 mm bore across the air), one hole
+    uc = Part.makeBox(40, 30, 4).fuse(Part.makeBox(40, 30, 4, V(0, 0, 20)))
+    uh = analysis.holes(uc.fuse(Part.makeBox(4, 30, 24)).removeSplitter().cut(
+        Part.makeCylinder(3, 40, V(20, 15, -5))))
+    assert [(h["depth"], h["through"], h["hole"]) for h in uh] == [(4, True, 1), (4, True, 1)], uh
+    # two blind holes from opposite sides, material between: two blind holes (it
+    # read ONE through hole)
+    ob = Part.makeBox(40, 40, 10).cut(Part.makeCylinder(3, 4, V(20, 20, 0)))
+    oh = analysis.holes(ob.cut(Part.makeCylinder(3, 3, V(20, 20, 7))))
+    assert [(h["depth"], h["through"]) for h in oh] == [(4, False), (3, False)], oh
+    assert oh[0]["hole"] != oh[1]["hole"], oh
+    # a hole drilled across a bigger bore: two bores, one hole, through
+    xb = Part.makeBox(40, 40, 30).cut(Part.makeCylinder(8, 40, V(0, 20, 15), V(1, 0, 0)))
+    xh = [h for h in analysis.holes(xb.cut(Part.makeCylinder(3, 40, V(20, 20, -5))))
+          if h["diameter"] == 6]
+    assert len(xh) == 2 and xh[0]["hole"] == xh[1]["hole"] and all(h["through"] for h in xh), xh
+    print("holes vs bores: counterbore, clevis, opposite blind holes, cross-drilled: OK")
     pt = Part.makeBox(40, 40, 10).cut(Part.makeCylinder(3, 6, V(20, 20, 4)))
     pt = pt.cut(Part.makeCone(3, 0, 1.8, V(20, 20, 4), V(0, 0, -1)))     # 118 deg drill point
     ph = analysis.holes(pt)

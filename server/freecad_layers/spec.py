@@ -14,7 +14,8 @@ Kinds (all lengths mm, volumes mm³, masses g):
   volume      value+tol | min | max
   mass        density_g_cm3, value+tol | min | max
   solids      count
-  holes       count, diameter (+tol), through (bool, optional)
+  holes       count, diameter (+tol), through (bool, optional): holes, not bores --
+              a counterbored hole, or one pin hole through both flanges, counts once
   hole_at     diameter, center=[x, y, z] (+tol): one hole whose axis passes there,
               between its ends (null = any value: [x, y, null] for a vertical hole)
   min_wall    min (estimated by analysis.min_wall)
@@ -250,13 +251,20 @@ def _eval_spec(spec: Dict[str, Any], doc=None) -> Dict[str, Any]:
     if kind == "holes":
         hs = analysis.holes(obj)
         tol = p.get("tol", 0.01)
-        if "diameter" in p:
+        if "diameter" in p:                 # holes with a bore of that diameter
             hs = [h for h in hs if abs(h["diameter"] - p["diameter"]) <= tol]
-        if "through" in p:
-            hs = [h for h in hs if h["through"] == bool(p["through"])]
+            if "through" in p:
+                hs = [h for h in hs if h["through"] == bool(p["through"])]
+            n = len({h["hole"] for h in hs})
+        else:                               # holes: a counterbored hole is ONE hole
+            through: Dict[int, bool] = {}
+            for h in hs:
+                through[h["hole"]] = through.get(h["hole"], False) or h["through"]
+            n = sum(1 for t in through.values()
+                    if "through" not in p or t == bool(p["through"]))
         want = p.get("count")
-        ok = (len(hs) == want) if want is not None else bool(hs)
-        return {**res, "status": OK if ok else FAIL, "measured": len(hs),
+        ok = (n == want) if want is not None else n > 0
+        return {**res, "status": OK if ok else FAIL, "measured": n,
                 "expected": want if want is not None else ">=1"}
     if kind == "hole_at":
         tol = p.get("tol", 0.05)

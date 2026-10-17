@@ -62,7 +62,9 @@ Pick edge ids from `pad.Shape.Edges` / `measurement_operations list_faces`.
   kept` — fix x/y/Ø/depth.
 - Counterbore/countersink/threaded: `PartDesign::Hole` (`.HoleCutType`, `.Threaded`) on a circle sketch.
 - After any hole, `check(body)`; record the expected holes once with
-  `require(body, "holes", {"count": n, "diameter": d})` so a missing hole FAILs.
+  `require(body, "holes", {"count": n, "diameter": d})` so a missing hole FAILs. Holes are
+  counted, not bores: a counterbored hole (bore + counterbore), or one pin hole through both
+  flanges of a clevis, counts once; `analyze` lists each bore with its `#hole` number.
 - Repetition: `PartDesign::LinearPattern` / `PolarPattern` / `Mirrored` — set `.Originals=[feature]`,
   `.Direction`, `.Occurrences`/`.Angle`.
 

@@ -136,8 +136,10 @@ def holes(obj_or_shape, tol: float = 1e-4) -> List[Dict[str, Any]]:
     """Cylindrical holes: [{diameter, axis, center, depth, through}], sorted.
 
     Faces sharing the same axis line and radius are merged (OCCT often splits
-    a bore in two half-cylinders); only groups covering a full turn count.
-    `center` is the axis point at the middle of the hole depth.
+    a bore in two half-cylinders) while their stretches along the axis meet: each
+    entry is one bore; only bores covering a full turn count.
+    `center` is the axis point at the middle of the hole depth. `hole` numbers
+    the holes: the bores of one stepped hole (a counterbore) share it.
     Several solids (an assembly): each is measured on its own, so "through"
     means through THAT part (against the whole assembly, a through hole in a
     plate read "blind" as soon as a pin stood in it).
@@ -145,9 +147,76 @@ def holes(obj_or_shape, tol: float = 1e-4) -> List[Dict[str, Any]]:
     shp = _shape(obj_or_shape)
     solids = shp.Solids
     if len(solids) > 1:
-        out = [h for s in solids for h in _holes_of(s, tol)]
+        out, first = [], 1
+        for s in solids:                    # a hole never spans two parts
+            hs = _holes_of(s, tol)
+            first = _number_holes(hs, s, first)
+            out += hs
         return sorted(out, key=lambda h: (h["diameter"], h["center"]))
-    return _holes_of(shp, tol)
+    out = _holes_of(shp, tol)
+    _number_holes(out, solids[0] if solids else None)
+    return out
+
+
+def _number_holes(hs: List[Dict[str, Any]], solid=None, first: int = 1, tol: float = 1e-2) -> int:
+    """Give each bore its hole number ("hole"). Bores of one axis line are ONE hole
+    when they meet end to end (a counterbore and its bore, a stepped hole) or face
+    each other across air only (a pin hole through both flanges of a clevis, a hole
+    drilled across a bore): one drill goes through. Material between them (two
+    blind holes from opposite sides) keeps them two holes. A plate with 4
+    counterbored holes read 8 holes, so a "4 holes" contract failed on the right
+    part. Returns the next free number."""
+    parent = list(range(len(hs)))
+
+    def root(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    vec = [(App.Vector(*h["center"]), App.Vector(*h["axis"])) for h in hs]
+    cells: Dict[tuple, List[int]] = {}
+    for i, (c, a) in enumerate(vec):
+        foot = c - a * c.dot(a)             # same for +axis and -axis
+        key = tuple(math.floor(x) for x in (foot.x, foot.y, foot.z))
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                for dz in (-1, 0, 1):
+                    for j in cells.get((key[0] + dx, key[1] + dy, key[2] + dz), ()):
+                        cj, aj = vec[j]
+                        if root(i) == root(j) or abs(abs(a.dot(aj)) - 1.0) > 1e-5:
+                            continue
+                        d = cj - c
+                        if (d - a * d.dot(a)).Length > tol:
+                            continue
+                        if _air_between(c, cj, a, hs[i]["depth"], hs[j]["depth"], solid, tol):
+                            parent[root(j)] = root(i)
+        cells.setdefault(key, []).append(i)
+    ids: Dict[int, int] = {}
+    for i, h in enumerate(hs):
+        h["hole"] = ids.setdefault(root(i), first + len(ids))
+    return first + len(ids)
+
+
+def _air_between(c1, c2, a, depth1: float, depth2: float, solid, tol: float) -> bool:
+    """True when the two coaxial bores (midpoints c1, c2) meet, or when the axis
+    between them runs through air only (sampled; no solid to ask: only meeting)."""
+    t = (c2 - c1).dot(a)
+    gap = abs(t) - (depth1 + depth2) / 2.0
+    if gap <= tol:
+        return True
+    if solid is None:
+        return False
+    s = 1.0 if t > 0 else -1.0
+    start = c1 + a * (s * depth1 / 2.0)
+    for k in range(1, 8):
+        q = start + a * (s * gap * k / 8.0)
+        try:
+            if solid.isInside(q, 1e-6, True):
+                return False
+        except Exception:  # noqa: BLE001 - unreadable: keep them apart
+            return False
+    return True
 
 
 def _holes_of(shp, tol: float) -> List[Dict[str, Any]]:
@@ -183,23 +252,20 @@ def _holes_of(shp, tol: float) -> List[Dict[str, Any]]:
                         if same_r and parallel and on_line:
                             match = g
         if match is not None:
-            match["span"] += span
-            match["faces"].append(f)
+            match["faces"].append((f, span))
         else:
             g = {"radius": radius, "axis": axis, "origin": center, "tol": ftol,
-                 "span": span, "faces": [f], "index": len(groups)}
+                 "faces": [(f, span)], "index": len(groups)}
             groups.append(g)
             buckets.setdefault(key, []).append(g)
     out = []
     bb = verify.box(shp)
     edge_faces = None                   # built once, only if a hole needs it
-    for g in groups:
+    for g in _bore_runs(groups):
         if g["span"] < _TWO_PI - 1e-3:
             continue                    # partial arc: concave fillet / slot end
         a, o = g["axis"], g["origin"]
-        ts = _axial_extent(g["faces"], o, a)
-        if not ts:
-            continue
+        ts = g["ts"]
         t0, t1 = min(ts), max(ts)
         mid = o + a * ((t0 + t1) / 2.0)
         # through-hole: the bore spans the part's full extent along its axis...
@@ -219,6 +285,33 @@ def _holes_of(shp, tol: float) -> List[Dict[str, Any]]:
                     "center": [round(x, 4) for x in (mid.x, mid.y, mid.z)],
                     "depth": round(t1 - t0, 4), "through": through})
     return sorted(out, key=lambda h: (h["diameter"], h["center"]))
+
+
+def _bore_runs(groups: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Split each group of faces on one axis line into bores: runs of faces whose
+    stretches along the axis overlap or meet. Coaxial holes of one diameter in two
+    flanges read as ONE 24 mm bore across the air between them, and two blind
+    holes drilled from opposite sides as one "through" hole across the material."""
+    runs = []
+    for g in groups:
+        a, o, gap = g["axis"], g["origin"], 1e-6 + g["tol"]
+        spans = []
+        for f, span in g["faces"]:
+            ts = _axial_extent([f], o, a)
+            if ts:
+                spans.append((min(ts), max(ts), f, span, ts))
+        spans.sort(key=lambda x: x[0])
+        cur = None
+        for t0, t1, f, span, ts in spans:
+            if cur is not None and t0 <= cur["t1"] + gap:
+                cur["t1"] = max(cur["t1"], t1)
+                cur["faces"].append(f)
+                cur["span"] += span
+                cur["ts"] += ts
+                continue
+            cur = {**g, "t1": t1, "faces": [f], "span": span, "ts": list(ts)}
+            runs.append(cur)
+    return runs
 
 
 def _edge_faces(shp) -> Dict[int, List[Any]]:
@@ -638,12 +731,22 @@ def report(obj_or_name) -> str:
     hs = holes(obj_or_name)
     w = min_wall(obj_or_name)
 
+    bore_d: Dict[int, float] = {}           # each hole's narrowest bore
+    for h in hs:
+        bore_d[h["hole"]] = min(bore_d.get(h["hole"], h["diameter"]), h["diameter"])
+
+    several = len(hs) != len(bore_d)        # some hole has several bores: number them
+
     def _one(h):
         ax = h["axis"]
         along = "" if abs(abs(ax[2]) - 1.0) < 1e-6 else f" along {ax}"
         kind = "" if h["through"] else f" blind {h['depth']:g} deep"
-        return f"D{h['diameter']}{kind}{along} @ {h['center']}"
+        if h["diameter"] > bore_d[h["hole"]]:
+            kind += f" (counterbore of the D{bore_d[h['hole']]:g})"
+        return f"{'#%d ' % h['hole'] if several else ''}D{h['diameter']}{kind}{along} @ {h['center']}"
     hole_txt = ", ".join(_one(h) for h in hs[:10]) or "none"
     if len(hs) > 10:
-        hole_txt += f", ... ({len(hs)} total)"
-    return f"{v}\nholes ({len(hs)}): {hole_txt}\nmin wall ~{w['min_mm']} mm ({w['method']})"
+        hole_txt += f", ... ({len(hs)} bores)"
+    n = len(bore_d)
+    count = f"{n}" + (f", {len(hs)} bores" if len(hs) != n else "")
+    return f"{v}\nholes ({count}): {hole_txt}\nmin wall ~{w['min_mm']} mm ({w['method']})"
