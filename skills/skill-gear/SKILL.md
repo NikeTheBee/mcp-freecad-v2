@@ -25,7 +25,13 @@ doc.recompute()
 
 ## Gear trains
 Mesh two gears: centre distance = `(m·z1 + m·z2)/2`; ratio = `z2/z1`. Position the second gear with a
-`Placement` (see `skill-assembly`) and rotate it half a tooth (`π/z2`) so teeth interleave.
+`Placement` (see `skill-assembly`) on the +X axis of the first. The generator puts a TOOTH on +X, so
+gear 2 faces gear 1 at 180°: it already shows a gap there when **z2 is odd** (no turn); when **z2 is
+even**, turn it half a tooth (`180/z2` degrees). Turning it for an odd z2 puts tooth on tooth
+(150 mm³ of overlap for 20/31). Turning gear 1 by θ turns gear 2 by `−θ·z1/z2`.
+At the exact centre distance the pair meshes without overlap over a whole pitch (`gear_test.py`).
+A real pair needs running clearance: add ~0.05·m to 0.1·m to the centre distance (printed gears
+usually more, ~0.2–0.3 mm). Then `require(..., "no_interference", objects=[...])` must be OK.
 
 ## Verify
 `verify.verdict` (valid solid), tip diameter ≈ `m·(z+2)`, width = extrude length.

@@ -42,10 +42,17 @@ def make_spur_gear(doc, module=2.0, teeth=20, width=10.0,
 
     # Trace strictly-increasing angle around the gear: per tooth -> gap point,
     # trailing flank (rising), leading flank (falling). Monotonic => no self-cross.
+    # Below the base circle the flank drops RADIALLY to the root circle: a straight
+    # line from the mid-gap root point to the flank's foot filled the corners of the
+    # gap, where the mating tip passes (two meshed gears overlapped by 0.1-0.2 mm3).
+    _, inv_lo = _involute(r_base, r_lo)
+    foot = half_tooth - inv_lo
     pts = []
     for i in range(z):
         C = i * pitch_ang
         pts.append(P(r_root, C - pitch_ang / 2))                # mid-gap before tooth
+        if r_lo > r_root + 1e-9:
+            pts.append(P(r_root, C - foot))                     # root, under the flank
         for s in range(steps + 1):                              # trailing flank, base->tip
             r = r_lo + (r_add - r_lo) * s / steps
             _, inv = _involute(r_base, r)
@@ -54,6 +61,8 @@ def make_spur_gear(doc, module=2.0, teeth=20, width=10.0,
             r = r_add - (r_add - r_lo) * s / steps
             _, inv = _involute(r_base, r)
             pts.append(P(r, C + (half_tooth - inv)))
+        if r_lo > r_root + 1e-9:
+            pts.append(P(r_root, C + foot))
     pts.append(pts[0])
     wire = Part.makePolygon(pts)
     face = Part.Face(wire)
@@ -92,4 +101,23 @@ for m, z in ((2.0, 20), (1.0, 12), (3.0, 40)):
     on_pitch = sum(e.Length for e in face.common(Part.makeCircle(r_pitch)).Edges)
     assert abs(on_pitch / (2 * math.pi * r_pitch) - 0.5) < 0.002, (m, z, on_pitch)
 print("tip radius exact, teeth fill half the pitch circle (m 1-3, z 12-40): OK")
+
+# a meshed pair at the exact centre distance never overlaps over a whole tooth pitch.
+# Gear 1 has a tooth on +X; gear 2, placed on +X, faces it at 180 deg, where it has a
+# GAP by itself when z2 is odd: turn it by pi/z2 only when z2 is even ("always turn
+# half a tooth" put tooth on tooth for odd z2: 150 mm3 of overlap for 20/31)
+for z1, z2 in ((20, 31), (20, 30)):
+    a = 2.0 * (z1 + z2) / 2
+    g1, _ = make_spur_gear(doc, 2.0, z1, 5.0, name=f"P{z1}_{z2}")
+    g2, _ = make_spur_gear(doc, 2.0, z2, 5.0, name=f"W{z1}_{z2}")
+    turn = 0.0 if z2 % 2 else 180.0 / z2
+    z_axis = FreeCAD.Vector(0, 0, 1)
+    for k in range(4):
+        th = 360.0 / z1 * k / 4
+        g1.Placement = FreeCAD.Placement(Vector(), FreeCAD.Rotation(z_axis, th))
+        g2.Placement = FreeCAD.Placement(Vector(a, 0, 0), FreeCAD.Rotation(z_axis, turn - th * z1 / z2))
+        doc.recompute()
+        common = g1.Shape.common(g2.Shape).Volume
+        assert common < 1e-6, (z1, z2, th, common)
+print("meshed pairs 20/31 and 20/30: no overlap over a pitch (half-tooth turn only for even z2): OK")
 print("GEAR_OK")
