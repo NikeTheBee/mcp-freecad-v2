@@ -219,7 +219,7 @@ class VerificationOpsHandler(BaseHandler):
             if err:
                 return json.dumps({"ok": False, "details": {}, "message": err})
 
-            shape = obj.Shape
+            shape = self._world_shape(obj)     # the axis is a document axis (turned containers)
             faces = shape.Faces
             face_count = len(faces)
 

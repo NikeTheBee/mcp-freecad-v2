@@ -241,9 +241,11 @@ class PartOpsHandler(BaseHandler):
             normals = {'XY': (0, 0, 1), 'XZ': (0, 1, 0), 'YZ': (1, 0, 0)}
             if plane not in normals:
                 return f"Invalid plane '{plane}'. Valid options: XY, XZ, YZ"
-            wires = obj.Shape.slice(FreeCAD.Vector(*normals[plane]), float(offset))
+            # the plane is in document coordinates, and so is the section made from it
+            world = self._world_shape(obj)
+            wires = world.slice(FreeCAD.Vector(*normals[plane]), float(offset))
             if not wires:
-                bb = self._exact_bbox(obj.Shape)
+                bb = self._exact_bbox(world)
                 axis, lo, hi = {'XY': ('z', bb.ZMin, bb.ZMax), 'XZ': ('y', bb.YMin, bb.YMax),
                                 'YZ': ('x', bb.XMin, bb.XMax)}[plane]
                 return (f"The {plane} plane at {offset} mm misses {object_name} "

@@ -578,6 +578,23 @@ def main() -> int:
         txt = str(op(inst, "measurement_operations", {"operation": "measure_distance",
                                                       "object1": "InCell", "object2": "Dome"}))
         assert "0.0000 mm" not in txt, txt
+        # ...a dome in a container turned upside down faces -Z; a section of the moved box
+        # is cut and made where the box is (x 100..110)
+        py(inst, "import FreeCAD\nd = FreeCAD.ActiveDocument\nV = FreeCAD.Vector\n"
+                 "g = d.addObject('App::Part', 'Flip')\n"
+                 "g.Placement = FreeCAD.Placement(V(0, 0, 0), FreeCAD.Rotation(V(1, 0, 0), 180))\n"
+                 "s = d.addObject('Part::Sphere', 'FlipDome')\ns.Radius = 10\ns.Angle1 = 0\n"
+                 "g.addObject(s)\nd.recompute()\n'ok'")
+        txt = str(op(inst, "geometric_verification", {"operation": "verify_orientation",
+                                                      "object_name": "FlipDome", "expected_axis": "-Z"}))
+        assert '"ok": true' in txt, txt
+        txt = str(op(inst, "part_operations", {"operation": "section", "object_name": "InCell",
+                                               "plane": "XY", "offset": 5}))
+        assert "misses" not in txt, txt
+        sec = py(inst, "import FreeCAD\nd = FreeCAD.ActiveDocument\n"
+                       "o = d.Objects[-1]\nb = o.Shape.BoundBox\n"
+                       "f'{b.XMin:.3f} {b.XMax:.3f} {b.ZMin:.3f}'")
+        assert "100.000 110.000 5.000" in str(sec), sec
 
         # mesh -> solid: a closed 10x20x30 mesh gives 6000 mm3; with one triangle missing
         # it used to give an invalid "solid" of 5478 mm3

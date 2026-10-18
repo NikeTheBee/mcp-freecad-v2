@@ -150,7 +150,8 @@ It runs `git subtree pull --squash` on a clean tree. Then run the base's unit te
 | File | Change | Why |
 |---|---|---|
 | `AICopilot/handlers/base.py` (`_world_shape`), `spatial_ops.py` (two-object queries, `contains_point`, `batch_interference`), `measurement_ops.py` (`measure_distance`, `get_bounding_box`, `get_mass_properties`, `get_center_of_mass`, `list_faces`) | Objects are measured in the document frame: the shape gets its parent container's global placement (App::Part, Assembly, PartDesign Body for a feature, App::Link inside a container). Mocks and non-document objects are used as they are. | `obj.Shape` is in the container's frame: a box inside an App::Part moved 100 mm, overlapping a free box by 500 mm3, read "Intersects: False, clearance 95 mm"; a box at the origin it never touched read a 1000 mm3 collision; its centre of mass read (5, 5, 5) instead of (105, 5, 5). |
-| tests | `install/base_exactness_test.py`: a box in a moved App::Part interferes by 500 mm3 with its neighbour, centre of mass (105, 5, 5), no false contact with a part at the origin. Unit tests unchanged (2269 passed, no new failure). | |
+| `AICopilot/handlers/verification_ops.py` (`verify_orientation`), `part_ops.py` (`section`) | Same document frame: the expected axis is a document axis; the section plane is in document coordinates and the section is made there. | A dome facing +Z inside a container turned upside down passed `+Z`; a section of a part in a moved App::Part was cut at the wrong height and created 100 mm off. |
+| tests | `install/base_exactness_test.py`: a box in a moved App::Part interferes by 500 mm3 with its neighbour, centre of mass (105, 5, 5), no false contact with a part at the origin; a dome in a flipped container faces -Z; the section of the moved box spans x 100..110 at z 5. Unit tests unchanged (2269 passed, no new failure). | |
 
 ## Test status
 
