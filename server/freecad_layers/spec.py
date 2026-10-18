@@ -162,6 +162,24 @@ def _expect_txt(p: Dict[str, Any], default_tol: float) -> str:
     return f"[{p.get('min', '-inf')}, {p.get('max', 'inf')}]"
 
 
+def _material_volume(obj, v: Dict[str, Any]):
+    """(volume of material, None) or (None, why there is none). A face read 0 mm3,
+    so "mass max 60 g" passed on a sketch face; an open shell read a meaningless
+    800 mm3; two parts overlapping by 500 mm3 counted it twice (2000, not 1500)."""
+    if not v["solids"]:
+        return None, f"{v['name']} has no solid: no volume to measure"
+    if not v["closed"]:
+        return None, f"{v['name']} is not closed (not watertight): its volume means nothing"
+    if v["solids"] > 1 and any(str(i).startswith("interference") for i in v["issues"]):
+        shp = obj if not hasattr(obj, "Shape") else obj.Shape
+        solids = shp.Solids
+        try:
+            return float(solids[0].multiFuse(solids[1:]).Volume), None
+        except Exception:  # noqa: BLE001
+            return None, f"{v['name']}: overlapping solids, their union failed"
+    return v["volume"], None
+
+
 def _on_axis(h: Dict[str, Any], c, tol: float) -> bool:
     """True when the hole's axis, between its two ends, passes through the point
     c (None = any value) within tol on each given coordinate. It compared the
@@ -238,11 +256,16 @@ def _eval_spec(spec: Dict[str, Any], doc=None) -> Dict[str, Any]:
         ok = all(abs(g - w) <= tol for g, w in zip(got, want))
         return {**res, "status": OK if ok else FAIL, "measured": v["bbox"],
                 "expected": f"{p['size']}+/-{tol}"}
+    if kind in ("volume", "mass"):
+        vol, why = _material_volume(obj, v)
+        if vol is None:
+            return {**res, "status": FAIL, "measured": None, "expected": _expect_txt(
+                p, 1e-3 if kind == "volume" else 0.01), "message": why}
     if kind == "volume":
-        return {**res, "status": OK if _range_ok(v["volume"], p, 1e-3) else FAIL,
-                "measured": round(v["volume"], 3), "expected": _expect_txt(p, 1e-3)}
+        return {**res, "status": OK if _range_ok(vol, p, 1e-3) else FAIL,
+                "measured": round(vol, 3), "expected": _expect_txt(p, 1e-3)}
     if kind == "mass":
-        grams = v["volume"] / 1000.0 * p["density_g_cm3"]
+        grams = vol / 1000.0 * p["density_g_cm3"]
         return {**res, "status": OK if _range_ok(grams, p, 0.01) else FAIL,
                 "measured": round(grams, 3), "expected": _expect_txt(p, 0.01)}
     if kind == "solids":

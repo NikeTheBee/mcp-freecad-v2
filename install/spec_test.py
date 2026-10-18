@@ -87,6 +87,24 @@ def main() -> int:
     assert holes(count=4, diameter=5) == (verify.OK, 4) and holes(count=8)[0] == verify.FAIL
     print("holes: 4 counterbored holes count 4 (and 4 with a D9 or a D5 bore): OK")
 
+    # volume/mass measure material: a face read 0 g ("max 60 g" passed on a sketch face),
+    # an open shell a meaningless 800 mm3, two cubes overlapping by 500 mm3 read 2000
+    cube = Part.makeBox(10, 10, 10)
+    doc.addObject("Part::Feature", "Sheet").Shape = Part.makePlane(10, 10)
+    doc.addObject("Part::Feature", "Open").Shape = Part.makeShell(cube.Faces[:5])
+    doc.addObject("Part::Feature", "Over").Shape = Part.makeCompound(
+        [cube, Part.makeBox(10, 10, 10, V(5, 0, 0))])
+    doc.recompute()
+
+    def vol(target, kind="volume", **p):
+        r = spec._eval_spec({"id": "T", "kind": kind, "target": target, "params": p})
+        return r["status"], r["measured"]
+    assert vol("Sheet", "mass", density_g_cm3=1.0, max=60) == (verify.FAIL, None)
+    assert vol("Open", max=2000) == (verify.FAIL, None)
+    assert vol("Over", value=1500) == (verify.OK, 1500.0)
+    assert vol("Over", "mass", density_g_cm3=1.0, value=1.5) == (verify.OK, 1.5)
+    print("volume/mass: no solid or open shell FAIL, overlap counted once: OK")
+
     # requirements survive a "new session" (they live in state.json)
     assert len(spec.list_specs()) == 4
     # unknown target -> FAIL, never silently skipped
