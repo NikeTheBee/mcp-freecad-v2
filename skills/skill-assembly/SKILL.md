@@ -35,14 +35,15 @@ inst = doc.addObject("App::Link", "Bolt_2"); inst.LinkedObject = bolt
 inst.Placement = Placement(Vector(40, 0, 0), Rotation())
 ```
 
-## Joints (GUI/solver)
+## Joints (Assembly solver)
 The base's `assembly_operations add_component` puts an `App::Link` to the part in the assembly
 (e.g. `Top` -> `Top001`) and leaves the source where it was, visible. Joints and `solve` move the
 LINK: check interference, measure and render the links (`Top001`), not the sources (still at
-their old place). Hide the sources if the scene should show only the assembly. Headless `solve`
-works (a Fixed joint face to face lands the link exactly).
-Mate/align/axis joints from the Assembly WB need the solver (interactive). For automated builds, express
-the same intent as `Placement`s computed from the mating geometry. Document joints as design decisions via
+their old place). Hide the sources if the scene should show only the assembly.
+Headless `solve` was verified for a Fixed joint face to face (the link lands exactly). Other joint
+types (Revolute, Slider, Distance...) are not verified headless: after `solve`, measure the links'
+placements (`get_bounding_box`, `check_assembly`) before trusting them, or express the intent as
+`Placement`s computed from the mating geometry. Document joints as design decisions via
 `skill-verify` (`state.add_decision`).
 
 ## Fits, tolerances & functional clearances (§4.4)
