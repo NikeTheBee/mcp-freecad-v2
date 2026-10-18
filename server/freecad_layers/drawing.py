@@ -238,7 +238,10 @@ def sheet_for(obj, dxf_path: Optional[str] = None,
     doc.recompute()
     slots = _slots(*page_size(page))
     if scale == "auto":
-        scale = auto_scale([obj.Shape], views[:4], slots[0][2], slots[0][3])
+        # each view in ITS slot: the 4th, above the title block, is lower (sized on
+        # the first slot, an iso view of a 45 mm cube at 1:1 ran 14 mm into the title block)
+        scale = min(auto_scale([obj.Shape], [vname], slots[i][2], slots[i][3])
+                    for i, vname in enumerate(views[:4]))
     made = []
     for i, vname in enumerate(views[:4]):
         x, y = slots[i][:2]
@@ -255,8 +258,27 @@ def sheet_for(obj, dxf_path: Optional[str] = None,
     out = None
     if dxf_path:
         out = export_dxf(page, dxf_path, overwrite=overwrite)
+    line = verdict(page)
+    off = [v.Name for v, slot in zip(made, slots)           # (off the page: already said)
+           if f"{v.Name} exceeds" not in line and _view_in_slot(v, slot) is False]
+    if off:                     # over the title block or a neighbouring view
+        line = ("FAIL" + line[line.index(" "):] if not line.startswith("FAIL") else line) \
+            + f" | {', '.join(off)} outside {'its' if len(off) == 1 else 'their'} slot at " \
+            f"scale {float(scale):g} (over the title block or another view): use a smaller scale"
     return {"page": page.Name, "views": [v.Name for v in made], "scale": scale,
-            "dims": ndims, "dxf": out, "verdict": verdict(page)}
+            "dims": ndims, "dxf": out, "verdict": line}
+
+
+def _view_in_slot(view, slot, margin: float = 0.5) -> Optional[bool]:
+    """Does the view's extent stay inside its slot (x, y, w, h, centred)? None if
+    its extent cannot be computed."""
+    try:
+        shapes = [s.Shape for s in view.Source if hasattr(s, "Shape")]
+        w, h = projected_size(shapes, tuple(view.Direction), tuple(view.XDirection))
+    except Exception:  # noqa: BLE001
+        return None
+    sc = _val(view.Scale, 1.0)
+    return w * sc <= slot[2] + margin and h * sc <= slot[3] + margin
 
 
 def _view_fits(view, page_w: float, page_h: float) -> Optional[bool]:

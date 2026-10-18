@@ -150,6 +150,19 @@ def main() -> int:
         print("forced 1:1:", forced["verdict"])
         assert forced["verdict"].startswith("FAIL") and "exceeds" in forced["verdict"]
 
+        # 4 views: the 4th slot (above the title block) is lower. Sized on the first,
+        # the iso view of a 45 mm cube at 1:1 ran 14 mm into the title block, verdict OK
+        cube = doc.addObject("Part::Box", "Cube45")
+        cube.Length = cube.Width = cube.Height = 45
+        doc.recompute()
+        four = ("front", "top", "right", "iso")
+        auto = drawing.sheet_for(cube, views=four, dims=False)
+        assert auto["scale"] == 0.5 and auto["verdict"].startswith("OK"), auto
+        forced = drawing.sheet_for(cube, views=four, dims=False, scale=1.0)
+        assert forced["verdict"].startswith("FAIL") and "_iso001 outside its slot" \
+            in forced["verdict"] and "front" not in forced["verdict"], forced
+        print("4 views: each fits its own slot, an iso over the title block FAILs: OK")
+
     print("TECHDRAW_OK")
     return 0
 
@@ -163,4 +176,5 @@ except Exception:
     print("TECHDRAW_CRASH:\n" + traceback.format_exc())
     rc = 1
 if rc:
+    sys.stdout.flush()  # freecadcmd drops unflushed output on sys.exit
     sys.exit(rc)
