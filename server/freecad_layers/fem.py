@@ -27,6 +27,7 @@ import re
 import shutil
 import tempfile
 import time
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
 import FreeCAD as App
@@ -134,6 +135,18 @@ def _direction_helper(doc, name: str, direction: Sequence[float]):
     return line, v
 
 
+def _drop_gmsh_dir(path: str) -> None:
+    """Remove the temporary folder FreeCAD's GmshTools made for one mesh: it never
+    removes it, ~3.5 MB per run (1,058 folders, 3.8 GB in a week of tests). Only a
+    fcfem_* folder right under the temp dir: never a working dir the user set."""
+    try:
+        p = Path(path).resolve()
+        if p.name.startswith("fcfem_") and p.parent == Path(tempfile.gettempdir()).resolve():
+            shutil.rmtree(p, ignore_errors=True)
+    except Exception:  # noqa: BLE001 — cleanup must never fail a solve
+        pass
+
+
 def _solve_once(doc, target, fixed_specs, loads, mat, mesh_size: float, prefix: str):
     import ObjectsFem
     from femmesh.gmshtools import GmshTools
@@ -185,7 +198,11 @@ def _solve_once(doc, target, fixed_specs, loads, mat, mesh_size: float, prefix: 
         analysis.addObject(o)
     doc.recompute()
 
-    err = GmshTools(mesh).create_mesh()
+    gmsh = GmshTools(mesh)
+    try:
+        err = gmsh.create_mesh()
+    finally:
+        _drop_gmsh_dir(getattr(gmsh, "working_dir", ""))
     nodes = mesh.FemMesh.NodeCount
     if err or nodes == 0:
         return None, {"error": f"meshing failed: {err or 'no nodes'}"}
