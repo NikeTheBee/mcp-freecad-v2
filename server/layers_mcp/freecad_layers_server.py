@@ -300,7 +300,8 @@ def analyze(target: str) -> str:
 @mcp.tool()
 @_safe
 def check_assembly(objects: list[str]) -> str:
-    """Overlap volume between separate parts (touching is fine)."""
+    """Overlap volume between separate parts (touching is fine), measured where they are
+    (inside moved App::Part/Assembly too; in an Assembly list its component links)."""
     return _run("_out = verify.check_assembly(_a['objects'])", _timeout=_ANALYSIS_TIMEOUT,
                 objects=objects)
 
@@ -433,7 +434,8 @@ else:
 @mcp.tool()
 @_safe
 def bill_of_materials(csv_path: str = "", overwrite: bool = False) -> str:
-    """Parts list of the active document (Body = 1 part, links = instances); optional CSV."""
+    """Parts list of the active document (Body = 1 part; links, Draft arrays = instances;
+    a linked sub-assembly counts each part inside); optional CSV."""
     return _run("""
 _s = bom.bom_for(FreeCAD.ActiveDocument, _a['csv'] or None, overwrite=_a['ow'])
 _out = {"verdict": bom.verdict(_s),
