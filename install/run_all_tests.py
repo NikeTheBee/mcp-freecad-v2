@@ -14,8 +14,11 @@ Exit code 0 iff every test that ran passed.
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
+import tempfile
+import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -91,8 +94,18 @@ VENV_PY = (Path.home() / ".freecad-mcp" / "venv"
 _SKIP_LINE = re.compile(r"^[A-Z0-9_]+_SKIP\b.*$", re.MULTILINE)
 
 
+# Every test of a run gets one temp dir, removed at the end: the tests' mkdtemp()
+# folders, FreeCAD's own (a Gmsh mesh folder per FEM solve) and the isolated
+# instance's home piled up in the user's temp dir at each run -- 2,000 folders,
+# 3.8 GB in a week, until the C: drive was full.
+_RUN_TMP = None
+
+
 def _run(cmd, env=None) -> tuple[bool, str]:
     try:
+        env = dict(os.environ if env is None else env)
+        if _RUN_TMP is not None:
+            env.update(TMP=str(_RUN_TMP), TEMP=str(_RUN_TMP), TMPDIR=str(_RUN_TMP))
         # freecadcmd writes in the ANSI code page whatever PYTHONUTF8 says; a strict
         # decode lost the WHOLE output on the first "Ø" (sentinels are ASCII).
         p = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
@@ -125,6 +138,34 @@ def _skip(results, name: str, why: str) -> None:
 
 
 def main() -> int:
+    global _RUN_TMP
+    _RUN_TMP = Path(tempfile.mkdtemp(prefix="mcpfc_run_"))
+    try:
+        return _main()
+    finally:
+        for _ in range(5):      # a FreeCAD that is still exiting holds its cache files
+            _rmtree(_RUN_TMP)
+            if not _RUN_TMP.exists():
+                break
+            time.sleep(1.0)
+
+
+def _rmtree(path: Path) -> None:
+    """rmtree that also removes read-only files (FreeCAD copies the TechDraw template
+    into its cache read-only: a plain rmtree left the folder on Windows)."""
+    def force(func, p, *_):
+        try:
+            os.chmod(p, stat.S_IWRITE)
+            func(p)
+        except OSError:
+            pass
+    if sys.version_info >= (3, 12):
+        shutil.rmtree(path, onexc=force)
+    else:
+        shutil.rmtree(path, onerror=force)
+
+
+def _main() -> int:
     results = []
 
     # Pure-Python tests (no FreeCAD needed) — also run in CI.
