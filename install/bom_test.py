@@ -144,6 +144,23 @@ def main() -> int:
         [("Bracket", 2), ("Bracket (mirrored)", 2)], rows
     print("left and right hands: two lines, turned copies still one: OK")
 
+    # a volume on a rounding boundary (12.5 x 10.5 x 2.5 = 328.125 mm3): turned copies
+    # read 328.12 or 328.13 and 40 identical plates came out as two lines (15 + 25)
+    import random
+    rnd = random.Random(3)
+    d5 = App.newDocument("BOMBoundary")
+    plate = Part.makeBox(12.5, 10.5, 2.5)
+    for i in range(40):
+        o = d5.addObject("Part::Feature", f"Plate{i:03d}")
+        o.Shape = plate
+        o.Placement = App.Placement(V(rnd.uniform(-500, 500), rnd.uniform(-500, 500), 0),
+                                    R(V(rnd.random(), rnd.random(), rnd.random()),
+                                      rnd.uniform(0, 360)))
+    d5.recompute()
+    rows = bom.collect(d5)
+    assert [(r["designation"], r["qty"]) for r in rows] == [("Plate", 40)], rows
+    print("40 turned plates on a rounding boundary: one line: OK")
+
     print("BOM_OK")
     return 0
 

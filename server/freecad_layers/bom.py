@@ -22,7 +22,6 @@ from __future__ import annotations
 
 import csv
 import re
-from collections import OrderedDict
 from typing import Any, Dict, List, Optional
 
 import FreeCAD as App
@@ -103,9 +102,16 @@ def _signature(shp) -> tuple:
     volume, area and the principal moments of inertia of each solid. The
     global bounding box used before changed with orientation, so 4 identical
     screws turned 4 ways came out as 3 different parts."""
-    moments = sorted(float(f"{m:.6g}") for s in shp.Solids
-                     for m in s.PrincipalProperties["Moments"])
-    return (round(float(shp.Volume), 2), round(float(shp.Area), 2), *moments)
+    moments = sorted(float(m) for s in shp.Solids for m in s.PrincipalProperties["Moments"])
+    return (float(shp.Volume), float(shp.Area), *moments)
+
+
+def _same_signature(a: tuple, b: tuple, rel: float = 1e-6) -> bool:
+    """Signatures equal within `rel`. Rounded keys split identical parts whose
+    value sits on a rounding boundary: 40 copies of a 12.5x10.5x2.5 plate
+    (328.125 mm3), just turned, read 328.12 or 328.13 -- two rows, 15 + 25."""
+    return len(a) == len(b) and all(abs(x - y) <= rel * max(abs(x), abs(y), 1.0)
+                                    for x, y in zip(a, b))
 
 
 def _frame_points(s):
@@ -197,33 +203,33 @@ def _parts(doc, include_hidden: bool):
 def collect(doc, include_hidden: bool = True) -> List[Dict[str, Any]]:
     """Grouped parts list. Each row: {item, designation, qty, volume_mm3,
     bbox_mm (sorted), refs}."""
-    groups: "OrderedDict[tuple, Dict[str, Any]]" = OrderedDict()
-    shapes: Dict[tuple, Any] = {}
+    groups: List[Dict[str, Any]] = []
+    by_stem: Dict[str, List[int]] = {}
     for inst, part in _parts(doc, include_hidden):
         shp = _solid_shape(part)
         stem = _label_stem(part.Label)
-        sig = (stem, _signature(shp))
+        sig = _signature(shp)
+        same = [i for i in by_stem.get(stem, ()) if _same_signature(groups[i]["_sig"], sig)]
         # same measures can still be a left and a right hand: those are two parts
-        key, mirrored = sig, False
-        n = 0
-        while key in groups:
-            h = (_handedness(shapes[key].Solids[0], shp.Solids[0])
-                 if len(shp.Solids) == 1 and len(shapes[key].Solids) == 1 else None)
+        g = None
+        for i in same:
+            other = groups[i]["_shape"]
+            h = (_handedness(other.Solids[0], shp.Solids[0])
+                 if len(shp.Solids) == 1 and len(other.Solids) == 1 else None)
             if h != "mirror":
-                break                          # the same part (or not decidable: as before)
-            mirrored, n = True, n + 1
-            key = sig + (n,)
-        g = groups.get(key)
+                g = groups[i]                  # the same part (or not decidable: as before)
+                break
         if g is None:
-            groups[key] = {"designation": stem + (" (mirrored)" if mirrored else ""),
+            by_stem.setdefault(stem, []).append(len(groups))
+            groups.append({"designation": stem + (" (mirrored)" if same else ""),
                            "volume_mm3": round(float(shp.Volume), 2),
                            "bbox_mm": _own_size(shp),
-                           "qty": 1, "refs": [inst.Name]}
-            shapes[key] = shp
+                           "qty": 1, "refs": [inst.Name], "_sig": sig, "_shape": shp})
         else:
             g["qty"] += 1
             g["refs"].append(inst.Name)
-    return [{"item": i, **g} for i, g in enumerate(groups.values(), 1)]
+    return [{"item": i, **{k: v for k, v in g.items() if not k.startswith("_")}}
+            for i, g in enumerate(groups, 1)]
 
 
 def _csv_safe(value: Any) -> Any:
