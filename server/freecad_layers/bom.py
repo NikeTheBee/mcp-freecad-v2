@@ -9,7 +9,10 @@ What counts as a part (audit 2026-10-11, §2.2 B1):
   source of a Mirror...) is not a part — the result is;
 - containers (App::Part, groups, Part::Compound, assemblies) are not parts —
   their children are;
-- each App::Link is one more instance of the object it points to.
+- each App::Link is one more instance of the object it points to; a link to a
+  container (a sub-assembly) is one more of every part inside it, nested links
+  included; a link array is ElementCount instances; a hidden source of links
+  (a part or the sub-assembly holding it) is not one more part.
 Identical parts are grouped by measured geometry (volume, area, principal
 moments of inertia: the same wherever and however the part is placed) AND
 name stem: a box and a cylinder of equal volume are never merged. Limitation: mirror images with the same name stem group
@@ -173,31 +176,99 @@ def _handedness(a, b) -> Optional[str]:
     return found
 
 
+def _members(c) -> List[Any]:
+    """The objects a container groups (a Part::Compound lists them in Links)."""
+    if c.TypeId == "Part::Compound":
+        return _flatten(getattr(c, "Links", None))
+    return _flatten(getattr(c, "Group", None))
+
+
+def _link_target(o, depth: int = 0):
+    """What a link stands for, through chains of links. An array's
+    getLinkedObject(True) is the array itself: its LinkedObject is the target."""
+    t = o.getLinkedObject(True)
+    if t is None or t is o:
+        t = getattr(o, "LinkedObject", None)
+        if isinstance(t, (list, tuple)):
+            t = t[0] if t else None
+        if t is not None and _is_link(t) and depth < 16:
+            t = _link_target(t, depth + 1)
+    return t
+
+
+def _link_count(o) -> int:
+    """Instances one link places: 1, or ElementCount for an array -- 0 when the
+    array's elements are objects of their own (each is counted by itself). With
+    ShowElement off an array has no element objects: it counted 0 parts."""
+    n = int(getattr(o, "ElementCount", 0) or 0)
+    if n <= 0:
+        return 1
+    return 0 if _flatten(getattr(o, "ElementList", None)) else n
+
+
+def _is_part(o) -> bool:
+    if _is_container(o) or _is_link(o):
+        return False
+    if o.TypeId.startswith(("PartDesign::", "Sketcher::")) and o.TypeId != "PartDesign::Body":
+        return False                         # features/sketches live inside a Body
+    if o.TypeId.startswith("Fem::") or re.match(r"FEM_.+_Dir\d+$", o.Name):
+        return False                         # analysis objects and fem.py's load-direction helpers
+    return _solid_shape(o) is not None and not _consumers(o)
+
+
+def _instances(o, seen: tuple = ()) -> List[Any]:
+    """The parts one instance of `o` stands for: itself, or -- for a container
+    (a sub-assembly) -- every part inside it, links inside it included. A link
+    to an App::Part of 2 parts counted as ONE part named after the App::Part."""
+    if o in seen:
+        return []
+    if _is_link(o):
+        t = _link_target(o)
+        n = _link_count(o)
+        return [] if t is None or n == 0 else \
+            [q for q in _instances(t, seen + (o,)) for _ in range(n)]
+    if _is_container(o):
+        return [q for m in _members(o) for q in _instances(m, seen + (o,))]
+    return [o] if _is_part(o) else []
+
+
 def _parts(doc, include_hidden: bool):
     """Yield (instance_object, part_object) for every part instance."""
+    parent: Dict[str, Any] = {}
+    for c in doc.Objects:
+        if _is_container(c):
+            for m in _members(c):
+                parent.setdefault(m.Name, c)
+        elif _is_link(c):                    # an array's elements belong to it
+            for e in _flatten(getattr(c, "ElementList", None)):
+                parent.setdefault(e.Name, c)
+
+    def chain(o) -> List[Any]:               # o, then the containers holding it
+        out, names = [o], {o.Name}
+        while out[-1].Name in parent and parent[out[-1].Name].Name not in names:
+            out.append(parent[out[-1].Name])
+            names.add(out[-1].Name)
+        return out
+
+    def hidden(x) -> bool:
+        return getattr(x, "Visibility", True) is False
+
     for o in doc.Objects:
         if _is_container(o):
+            continue                         # its parts are visited themselves
+        if not (_is_link(o) or _is_part(o)):
             continue
-        if not include_hidden and getattr(o, "Visibility", True) is False and not _is_link(o):
+        up = chain(o)
+        if not include_hidden and (any(hidden(x) for x in up[1:])
+                                   or (hidden(o) and not _is_link(o))):
             continue
-        if _is_link(o):
-            tgt = o.getLinkedObject(True)
-            if tgt is not None and tgt is not o and _solid_shape(tgt) is not None:
-                n = int(getattr(o, "ElementCount", 0) or 0)
-                for _ in range(max(n, 1)):
-                    yield o, tgt
+        # the hidden source of App::Link instances (a part, or the sub-assembly
+        # holding it) is not one more part: the links are
+        if any(hidden(x) and not _is_link(x) and any(_is_link(y) for y in x.InList)
+               for x in up):
             continue
-        if o.TypeId.startswith(("PartDesign::", "Sketcher::")) and o.TypeId != "PartDesign::Body":
-            continue                         # features/sketches live inside a Body
-        if o.TypeId.startswith("Fem::") or re.match(r"FEM_.+_Dir\d+$", o.Name):
-            continue                         # analysis objects and fem.py's load-direction helpers
-        if _solid_shape(o) is None or _consumers(o):
-            continue
-        linked_only = (getattr(o, "Visibility", True) is False and
-                       any(_is_link(x) for x in o.InList))
-        if linked_only:
-            continue                         # hidden source of App::Link instances
-        yield o, o
+        for q in _instances(o):
+            yield o, q
 
 
 def collect(doc, include_hidden: bool = True) -> List[Dict[str, Any]]:

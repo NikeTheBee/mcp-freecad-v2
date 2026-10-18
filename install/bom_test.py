@@ -161,6 +161,36 @@ def main() -> int:
     assert [(r["designation"], r["qty"]) for r in rows] == [("Plate", 40)], rows
     print("40 turned plates on a rounding boundary: one line: OK")
 
+    # sub-assemblies: a link to an App::Part is one more of EACH part inside it (it
+    # counted as one part named after the App::Part, its parts once). Nested: an axle
+    # (2 linked wheels + a shaft) linked twice; hidden sources are not parts
+    d6 = App.newDocument("BOMSub")
+    wheel = d6.addObject("App::Part", "Wheel")
+    rim = d6.addObject("Part::Cylinder", "Rim")
+    tyre = d6.addObject("Part::Feature", "Tyre")
+    tyre.Shape = Part.makeCylinder(30, 10).cut(Part.makeCylinder(20, 10))
+    wheel.addObject(rim)
+    wheel.addObject(tyre)
+    wheel.Visibility = False
+    axle = d6.addObject("App::Part", "Axle")
+    axle.addObject(d6.addObject("Part::Cylinder", "Shaft"))
+    for i in range(2):
+        lk = d6.addObject("App::Link", f"AxleWheel{i}")
+        lk.LinkedObject = wheel
+        axle.addObject(lk)
+    axle.Visibility = False
+    for i in range(2):
+        d6.addObject("App::Link", f"CarAxle{i}").LinkedObject = axle
+    bolts = d6.addObject("App::Link", "Bolts")      # an array without element objects
+    bolts.LinkedObject = d6.addObject("Part::Box", "Bolt")
+    d6.Bolt.Visibility = False
+    bolts.ShowElement = False
+    bolts.ElementCount = 6
+    d6.recompute()
+    got = sorted((r["designation"], r["qty"]) for r in bom.collect(d6))
+    assert got == [("Bolt", 6), ("Rim", 4), ("Shaft", 2), ("Tyre", 4)], got
+    print("sub-assemblies linked (nested), hidden sources, array without elements: OK")
+
     print("BOM_OK")
     return 0
 
