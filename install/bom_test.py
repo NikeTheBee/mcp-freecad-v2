@@ -222,6 +222,22 @@ def main() -> int:
     assert [(r["designation"], r["qty"]) for r in bom.collect(d8)] == [("Right", 1)]
     print("mirror of a visible part: both listed; of a hidden one: the mirror only: OK")
 
+    # an Assembly's components are links to parts left in place, visible (add_component,
+    # like FreeCAD's "insert component"): those sources are definitions, not more parts
+    # (an assembly of 2 parts listed 4)
+    d9 = App.newDocument("BOMAsm")
+    base, top = d9.addObject("Part::Box", "Base"), d9.addObject("Part::Cylinder", "Top")
+    asm = d9.addObject("Assembly::AssemblyObject", "Asm")
+    asm.Type = "Assembly"
+    for src in (base, top):
+        lk = asm.newObject("App::Link", src.Name + "Link")
+        lk.LinkedObject = src
+    d9.addObject("Part::Sphere", "Loose")                 # outside the assembly: still a part
+    d9.recompute()
+    got = sorted((r["designation"], r["qty"]) for r in bom.collect(d9))
+    assert got == [("Base", 1), ("Loose", 1), ("Top", 1)], got
+    print("assembly components: the linked sources are not counted twice: OK")
+
     print("BOM_OK")
     return 0
 

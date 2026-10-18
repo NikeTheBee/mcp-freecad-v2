@@ -16,6 +16,7 @@
   `ElementCount` instances. A hidden source of links (part or sub-assembly) is not counted.
 - A Draft array (ortho/polar/path/point, not fused) is `Count` copies of its base; a fused array is one part.
 - The source of a `Part::Mirroring` (or a Draft clone) is a part while it stays visible (left and right hand); hide it if only the mirror is made.
+- In an `Assembly`, its component links are the parts: their sources left outside it are not counted again.
 - Identical parts are grouped by measured geometry (volume, area, moments of inertia; a mirror
   image is a different part, listed "(mirrored)") **and**
   name stem: two different shapes of equal volume are never merged.

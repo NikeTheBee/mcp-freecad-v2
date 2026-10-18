@@ -15,6 +15,8 @@ What counts as a part (audit 2026-10-11, §2.2 B1):
   included; a link array is ElementCount instances; a hidden source of links
   (a part or the sub-assembly holding it) is not one more part;
 - a Draft array (not fused) is Count copies of its base.
+- the components of an Assembly are its links: their sources outside it are
+  definitions, not more parts.
 Identical parts are grouped by measured geometry (volume, area, principal
 moments of inertia: the same wherever and however the part is placed) AND
 name stem: a box and a cylinder of equal volume are never merged. Limitation: mirror images with the same name stem group
@@ -288,6 +290,19 @@ def _parts(doc, include_hidden: bool):
     def hidden(x) -> bool:
         return getattr(x, "Visibility", True) is False
 
+    def in_assembly(x) -> bool:
+        return any(y.TypeId == "Assembly::AssemblyObject" for y in chain(x)[1:])
+
+    # the sources of an Assembly's components: add_component (like FreeCAD's own
+    # "insert component") links the part into the assembly and leaves it in place,
+    # visible -- an assembly of 2 parts listed 4. The assembly's links are the parts.
+    asm_sources = set()
+    for x in doc.Objects:
+        if _is_link(x) and in_assembly(x):
+            t = _link_target(x)
+            if t is not None:
+                asm_sources.add(t.Name)
+
     for o in doc.Objects:
         if _is_container(o):
             continue                         # its parts are visited themselves
@@ -302,6 +317,8 @@ def _parts(doc, include_hidden: bool):
         if any(hidden(x) and not _is_link(x) and any(_is_link(y) for y in x.InList)
                for x in up):
             continue
+        if not in_assembly(o) and any(x.Name in asm_sources for x in up):
+            continue                         # the definition of an assembly component
         for q in _instances(o):
             yield o, q
 
