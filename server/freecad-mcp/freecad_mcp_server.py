@@ -1166,7 +1166,11 @@ try:
         enable_console=False,  # CRITICAL: No console output for MCP!
         enable_file=True
     )
-    monitor = init_monitor()
+    # MCP FREECAD v2: the health monitor probes a Unix socket (AF_UNIX) and pgrep, which
+    # do not exist on Windows (TCP bridge): it read "unhealthy" every 30 s and wrote a
+    # bogus crash record each time, per bridge process (4,000 files in %TEMP%), while
+    # FreeCAD was fine. On Windows the supervised launcher restarts FreeCAD itself.
+    monitor = init_monitor() if os.name != "nt" else None
 
     # Log startup to file only
     debugger.logger.info("="*80)
