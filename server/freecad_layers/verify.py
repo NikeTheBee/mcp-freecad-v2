@@ -91,9 +91,26 @@ def global_shape(obj):
         return shp
     if pg.isIdentity():
         return shp
+    # the same copy while the shape and the container's placement are unchanged: a
+    # fresh copy each call never matched the OCCT-check cache (15 s per check on a
+    # heavy part inside an imported STEP assembly)
+    doc = getattr(getattr(obj, "Document", None), "Name", "")
+    for i, (d, name, src, p, out) in enumerate(_GLOBAL_SHAPES):
+        if d == doc and name == obj.Name and src.isEqual(shp) and _same_placement(p, pg):
+            return out
     out = shp.copy()
     out.Placement = pg.multiply(out.Placement)
+    _GLOBAL_SHAPES.insert(0, (doc, obj.Name, shp, pg, out))
+    del _GLOBAL_SHAPES[32:]
     return out
+
+
+_GLOBAL_SHAPES: List[tuple] = []   # (document, object, its shape, container placement, global copy)
+
+
+def _same_placement(a, b) -> bool:
+    ma, mb = a.toMatrix(), b.toMatrix()
+    return all(abs(x - y) <= 1e-12 for x, y in zip(ma.A, mb.A))
 
 
 def _resolve(obj_or_name, doc=None):

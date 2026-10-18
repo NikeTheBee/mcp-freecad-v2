@@ -174,6 +174,15 @@ def main() -> int:
     assert r["status"] == verify.FAIL and abs(r["interferences"][0]["volume"] - 500) < 1e-6, r
     assert verify.check_assembly(["Nested", "Ghost"])["status"] == verify.OK
     print("assembly: a part in a moved, turned App::Part compared where it is: OK")
+    # the same global shape while nothing moved (the OCCT-check cache then matches: a
+    # fresh copy each call re-ran a 20 s check on a heavy part); a new one once moved
+    g1 = verify.global_shape(nested)
+    assert verify.global_shape(nested) is g1
+    grp.Placement.Base = V(0, 0, 0)
+    doc.recompute()
+    g2 = verify.global_shape(nested)
+    assert g2 is not g1 and abs(verify.box(g2).XMin + 10) < 1e-9, verify.box(g2)
+    print("global shapes reused until the container moves: OK")
 
     # sketches: the base's verify_sketch calls an under-constrained sketch
     # "fully constrained" (it reads solve()'s 0); ours uses DoF and the
