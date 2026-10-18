@@ -14,6 +14,7 @@
 - Each `App::Link` is one more instance of the object it points to; a link to a sub-assembly
   (App::Part) is one more of EACH part inside it, nested links included; a link array counts
   `ElementCount` instances. A hidden source of links (part or sub-assembly) is not counted.
+- A Draft array (ortho/polar/path/point, not fused) is `Count` copies of its base; a fused array is one part.
 - Identical parts are grouped by measured geometry (volume, area, moments of inertia; a mirror
   image is a different part, listed "(mirrored)") **and**
   name stem: two different shapes of equal volume are never merged.

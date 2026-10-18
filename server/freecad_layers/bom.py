@@ -12,7 +12,8 @@ What counts as a part (audit 2026-10-11, §2.2 B1):
 - each App::Link is one more instance of the object it points to; a link to a
   container (a sub-assembly) is one more of every part inside it, nested links
   included; a link array is ElementCount instances; a hidden source of links
-  (a part or the sub-assembly holding it) is not one more part.
+  (a part or the sub-assembly holding it) is not one more part;
+- a Draft array (not fused) is Count copies of its base.
 Identical parts are grouped by measured geometry (volume, area, principal
 moments of inertia: the same wherever and however the part is placed) AND
 name stem: a box and a cylinder of equal volume are never merged. Limitation: mirror images with the same name stem group
@@ -206,14 +207,32 @@ def _link_count(o) -> int:
     return 0 if _flatten(getattr(o, "ElementList", None)) else n
 
 
-def _is_part(o) -> bool:
+def _is_part(o, consumed_ok: bool = False) -> bool:
     if _is_container(o) or _is_link(o):
         return False
     if o.TypeId.startswith(("PartDesign::", "Sketcher::")) and o.TypeId != "PartDesign::Body":
         return False                         # features/sketches live inside a Body
     if o.TypeId.startswith("Fem::") or re.match(r"FEM_.+_Dir\d+$", o.Name):
         return False                         # analysis objects and fem.py's load-direction helpers
-    return _solid_shape(o) is not None and not _consumers(o)
+    return _solid_shape(o) is not None and (consumed_ok or not _consumers(o))
+
+
+_DRAFT_ARRAYS = ("Array", "PathArray", "PointArray", "PathTwistedArray")
+
+
+def _draft_array_count(o) -> int:
+    """Copies a Draft array (ortho/polar/circular, path, point) places, or 0 when
+    `o` is not one or is FUSED (then it is one solid: one part). An array of 6
+    bolts counted as one part named "Array", the bolt itself 0 times."""
+    if type(getattr(o, "Proxy", None)).__name__ not in _DRAFT_ARRAYS or getattr(o, "Fuse", False):
+        return 0
+    base = getattr(o, "Base", None)
+    if base is None or _solid_shape(base) is None:
+        return 0
+    n = int(getattr(o, "Count", 0) or 0)
+    if n <= 0:                               # older arrays: by their solids
+        n = len(o.Shape.Solids) // max(len(base.Shape.Solids), 1)
+    return n
 
 
 def _instances(o, seen: tuple = ()) -> List[Any]:
@@ -229,6 +248,11 @@ def _instances(o, seen: tuple = ()) -> List[Any]:
             [q for q in _instances(t, seen + (o,)) for _ in range(n)]
     if _is_container(o):
         return [q for m in _members(o) for q in _instances(m, seen + (o,))]
+    n = _draft_array_count(o)
+    if n:                                    # copies of its base (consumed by it)
+        base = o.Base
+        one = _instances(base, seen + (o,)) if (_is_link(base) or _is_container(base))             else ([base] if _is_part(base, consumed_ok=True) else [])
+        return [q for q in one for _ in range(n)]
     return [o] if _is_part(o) else []
 
 

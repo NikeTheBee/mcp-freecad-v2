@@ -191,6 +191,25 @@ def main() -> int:
     assert got == [("Bolt", 6), ("Rim", 4), ("Shaft", 2), ("Tyre", 4)], got
     print("sub-assemblies linked (nested), hidden sources, array without elements: OK")
 
+    # a Draft array is Count copies of its base (it counted as ONE part "Array", the
+    # bolt 0 times); a fused array is one solid: one part
+    import Draft
+    d7 = App.newDocument("BOMDraft")
+    pin = d7.addObject("Part::Cylinder", "Pin")
+    pin.Radius, pin.Height = 2, 10
+    nut = d7.addObject("Part::Box", "Nut")
+    d7.recompute()
+    Draft.make_ortho_array(pin, v_x=App.Vector(10, 0, 0), v_y=App.Vector(0, 10, 0),
+                           n_x=3, n_y=2, n_z=1, use_link=False)
+    Draft.make_polar_array(pin, number=4, angle=360, center=App.Vector(80, 0, 0), use_link=True)
+    fused = Draft.make_ortho_array(nut, v_x=App.Vector(0.5, 0, 0), v_y=App.Vector(0, 50, 0),
+                                   n_x=2, n_y=1, n_z=1, use_link=False)
+    fused.Fuse = True
+    d7.recompute()
+    got = sorted((r["designation"], r["qty"]) for r in bom.collect(d7))
+    assert got == [("Array", 1), ("Pin", 10)], got
+    print("Draft arrays: copies of their base; a fused array is one part: OK")
+
     print("BOM_OK")
     return 0
 
