@@ -92,7 +92,8 @@ print("limits exceeded -> FAIL: OK")
 for bad in (dict(fixed=[], loads=[{"faces": "xmax", "force_N": 1}]),
             dict(fixed=["top"], loads=[{"faces": "xmax", "force_N": 1}]),
             dict(fixed=["xmin"], loads=[{"faces": "xmax", "force_N": 1, "direction": [0, 0, 0]}]),
-            dict(fixed=["xmin"], loads=[{"faces": "xmax", "force_N": 1}], material="unobtainium")):
+            dict(fixed=["xmin"], loads=[{"faces": "xmax", "force_N": 1}], material="unobtainium"),
+            dict(fixed=["xmin"], loads=[{"faces": "xmax", "force_N": 0}])):   # checks nothing
     try:
         fem.static("Beam", **bad)
     except ValueError as e:

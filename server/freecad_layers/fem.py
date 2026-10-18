@@ -328,9 +328,12 @@ def static(target, fixed: Sequence[str], loads: Sequence[Dict[str, Any]],
         for spec in ([load["faces"]] if isinstance(load["faces"], str) else load["faces"]):
             faces(obj.Shape, spec)
         try:
-            float(load["force_N"])
+            f_n = float(load["force_N"])
         except (TypeError, ValueError):
             raise ValueError(f"force_N must be a number in newtons (got {load['force_N']!r})") from None
+        if not math.isfinite(f_n) or f_n == 0:
+            # a 0 N load gives zero stress: "OK, safety factor None" checked nothing
+            raise ValueError(f"force_N must be a finite, non-zero force in newtons (got {f_n:g})")
         d = load.get("direction", (0, 0, -1))
         if (not isinstance(d, (list, tuple)) or len(d) != 3
                 or not all(isinstance(c, (int, float)) and not isinstance(c, bool) for c in d)):
