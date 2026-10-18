@@ -159,6 +159,22 @@ def main() -> int:
             assert why in str(e), e
     print("assembly: parts without a solid refused: OK")
 
+    # parts inside a moved container are compared where they ARE: a box in an App::Part
+    # moved 100 mm overlapping a free box by 500 mm3 read OK, and a box at the origin it
+    # never touched read a 1000 mm3 collision (each shape was in its container's frame)
+    grp = doc.addObject("App::Part", "Moved")
+    grp.Placement = App.Placement(V(100, 0, 0), App.Rotation(V(0, 0, 1), 90))
+    nested = doc.addObject("Part::Box", "Nested")          # global x 90..100, y 0..10
+    grp.addObject(nested)
+    near = doc.addObject("Part::Box", "Near")
+    near.Placement.Base = V(95, 0, 0)
+    ghost = doc.addObject("Part::Box", "Ghost")             # at the origin: never touches it
+    doc.recompute()
+    r = verify.check_assembly(["Nested", "Near"])
+    assert r["status"] == verify.FAIL and abs(r["interferences"][0]["volume"] - 500) < 1e-6, r
+    assert verify.check_assembly(["Nested", "Ghost"])["status"] == verify.OK
+    print("assembly: a part in a moved, turned App::Part compared where it is: OK")
+
     # sketches: the base's verify_sketch calls an under-constrained sketch
     # "fully constrained" (it reads solve()'s 0); ours uses DoF and the
     # conflicting/redundant lists

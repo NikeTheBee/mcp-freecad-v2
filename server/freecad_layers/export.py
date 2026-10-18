@@ -158,7 +158,7 @@ def export(name, path: Optional[str] = None, fmt: str = "stl",
     g = gate.check_target(name if isinstance(name, str) else obj.Name, autosave=False)
     if g["status"] != verify.OK:
         raise ValueError(f"not exported: check says {g['status']} (an export needs OK)\n{g['text']}")
-    shp = obj.Shape
+    shp = verify.global_shape(obj)     # in a moved App::Part: where it is, as printability saw it
     out = safe_out_path(path or project_dir() / "exports" / f"{obj.Name}{ext}", FORMATS,
                         overwrite=overwrite)
     # the final name in a private folder (one per call: async jobs run beside

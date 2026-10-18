@@ -171,7 +171,7 @@ def _material_volume(obj, v: Dict[str, Any]):
     if not v["closed"]:
         return None, f"{v['name']} is not closed (not watertight): its volume means nothing"
     if v["solids"] > 1 and any(str(i).startswith("interference") for i in v["issues"]):
-        shp = obj if not hasattr(obj, "Shape") else obj.Shape
+        shp = obj if not hasattr(obj, "Shape") else verify.global_shape(obj)
         solids = shp.Solids
         try:
             return float(solids[0].multiFuse(solids[1:]).Volume), None

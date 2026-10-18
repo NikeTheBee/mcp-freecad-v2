@@ -28,10 +28,10 @@ _TWO_PI = 2.0 * math.pi
 
 
 def _shape(obj_or_shape):
-    if hasattr(obj_or_shape, "Shape"):
-        return obj_or_shape.Shape
     if isinstance(obj_or_shape, str):
-        return verify._resolve(obj_or_shape).Shape
+        obj_or_shape = verify._resolve(obj_or_shape)
+    if hasattr(obj_or_shape, "Shape"):
+        return verify.global_shape(obj_or_shape)
     return obj_or_shape
 
 

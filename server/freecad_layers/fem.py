@@ -286,6 +286,11 @@ def static(target, fixed: Sequence[str], loads: Sequence[Dict[str, Any]],
     if _step is not None:   # a step of a Body is not the part (later features are missing)
         raise ValueError(f"{obj.Name} is a step of {_step.Name}, not the whole part: "
                          f"analyze {_step.Name}")
+    _parent = obj.getParentGeoFeatureGroup()
+    if _parent is not None and not _parent.getGlobalPlacement().isIdentity():
+        # sides ("zmin") and load directions would be read in two different frames
+        raise ValueError(f"{obj.Name} is inside {_parent.Name}, which is moved or turned: "
+                         "analyze a copy placed at the document origin")
     doc = obj.Document
     chk = verify.check(obj)
     if chk["status"] != verify.OK or not chk.get("closed"):

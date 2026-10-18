@@ -506,7 +506,7 @@ if not _v.startswith('OK'):
 elif _v0 - _b.Shape.Volume <= 1e-9 * max(_v0, 1.0):
     _why = f"it cuts no material at ({_a['x']:g}, {_a['y']:g})"
 else:   # measure the hole that was made
-    _p = _b.Placement.multVec(FreeCAD.Vector(_a['x'], _a['y'], _top))
+    _p = _b.getGlobalPlacement().multVec(FreeCAD.Vector(_a['x'], _a['y'], _top))
     _got = None
     for _h in analysis.holes(_b):
         _ax, _ctr = FreeCAD.Vector(*_h['axis']), FreeCAD.Vector(*_h['center'])

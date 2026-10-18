@@ -71,6 +71,31 @@ def box(shp):
     return shp.BoundBox
 
 
+def global_shape(obj):
+    """The object's shape in the DOCUMENT frame. obj.Shape is in its container's
+    frame: a part inside an App::Part or an Assembly moved by 100 mm read 100 mm off,
+    so two parts that overlapped by 500 mm3 read OK and two that never touched read
+    a 1000 mm3 collision. A PartDesign feature's shape is in its Body's frame."""
+    shp = getattr(obj, "Shape", None)
+    if shp is None or not hasattr(shp, "isNull") or shp.isNull():
+        return shp
+    try:
+        parent = obj.getParentGeoFeatureGroup()
+    except Exception:  # noqa: BLE001 — not a document object: as it is
+        return shp
+    if parent is None:
+        return shp
+    try:
+        pg = parent.getGlobalPlacement()
+    except Exception:  # noqa: BLE001
+        return shp
+    if pg.isIdentity():
+        return shp
+    out = shp.copy()
+    out.Placement = pg.multiply(out.Placement)
+    return out
+
+
 def _resolve(obj_or_name, doc=None):
     if isinstance(obj_or_name, str):
         doc = doc or FreeCAD.ActiveDocument
@@ -174,7 +199,7 @@ def check(obj_or_name, doc=None, min_volume: float = 1e-6,
         res["issues"] += _state_issues(obj)
         res["issues"] += _body_issues(obj)
 
-    shp = obj if bare else getattr(obj, "Shape", None)
+    shp = obj if bare else global_shape(obj)
     if shp is None or shp.isNull():
         res.update(valid=False, solids=0, closed=False, volume=0.0)
         res["issues"].append("no shape / null shape")
@@ -380,6 +405,6 @@ def check_assembly(objects: Iterable, tol: float = 1e-6) -> Dict[str, Any]:
             # a sketch overlaps nothing (silent OK); a shell's "overlap volume" is not one
             raise ValueError(f"{o.Name} is a {s.ShapeType}, not a solid: an interference "
                              f"check needs solid parts")
-    shapes = [o.Shape for o in objs]
+    shapes = [global_shape(o) for o in objs]     # in a moved App::Part: where it is
     hits = interference(shapes, tol, names=[o.Name for o in objs])
     return {"status": FAIL if hits else OK, "parts": len(objs), "interferences": hits}

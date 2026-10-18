@@ -264,6 +264,24 @@ async def run(inst: Instance, project: str, out: str) -> None:
             txt = await call("pd_hole", body="Step", diameter=3, x=36, y=15, through=False, depth=2)
             assert txt.startswith("OK Step") and "2 mm deep from z 5" in txt, txt
             print("pd_hole over a coaxial hole from below: its own bore measured: OK")
+            # a Body inside a moved, turned App::Part: drilled at its own (x, y), measured
+            # where it is in the document
+            inst.call("execute_python_sync", {"code": (
+                "import FreeCAD\n"
+                "d = FreeCAD.ActiveDocument\n"
+                "g = d.addObject('App::Part', 'Cell')\n"
+                "g.Placement = FreeCAD.Placement(FreeCAD.Vector(200, 0, 0), "
+                "FreeCAD.Rotation(FreeCAD.Vector(0, 0, 1), 90))\n"
+                "b = d.addObject('PartDesign::Body', 'InCell')\n"
+                "g.addObject(b)\n"
+                "p = b.newObject('PartDesign::AdditiveBox', 'Blk')\n"
+                "p.Length, p.Width, p.Height = 30, 20, 6\n"
+                "d.recompute()\n'ok'")})
+            txt = await call("pd_hole", body="InCell", diameter=4, x=10, y=5)
+            assert txt.startswith("OK InCell") and "through" in txt, txt
+            txt = await call("pd_hole", body="InCell", diameter=3, x=20, y=12, through=False, depth=2)
+            assert txt.startswith("OK InCell") and "2 mm deep from z 6" in txt, txt
+            print("pd_hole in a Body inside a moved, turned App::Part: OK")
 
             # headless FreeCAD runs a call to the end whatever its timeout: what limits a
             # heavy check is our socket wait (hence 300 s for the analysis tools)

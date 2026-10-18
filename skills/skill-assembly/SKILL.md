@@ -21,8 +21,12 @@ for part in (base, lid):
 from FreeCAD import Vector, Placement, Rotation
 lid.Placement = Placement(Vector(0, 0, 10), Rotation(Vector(0,0,1), 0))   # translate + rotate
 ```
-`obj.Shape` already bakes in the object `Placement`, so a `Part.makeCompound([a.Shape, b.Shape])`
-reflects the assembled layout (use it to measure overall envelope / check interference).
+`obj.Shape` bakes in the object's own `Placement` but NOT its container's: a part inside an
+`App::Part` or an Assembly that is moved has its `Shape` in the container's frame. Build layouts with
+`verify.global_shape(obj)` (document frame), e.g. `Part.makeCompound([verify.global_shape(a), ...])`.
+The layers (`check`, `check_assembly`, `no_interference`, `analyze`, `export`, `render_views`) already
+measure parts where they are; `fem_static` refuses a part inside a moved container (analyze a copy at
+the origin).
 
 ## Reuse parts as instances
 For repeated parts use links instead of copies:

@@ -99,6 +99,19 @@ for bad in (dict(fixed=[], loads=[{"faces": "xmax", "force_N": 1}]),
         print("refused:", str(e)[:70])
     else:
         raise AssertionError(f"accepted bad input {bad}")
+# a part inside a moved container: sides and load directions would be read in two frames
+_grp = doc.addObject("App::Part", "MovedGroup")
+_grp.Placement.Base = FreeCAD.Vector(0, 0, 50)
+_inner = doc.addObject("Part::Box", "InnerBeam")
+_grp.addObject(_inner)
+doc.recompute()
+try:
+    fem.static("InnerBeam", ["xmin"], [{"faces": "xmax", "force_N": 1}])
+except ValueError as e:
+    assert "inside MovedGroup" in str(e), e
+    print("refused:", str(e)[:70])
+else:
+    raise AssertionError("FEM ran on a part inside a moved container")
 # a hopeless mesh is refused BEFORE meshing (Gmsh used to grind first), with a size that works
 import time  # noqa: E402
 t0 = time.time()

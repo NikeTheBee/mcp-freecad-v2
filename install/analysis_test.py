@@ -126,6 +126,16 @@ def main() -> int:
     ah = analysis.holes(plate_pin)
     assert len(ah) == 1 and ah[0]["through"] and ah[0]["depth"] == 8, ah
     print("assembly: a plate's hole stays through with a pin in it: OK")
+    # a Body inside a moved App::Part: its holes are where they are in the document
+    grp = doc.addObject("App::Part", "Sub")
+    grp.Placement.Base = V(100, 0, 0)
+    pb = doc.addObject("Part::Feature", "Holed")
+    pb.Shape = Part.makeBox(20, 20, 5).cut(Part.makeCylinder(2, 5, V(10, 10, 0)))
+    grp.addObject(pb)
+    doc.recompute()
+    gh = analysis.holes(pb)
+    assert len(gh) == 1 and gh[0]["center"] == [110.0, 10.0, 2.5], gh
+    print("a part in a moved App::Part: holes at their document position: OK")
 
     # walls: tube wall is 2 mm; a 20 mm cube with a 17 mm pocket leaves 1.5 mm
     # (exact B-rep intersections: no mesh chord error, so a tight tolerance)

@@ -85,7 +85,7 @@ def views(targets, path: Optional[str] = None, which: Sequence[str] = ("front", 
         raise ValueError("targets must name at least one object to render")
     shapes = []
     for o in objs:
-        shp = getattr(o, "Shape", None)
+        shp = verify.global_shape(o)
         if shp is None or not hasattr(shp, "isNull") or shp.isNull() or not shp.Faces:
             raise ValueError(f"{o.Name} has no faces to render")
         shapes.append(shp)
