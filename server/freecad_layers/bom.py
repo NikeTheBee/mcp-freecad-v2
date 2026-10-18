@@ -5,8 +5,9 @@ shipped a Nomenclature; a driven design should be able to emit one.
 
 What counts as a part (audit 2026-10-11, §2.2 B1):
 - a PartDesign::Body is ONE part — its internal features are not parts;
-- an object consumed by another shape feature (the Base/Tool of a Cut, the
-  source of a Mirror...) is not a part — the result is;
+- an object consumed by another shape feature (the Base/Tool of a Cut...) is
+  not a part — the result is; the source of a Mirror or a Draft clone is one
+  while it stays visible (left and right hand);
 - containers (App::Part, groups, Part::Compound, assemblies) are not parts —
   their children are;
 - each App::Link is one more instance of the object it points to; a link to a
@@ -214,7 +215,17 @@ def _is_part(o, consumed_ok: bool = False) -> bool:
         return False                         # features/sketches live inside a Body
     if o.TypeId.startswith("Fem::") or re.match(r"FEM_.+_Dir\d+$", o.Name):
         return False                         # analysis objects and fem.py's load-direction helpers
-    return _solid_shape(o) is not None and (consumed_ok or not _consumers(o))
+    if _solid_shape(o) is None:
+        return False
+    # a mirror (or a Draft clone) leaves its source in place when the source stays
+    # visible: left AND right bracket -- the BOM listed only the mirrored one
+    users = [x for x in _consumers(o)
+             if not (_makes_a_copy(x) and getattr(o, "Visibility", True) is not False)]
+    return consumed_ok or not users
+
+
+def _makes_a_copy(x) -> bool:
+    return x.TypeId == "Part::Mirroring" or type(getattr(x, "Proxy", None)).__name__ == "Clone"
 
 
 _DRAFT_ARRAYS = ("Array", "PathArray", "PointArray", "PathTwistedArray")

@@ -210,6 +210,18 @@ def main() -> int:
     assert got == [("Array", 1), ("Pin", 10)], got
     print("Draft arrays: copies of their base; a fused array is one part: OK")
 
+    # a mirror of a VISIBLE part: both exist (left and right): the original was missing
+    d8 = App.newDocument("BOMMirror")
+    left = d8.addObject("Part::Feature", "Left")
+    left.Shape = Part.makeBox(40, 20, 4).fuse(Part.makeBox(4, 20, 30)).removeSplitter()
+    mir = d8.addObject("Part::Mirroring", "Right")
+    mir.Source, mir.Normal = left, App.Vector(1, 0, 0)
+    d8.recompute()
+    assert sorted((r["designation"], r["qty"]) for r in bom.collect(d8)) == [("Left", 1), ("Right", 1)]
+    left.Visibility = False                      # hidden: only the mirrored one is a part
+    assert [(r["designation"], r["qty"]) for r in bom.collect(d8)] == [("Right", 1)]
+    print("mirror of a visible part: both listed; of a hidden one: the mirror only: OK")
+
     print("BOM_OK")
     return 0
 
