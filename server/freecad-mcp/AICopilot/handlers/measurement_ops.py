@@ -269,7 +269,7 @@ class MeasurementOpsHandler(BaseHandler):
             # reports a positive value for touching/overlapping parts. distToShape
             # returns [dist, points, geom_info]; dist == 0 means touching/overlap.
             if hasattr(obj1, 'Shape') and hasattr(obj2, 'Shape'):
-                distance = obj1.Shape.distToShape(obj2.Shape)[0]
+                distance = self._world_shape(obj1).distToShape(self._world_shape(obj2))[0]
                 # References base.py's OCCT_CONFUSION_TOLERANCE_DEFAULT as
                 # the single source of truth for this numeral instead of
                 # independently hardcoding 1e-7 here.
@@ -310,7 +310,7 @@ class MeasurementOpsHandler(BaseHandler):
             if err:
                 return err
 
-            bb = self._exact_bbox(obj.Shape)
+            bb = self._exact_bbox(self._world_shape(obj))
             return (
                 f"Bounding box of {object_name}:\n"
                 f"  X: {bb.XMin:.2f} to {bb.XMax:.2f} mm (length: {bb.XLength:.2f})\n"
@@ -330,7 +330,7 @@ class MeasurementOpsHandler(BaseHandler):
             if err:
                 return err
 
-            shape = obj.Shape
+            shape = self._world_shape(obj)
             m = self._material(shape)
 
             # shape.Area is a single C++ GProp pass over the whole shape --
@@ -379,7 +379,7 @@ class MeasurementOpsHandler(BaseHandler):
             if err:
                 return err
 
-            m = self._material(obj.Shape)
+            m = self._material(self._world_shape(obj))
             com = m["com"]
             if com is None:
                 return f"{object_name} has no center of mass: {m['note']}"
@@ -421,8 +421,9 @@ class MeasurementOpsHandler(BaseHandler):
             if err:
                 return err
 
-            lines = [f"Faces of {object_name} ({len(obj.Shape.Faces)} total):"]
-            for i, face in enumerate(obj.Shape.Faces):
+            world = self._world_shape(obj)     # face centres in document coordinates
+            lines = [f"Faces of {object_name} ({len(world.Faces)} total):"]
+            for i, face in enumerate(world.Faces):
                 try:
                     # MCP FREECAD v2: the normal at the face's centre (at (0, 0) a
                     # curved face gave an arbitrary one -- a dome read "(+1, 0, 0)"),

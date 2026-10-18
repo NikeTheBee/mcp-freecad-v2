@@ -562,6 +562,23 @@ def main() -> int:
                                              "point": [12, 5, 5]}))
         assert "Inside (excluding boundary): True" in txt, txt
 
+        # a part inside a moved App::Part is measured where it is: a 500 mm3 overlap with a
+        # free box read "Intersects: False, clearance 95 mm", the centre of mass (5, 5, 5)
+        py(inst, "import FreeCAD\nd = FreeCAD.ActiveDocument\nV = FreeCAD.Vector\n"
+                 "g = d.addObject('App::Part', 'Cell')\ng.Placement.Base = V(100, 0, 0)\n"
+                 "n = d.addObject('Part::Box', 'InCell')\ng.addObject(n)\n"
+                 "f = d.addObject('Part::Box', 'BesideCell')\nf.Placement.Base = V(105, 0, 0)\n"
+                 "d.recompute()\n'ok'")
+        txt = str(op(inst, "spatial_query", {"operation": "interference_check",
+                                             "object1": "InCell", "object2": "BesideCell"}))
+        assert "Intersects: True" in txt and "500.0000" in txt, txt
+        txt = str(op(inst, "measurement_operations", {"operation": "get_center_of_mass",
+                                                      "object_name": "InCell"}))
+        assert "(105.00, 5.00, 5.00)" in txt, txt
+        txt = str(op(inst, "measurement_operations", {"operation": "measure_distance",
+                                                      "object1": "InCell", "object2": "Dome"}))
+        assert "0.0000 mm" not in txt, txt
+
         # mesh -> solid: a closed 10x20x30 mesh gives 6000 mm3; with one triangle missing
         # it used to give an invalid "solid" of 5478 mm3
         py(inst, "import FreeCAD, Part, MeshPart\nd = FreeCAD.ActiveDocument\n"

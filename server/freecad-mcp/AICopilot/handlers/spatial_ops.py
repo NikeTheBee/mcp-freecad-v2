@@ -72,7 +72,8 @@ class SpatialOpsHandler(BaseHandler):
         if not hasattr(obj2, 'Shape'):
             return None, None, None, f"{obj2_name} has no Shape"
 
-        return obj1.Shape, obj2.Shape, obj1_name, obj2_name
+        # where they are: a part inside a moved App::Part/Assembly (MCP FREECAD v2)
+        return self._world_shape(obj1), self._world_shape(obj2), obj1_name, obj2_name
 
     def _solid_warning(self, shape, name: str) -> str:
         """Return a warning string if shape has no solids, else empty string."""
@@ -306,7 +307,7 @@ class SpatialOpsHandler(BaseHandler):
                 return f"Error: Object not found: {obj_name}"
             if not hasattr(obj, 'Shape'):
                 return f"Error: {obj_name} has no Shape"
-            shape = obj.Shape
+            shape = self._world_shape(obj)     # the point is in document coordinates
             # MCP FREECAD v2: only a solid or a closed shell has an inside. On an
             # open shell isInside() answered True for a point 50 mm away from a
             # 10 mm cube missing one face; on a face or a wire, always False.
@@ -478,8 +479,8 @@ class SpatialOpsHandler(BaseHandler):
                     return f"Object not found: {name}"
                 if not hasattr(obj, 'Shape'):
                     return f"{name} has no Shape"
-                shapes[name] = obj.Shape
-                w = self._solid_warning(obj.Shape, name)
+                shapes[name] = self._world_shape(obj)     # where it is (moved containers)
+                w = self._solid_warning(shapes[name], name)
                 if w:
                     warnings.append(w)
 

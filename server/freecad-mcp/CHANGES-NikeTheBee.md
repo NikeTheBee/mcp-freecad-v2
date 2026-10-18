@@ -145,6 +145,13 @@ It runs `git subtree pull --squash` on a clean tree. Then run the base's unit te
 | tests | `test_spatial_ops`: overlap area from the common, edge contact, overlap reported as interfering, contact as touching; `install/base_exactness_test.py`: coplanar faces share 25 mm2, flush cubes touch (no collision), overlapping cubes interfere by 500 mm3, a dome passes `verify_orientation(+Z)` (dot 1.0); `test_base_handler`: `_face_normal` at the centroid, then mid-parameters. | |
 | tests | `test_partdesign_ops`: loft and sweep of a Body's sketches; `install/base_exactness_test.py`: loft 500 pi, sweep 750 pi, helix 80 pi^2 (Pappus) mm3. A sweep of the remaining operations found the others exact (primitives, Part extrude/revolve/loft/sweep, rotate, mirror, Draft arrays, polar pattern, PartDesign::Hole counterbore/countersink on a face). | |
 
+## 2026-10-18 — NikeTheBee
+
+| File | Change | Why |
+|---|---|---|
+| `AICopilot/handlers/base.py` (`_world_shape`), `spatial_ops.py` (two-object queries, `contains_point`, `batch_interference`), `measurement_ops.py` (`measure_distance`, `get_bounding_box`, `get_mass_properties`, `get_center_of_mass`, `list_faces`) | Objects are measured in the document frame: the shape gets its parent container's global placement (App::Part, Assembly, PartDesign Body for a feature, App::Link inside a container). Mocks and non-document objects are used as they are. | `obj.Shape` is in the container's frame: a box inside an App::Part moved 100 mm, overlapping a free box by 500 mm3, read "Intersects: False, clearance 95 mm"; a box at the origin it never touched read a 1000 mm3 collision; its centre of mass read (5, 5, 5) instead of (105, 5, 5). |
+| tests | `install/base_exactness_test.py`: a box in a moved App::Part interferes by 500 mm3 with its neighbour, centre of mass (105, 5, 5), no false contact with a part at the origin. Unit tests unchanged (2269 passed, no new failure). | |
+
 ## Test status
 
 Upstream unit tests on Windows, compared with the unmodified upstream version in a sandboxed home:

@@ -1056,6 +1056,30 @@ class BaseHandler:
             pass
         return shape.BoundBox
 
+    @staticmethod
+    def _world_shape(obj):
+        """The object's shape in the DOCUMENT frame (MCP FREECAD v2). obj.Shape is
+        in its container's frame: a part inside an App::Part or an Assembly moved by
+        100 mm read 100 mm off -- two parts overlapping by 500 mm3 read "no
+        intersection, clearance 95 mm", a part never touched a 1000 mm3 collision.
+        Real document objects only: anything else (mocks, stubs) is returned as is."""
+        shp = obj.Shape
+        try:
+            if not isinstance(obj, FreeCAD.DocumentObject) or not hasattr(shp, "copy") \
+                    or shp.isNull():
+                return shp
+            parent = obj.getParentGeoFeatureGroup()
+            if parent is None:
+                return shp
+            pg = parent.getGlobalPlacement()
+            if pg.isIdentity():
+                return shp
+            out = shp.copy()
+            out.Placement = pg.multiply(out.Placement)
+            return out
+        except Exception:  # an exotic object: its own shape
+            return shp
+
     _UNION_MAX_SOLIDS = 50
 
     @staticmethod
