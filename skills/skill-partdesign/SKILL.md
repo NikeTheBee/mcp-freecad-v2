@@ -65,6 +65,8 @@ Pick edge ids from `pad.Shape.Edges` / `measurement_operations list_faces`.
   `require(body, "holes", {"count": n, "diameter": d})` so a missing hole FAILs. Holes are
   counted, not bores: a counterbored hole (bore + counterbore), or one pin hole through both
   flanges of a clevis, counts once; `analyze` lists each bore with its `#hole` number.
+  A threaded hole measures its DRILL diameter (an M6x1.0 `PartDesign::Hole` reads D5): require
+  `diameter: 5` for it, not 6.
 - Repetition: `PartDesign::LinearPattern` / `PolarPattern` / `Mirrored` — set `.Originals=[feature]`,
   `.Direction`, `.Occurrences`/`.Angle`.
 

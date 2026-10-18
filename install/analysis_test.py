@@ -90,7 +90,13 @@ def main() -> int:
     xh = [h for h in analysis.holes(xb.cut(Part.makeCylinder(3, 40, V(20, 20, -5))))
           if h["diameter"] == 6]
     assert len(xh) == 2 and xh[0]["hole"] == xh[1]["hole"] and all(h["through"] for h in xh), xh
-    print("holes vs bores: counterbore, clevis, opposite blind holes, cross-drilled: OK")
+    # a circlip groove inside a bore is not a counterbore (nor is a modelled thread)
+    gb = Part.makeBox(40, 40, 10).cut(Part.makeCylinder(3, 10, V(20, 20, 0)))
+    gb = gb.cut(Part.makeCylinder(5, 2, V(20, 20, 4)))
+    gr = analysis.report(gb)
+    assert "holes (1, 3 bores)" in gr and "(around the D6: a thread or a groove)" in gr \
+        and "counterbore" not in gr, gr
+    print("holes vs bores: counterbore, clevis, opposite blind holes, cross-drilled, groove: OK")
     pt = Part.makeBox(40, 40, 10).cut(Part.makeCylinder(3, 6, V(20, 20, 4)))
     pt = pt.cut(Part.makeCone(3, 0, 1.8, V(20, 20, 4), V(0, 0, -1)))     # 118 deg drill point
     ph = analysis.holes(pt)

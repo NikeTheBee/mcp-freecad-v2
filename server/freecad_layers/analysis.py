@@ -731,18 +731,37 @@ def report(obj_or_name) -> str:
     hs = holes(obj_or_name)
     w = min_wall(obj_or_name)
 
-    bore_d: Dict[int, float] = {}           # each hole's narrowest bore
+    narrow: Dict[int, Dict[str, Any]] = {}  # each hole's narrowest bore
     for h in hs:
-        bore_d[h["hole"]] = min(bore_d.get(h["hole"], h["diameter"]), h["diameter"])
+        if h["hole"] not in narrow or h["diameter"] < narrow[h["hole"]]["diameter"]:
+            narrow[h["hole"]] = h
+    bore_d = {k: n["diameter"] for k, n in narrow.items()}
 
     several = len(hs) != len(bore_d)        # some hole has several bores: number them
+
+    def _around(h, n) -> bool:
+        """The wider bore h overlaps the stretch of the hole's narrowest bores along
+        the axis (a modelled thread's crest and root, a circlip groove) instead of
+        following it (a counterbore)."""
+        a, c = App.Vector(*n["axis"]), App.Vector(*n["center"])
+
+        def span(b):
+            t = (App.Vector(*b["center"]) - c).dot(a)
+            return t - b["depth"] / 2, t + b["depth"] / 2
+        ends = [span(b) for b in hs if b["hole"] == n["hole"]
+                and abs(b["diameter"] - n["diameter"]) < 1e-6]
+        lo, hi = min(e[0] for e in ends), max(e[1] for e in ends)
+        h0, h1 = span(h)
+        return min(h1, hi) - max(h0, lo) > 1e-3
 
     def _one(h):
         ax = h["axis"]
         along = "" if abs(abs(ax[2]) - 1.0) < 1e-6 else f" along {ax}"
         kind = "" if h["through"] else f" blind {h['depth']:g} deep"
-        if h["diameter"] > bore_d[h["hole"]]:
-            kind += f" (counterbore of the D{bore_d[h['hole']]:g})"
+        n = narrow[h["hole"]]
+        if h["diameter"] > n["diameter"]:
+            kind += (f" (around the D{n['diameter']:g}: a thread or a groove)" if _around(h, n)
+                     else f" (counterbore of the D{n['diameter']:g})")
         return f"{'#%d ' % h['hole'] if several else ''}D{h['diameter']}{kind}{along} @ {h['center']}"
     hole_txt = ", ".join(_one(h) for h in hs[:10]) or "none"
     if len(hs) > 10:
