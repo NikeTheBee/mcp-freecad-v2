@@ -33,6 +33,7 @@ missing = [n for n in ("ccx", "gmsh") if not _tool(n)]
 if missing:
     print(f"FEM_SKIP: {', '.join(missing)} not found (FreeCAD's Windows build bundles both; "
           "on conda install calculix + gmsh)")
+    sys.stdout.flush()  # freecadcmd drops unflushed output on sys.exit
     sys.exit(0)
 
 doc = FreeCAD.newDocument("FemTest")

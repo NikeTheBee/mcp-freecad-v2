@@ -139,6 +139,7 @@ for bad in (os.path.join(_tmp, "evil.exe:x.csv"), os.path.join(_tmp, "CON.csv"),
     try:
         safe_out_path(bad, {".csv"})
         print(f"FAIL: accepted {bad}")
+        sys.stdout.flush()  # freecadcmd drops unflushed output on sys.exit
         sys.exit(1)
     except ValueError:
         pass
@@ -146,7 +147,7 @@ assert not os.path.exists(os.path.join(_tmp, "evil.exe")), "ADS host file create
 ok_path = safe_out_path(os.path.join(_tmp, "out", "a.csv"), {".csv"})
 try:
     safe_out_path(ok_path, {".csv"})          # name already reserved -> refused
-    print("FAIL: second reservation accepted"); sys.exit(1)
+    print("FAIL: second reservation accepted"); sys.stdout.flush(); sys.exit(1)
 except FileExistsError:
     pass
 # a relative name lands in the project, not in FreeCAD's working folder (the
@@ -184,6 +185,7 @@ state.save(s)
 try:
     checkpoint.restore("evil")
     print("FAIL: traversal filename accepted")
+    sys.stdout.flush()  # freecadcmd drops unflushed output on sys.exit
     sys.exit(1)
 except ValueError as e:
     print("tampered checkpoint path refused: OK")

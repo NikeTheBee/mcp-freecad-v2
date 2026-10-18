@@ -168,4 +168,5 @@ def main() -> int:
 # No __main__ guard: freecadcmd executes scripts with a different __name__.
 rc = main()
 if rc:
+    sys.stdout.flush()  # freecadcmd drops unflushed output on sys.exit
     sys.exit(rc)
