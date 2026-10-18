@@ -312,11 +312,26 @@ def _eval_spec(spec: Dict[str, Any], doc=None) -> Dict[str, Any]:
     return {**res, "status": UNKNOWN, "measured": None, "expected": "?"}
 
 
+def same_target(a: str, b: str, doc=None) -> bool:
+    """Do two target strings name the same object? A part is named by its Name OR
+    its Label: a requirement recorded on "Plate" (the Label) was skipped by
+    check("Body") (its Name), and the reverse -- the verdict said OK while the
+    requirement failed. Unresolvable names (not modeled yet) compare as text."""
+    if a == b:
+        return True
+    try:
+        oa, ob = verify._resolve(a, doc), verify._resolve(b, doc)
+    except ValueError:
+        return False
+    return oa.Name == ob.Name and oa.Document.Name == ob.Document.Name
+
+
 def check_all(target: Optional[str] = None, doc=None) -> Dict[str, Any]:
     """Evaluate every spec (or those of `target`). FAIL if any spec fails,
     UNKNOWN if one could not be evaluated, OK only if all pass."""
     results = [_eval(s, doc) for s in list_specs()
-               if target is None or s["target"] == target or s["kind"] == "no_interference"]
+               if target is None or s["kind"] == "no_interference"
+               or same_target(s["target"], target, doc)]
     statuses = {r["status"] for r in results}
     status = FAIL if FAIL in statuses else UNKNOWN if UNKNOWN in statuses else OK
     return {"status": status, "checked": len(results), "results": results}

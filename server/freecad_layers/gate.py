@@ -54,7 +54,7 @@ def check_target(name: str, expect_solid: bool = True, autosave: bool = True) ->
         lines.append("note: " + "; ".join(beside) + " -- the Body does not include "
                      + ("them" if len(beside) > 1 else "it"))
     status = v["status"]
-    if any(s["target"] == obj.Name or s["target"] == name for s in state.load()["specs"]):
+    if any(spec.same_target(s["target"], obj.Name) for s in state.load()["specs"]):
         c = spec.check_all(name)
         lines.append(spec.verdict(name))
         if c["status"] == verify.FAIL or status == verify.FAIL:

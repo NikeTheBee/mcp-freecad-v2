@@ -164,6 +164,20 @@ def main() -> int:
     spec.remove(sid)
     print("no_interference includes its target; a single part is refused: OK")
 
+    # a part is named by its Name OR its Label: a requirement recorded on one was
+    # skipped by a check on the other, and the check said OK while it failed
+    from freecad_layers import gate
+    lab = doc.addObject("Part::Box", "Named")
+    lab.Label = "Shown"
+    doc.recompute()
+    for recorded in ("Shown", "Named"):
+        sid = spec.require(recorded, "bbox", size=[99, 99, 99])
+        for asked in ("Named", "Shown"):
+            r = gate.check_target(asked, autosave=False)
+            assert r["status"] == verify.FAIL and "FAIL contract" in r["text"], (recorded, asked, r)
+        spec.remove(sid)
+    print("requirements found by Name or Label, whichever the check uses: OK")
+
     _tmp.cleanup()
     print("SPEC_OK")
     return 0
