@@ -163,6 +163,19 @@ def main() -> int:
             in forced["verdict"] and "front" not in forced["verdict"], forced
         print("4 views: each fits its own slot, an iso over the title block FAILs: OK")
 
+        # TechDraw draws a part where it is: a 100 mm bar in an App::Part turned 90 deg
+        # shows 100 mm TALL in the top view; sized on its own frame (100 wide, 10 tall)
+        # the sheet stayed 1:1 and the view overflowed its slot, verdict OK
+        turned = doc.addObject("App::Part", "Turned")
+        turned.Placement = App.Placement(App.Vector(), App.Rotation(App.Vector(0, 0, 1), 90))
+        bar = doc.addObject("Part::Box", "Bar")
+        bar.Length, bar.Width, bar.Height = 100, 10, 10
+        turned.addObject(bar)
+        doc.recompute()
+        tb = drawing.sheet_for(bar, views=("front", "top"), dims=False)
+        assert tb["scale"] == 0.5 and tb["verdict"].startswith("OK"), tb
+        print("a part in a turned App::Part is sized as TechDraw draws it: OK")
+
     print("TECHDRAW_OK")
     return 0
 

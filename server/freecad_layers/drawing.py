@@ -240,7 +240,7 @@ def sheet_for(obj, dxf_path: Optional[str] = None,
     if scale == "auto":
         # each view in ITS slot: the 4th, above the title block, is lower (sized on
         # the first slot, an iso view of a 45 mm cube at 1:1 ran 14 mm into the title block)
-        scale = min(auto_scale([obj.Shape], [vname], slots[i][2], slots[i][3])
+        scale = min(auto_scale([verify.global_shape(obj)], [vname], slots[i][2], slots[i][3])
                     for i, vname in enumerate(views[:4]))
     made = []
     for i, vname in enumerate(views[:4]):
@@ -273,7 +273,8 @@ def _view_in_slot(view, slot, margin: float = 0.5) -> Optional[bool]:
     """Does the view's extent stay inside its slot (x, y, w, h, centred)? None if
     its extent cannot be computed."""
     try:
-        shapes = [s.Shape for s in view.Source if hasattr(s, "Shape")]
+        # TechDraw draws a part where it is: in a turned App::Part, turned too
+        shapes = [verify.global_shape(s) for s in view.Source if hasattr(s, "Shape")]
         w, h = projected_size(shapes, tuple(view.Direction), tuple(view.XDirection))
     except Exception:  # noqa: BLE001
         return None
@@ -283,7 +284,8 @@ def _view_in_slot(view, slot, margin: float = 0.5) -> Optional[bool]:
 
 def _view_fits(view, page_w: float, page_h: float) -> Optional[bool]:
     try:
-        shapes = [s.Shape for s in view.Source if hasattr(s, "Shape")]
+        # TechDraw draws a part where it is: in a turned App::Part, turned too
+        shapes = [verify.global_shape(s) for s in view.Source if hasattr(s, "Shape")]
         w, h = projected_size(shapes, tuple(view.Direction), tuple(view.XDirection))
     except Exception:  # noqa: BLE001
         return None
