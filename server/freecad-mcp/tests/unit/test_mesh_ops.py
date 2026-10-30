@@ -97,11 +97,15 @@ def make_mesh_object(name="TestMesh", count_points=100, count_facets=200):
     bb.Center = MagicMock(x=25.0, y=20.0, z=15.0)
     mesh.BoundBox = bb
     mesh.Topology = ([(0, 0, 0), (1, 0, 0), (0, 1, 0)], [(0, 1, 2)])
+    mesh.hasNonUniformOrientedFacets.return_value = False
+    mesh.countNonUniformOrientedFacets.return_value = 0
     mesh.copy.return_value = MagicMock(
         CountPoints=count_points,
         CountFacets=count_facets,
         BoundBox=bb,
+        Topology=mesh.Topology,
     )
+    mesh.copy.return_value.hasNonUniformOrientedFacets.return_value = False
 
     obj.Mesh = mesh
     # Mesh objects don't have Shape
@@ -705,7 +709,8 @@ class TestValidateMesh(unittest.TestCase):
             'auto_repair': True
         })
         self.assertIn("Attempting repairs", result)
-        self.assertIn("harmonized normals", result)
+        self.assertIn("fixed self-intersections", result)
+        self.assertNotIn("orient", result)      # nothing was wrong with the normals
         self.assertIn("All issues resolved", result)
 
     def test_auto_repair_reports_raised_failures_not_silence(self):
@@ -736,7 +741,55 @@ class TestValidateMesh(unittest.TestCase):
         self.assertIn("removeDuplicatedPoints", result)
         self.assertIn("OCCT internal error", result)
         # Other repairs must still have run despite one raising.
-        self.assertIn("harmonized normals", result)
+        repaired.harmonizeNormals.assert_called_once()
+        repaired.fillupHoles.assert_called_once()
+
+    # MCP FREECAD v2: orientation was promised by the docstring but never checked
+    _TETRA_POINTS = [(0, 0, 0), (1, 0, 0), (0, 1, 0), (0, 0, 1)]
+    _TETRA_OUT = [(0, 2, 1), (0, 1, 3), (0, 3, 2), (1, 2, 3)]   # signed volume +1/6
+
+    def test_inside_out_mesh_is_not_valid(self):
+        mesh_obj = make_mesh_object("Inv")
+        mesh_obj.Mesh.Volume = 1 / 6          # Mesh.Volume is the ABSOLUTE value
+        mesh_obj.Mesh.Topology = (self._TETRA_POINTS, [f[::-1] for f in self._TETRA_OUT])
+        mock_FreeCAD.ActiveDocument = make_mock_doc([mesh_obj])
+        result = self.handler.validate_mesh({'object_name': 'Inv'})
+        self.assertIn("inside-out", result)
+        self.assertNotIn("VALID", result)
+
+    def test_outward_mesh_is_valid(self):
+        mesh_obj = make_mesh_object("Out")
+        mesh_obj.Mesh.Topology = (self._TETRA_POINTS, self._TETRA_OUT)
+        mock_FreeCAD.ActiveDocument = make_mock_doc([mesh_obj])
+        self.assertIn("VALID", self.handler.validate_mesh({'object_name': 'Out'}))
+
+    def test_flipped_facets_reported(self):
+        mesh_obj = make_mesh_object("Flip")
+        mesh_obj.Mesh.hasNonUniformOrientedFacets.return_value = True
+        mesh_obj.Mesh.countNonUniformOrientedFacets.return_value = 1
+        mock_FreeCAD.ActiveDocument = make_mock_doc([mesh_obj])
+        result = self.handler.validate_mesh({'object_name': 'Flip'})
+        self.assertIn("1 facet(s) oriented against their neighbours", result)
+        self.assertNotIn("VALID", result)
+
+    def test_fillupholes_gets_its_required_argument(self):
+        """FreeCAD 1.1's fillupHoles() requires the largest hole size: called with
+        none it raised, and no hole was ever filled."""
+        mesh_obj = make_mesh_object("Open")
+        mesh_obj.Mesh.isSolid.return_value = False
+        repaired = mesh_obj.Mesh.copy.return_value
+        filled = []
+        repaired.isSolid.side_effect = lambda: bool(filled)
+        repaired.hasNonManifolds.return_value = False
+        repaired.hasSelfIntersections.return_value = False
+
+        def fill(max_edges, level=0, max_area=0.0):   # FreeCAD's signature
+            filled.append(max_edges)
+        repaired.fillupHoles.side_effect = fill
+        mock_FreeCAD.ActiveDocument = make_mock_doc([mesh_obj])
+        result = self.handler.validate_mesh({'object_name': 'Open', 'auto_repair': True})
+        self.assertNotIn("fillupHoles:", result)
+        self.assertIn("filled holes (now watertight)", result)
 
 
 class TestSimplifyMesh(unittest.TestCase):

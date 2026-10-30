@@ -32,8 +32,11 @@ m = MeshPart.meshFromShape(Shape=obj.Shape, LinearDeflection=0.2)   # or Mesh.re
 m.harmonizeNormals(); m.removeNonManifolds(); m.fillupHoles(10)
 m.removeDuplicatedPoints(); m.removeDuplicatedFacets()
 assert not m.hasNonManifolds() and m.isSolid()   # clean + watertight before export
+assert not m.hasNonUniformOrientedFacets()        # and consistently oriented
 ```
-Checks: `hasNonManifolds()`, `hasSelfIntersections()`, `isSolid()`. Example: `install/mesh_repair_test.py`.
+Checks: `hasNonManifolds()`, `hasSelfIntersections()`, `isSolid()`, `hasNonUniformOrientedFacets()`.
+`Mesh.Volume` is always positive, even inside out: the base's `mesh_operations validate_mesh`
+(with `auto_repair`) checks the orientation with the signed volume and turns the mesh outward. Example: `install/mesh_repair_test.py`.
 
 ## Only without the tools (execute_python)
 `export` is the same code with the checks: `from freecad_layers import export;

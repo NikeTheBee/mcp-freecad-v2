@@ -13,6 +13,41 @@ import FreeCAD
 from .base import NO_ACTIVE_DOCUMENT_ERROR, BaseHandler
 
 
+_MAX_HOLE_EDGES = 100   # auto_repair fills holes up to this many rim edges
+
+
+def _signed_volume(mesh) -> float:
+    """Signed volume of a mesh: < 0 when its normals point inward.
+
+    MCP FREECAD v2: Mesh.Volume is the ABSOLUTE value (an inside-out 10 mm cube
+    reads +1000, its signed volume is -1000), so it cannot tell inside-out.
+    """
+    points, facets = mesh.Topology
+    try:
+        import numpy as np
+        p = np.array([(q[0], q[1], q[2]) for q in points], dtype=float).reshape(-1, 3)
+        f = np.array(facets, dtype=int).reshape(-1, 3)
+        a, b, c = p[f[:, 0]], p[f[:, 1]], p[f[:, 2]]
+        return float(np.einsum("ij,ij->i", a, np.cross(b, c)).sum() / 6.0)
+    except ImportError:
+        v = 0.0
+        for i, j, k in facets:
+            a, b, c = points[i], points[j], points[k]
+            v += (a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0])
+                  + a[2] * (b[0] * c[1] - b[1] * c[0])) / 6.0
+        return v
+
+
+def _orientation_issue(mesh) -> str:
+    """'' when the facets are oriented consistently and outward."""
+    if mesh.hasNonUniformOrientedFacets():
+        return (f"{mesh.countNonUniformOrientedFacets()} facet(s) oriented against their "
+                "neighbours (flipped normals)")
+    if mesh.isSolid() and _signed_volume(mesh) < 0:
+        return "inside-out (all normals point inward)"
+    return ""
+
+
 class MeshOpsHandler(BaseHandler):
     """Handler for mesh and generic file I/O operations.
 
@@ -557,6 +592,13 @@ class MeshOpsHandler(BaseHandler):
                 issues.append("not watertight (open boundary)")
             if mesh.hasInvalidPoints():
                 issues.append("invalid/NaN points")
+            # MCP FREECAD v2: the docstring promised a normal-orientation check that
+            # was never made: a cube with one flipped facet, or turned inside out,
+            # "passed all validation checks" (slicers then see holes or a void).
+            orientation = _orientation_issue(mesh)
+            if orientation:
+                issues.append(orientation)
+            had_self_intersections = "self-intersections" in issues
 
             # Check for duplicates
             orig_points = mesh.CountPoints
@@ -610,23 +652,36 @@ class MeshOpsHandler(BaseHandler):
 
                 try:
                     mesh_copy.fixSelfIntersections()
-                    if not mesh_copy.hasSelfIntersections():
+                    # MCP FREECAD v2: said "fixed" also when there were none to fix
+                    if had_self_intersections and not mesh_copy.hasSelfIntersections():
                         repairs_done.append("fixed self-intersections")
                 except Exception as e:
                     repairs_failed.append(f"fixSelfIntersections: {e}")
 
                 try:
                     mesh_copy.harmonizeNormals()
-                    repairs_done.append("harmonized normals")
                 except Exception as e:
                     repairs_failed.append(f"harmonizeNormals: {e}")
 
                 try:
-                    mesh_copy.fillupHoles()
-                    if mesh_copy.isSolid():
+                    was_solid = mesh_copy.isSolid()
+                    # MCP FREECAD v2: called with no argument it raised in FreeCAD 1.1
+                    # ("takes at least 1 argument"): no hole was ever filled. The
+                    # argument is the largest hole filled, in edges along its rim.
+                    mesh_copy.fillupHoles(_MAX_HOLE_EDGES)
+                    if not was_solid and mesh_copy.isSolid():
                         repairs_done.append("filled holes (now watertight)")
                 except Exception as e:
                     repairs_failed.append(f"fillupHoles: {e}")
+
+                try:
+                    # a closed mesh can tell inside-out: turn it outward
+                    if mesh_copy.isSolid() and _signed_volume(mesh_copy) < 0:
+                        mesh_copy.flipNormals()
+                    if orientation and not _orientation_issue(mesh_copy):
+                        repairs_done.append("fixed facet orientation (normals point outward)")
+                except Exception as e:
+                    repairs_failed.append(f"flipNormals: {e}")
 
                 # Apply repaired mesh
                 obj.Mesh = mesh_copy
@@ -651,6 +706,9 @@ class MeshOpsHandler(BaseHandler):
                     remaining.append("self-intersections")
                 if not mesh_copy.isSolid():
                     remaining.append("not watertight")
+                left = _orientation_issue(mesh_copy)
+                if left:
+                    remaining.append(left)
 
                 if remaining:
                     result += f"\n  Remaining issues: {', '.join(remaining)}"
