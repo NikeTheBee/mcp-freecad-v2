@@ -52,6 +52,7 @@ GRAFT_TESTS = [
 CORE_TESTS = [
     ("partdesign_test.py", "PARTDESIGN_OK"),
     ("partdesign_dressup_test.py", "DRESSUP_OK"),
+    ("partdesign_ops_test.py", "PD_OPS_OK"),
     ("spreadsheet_variants_test.py", "SPREADSHEET_OK"),
     ("tolerances_test.py", "TOLERANCES_OK"),
     ("mesh_repair_test.py", "MESH_REPAIR_OK"),

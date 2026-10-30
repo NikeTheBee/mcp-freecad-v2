@@ -642,6 +642,33 @@ class TestHoleWizard(unittest.TestCase):
         self.assertAlmostEqual(hole.HoleCutCountersinkAngle, 90.0)
         assert_success_contains(self, result, "countersink")
 
+    def test_face_index_on_the_body_itself_drills_inside_it_from_its_tip(self):
+        """MCP FREECAD v2 (2026-10-30): object_name = the Body with face_index
+        took the CSG path: a Part::Cut BESIDE the Body at the global (x, y),
+        the face ignored -- the Body kept 1000 mm3, replied "Created simple
+        hole" (measured). The Body's faces are its Tip's: drill from it."""
+        tip = make_box_object("Pad")
+        tip.Shape.Faces[5].CenterOfMass = _Vec(10, 5, 5)
+        body = make_body("Body", tip=tip, group=[tip])
+        doc = make_mock_doc([body, tip])
+        mock_FreeCAD.ActiveDocument = doc
+        hole_sketch = MagicMock()
+        hole_sketch.Placement = _Placement()
+        hole = MagicMock()
+        hole.State = []
+        body.newObject.side_effect = [hole_sketch, hole]
+
+        result = self.handler.hole_wizard({
+            'object_name': 'Body', 'face_index': 6, 'diameter': 2, 'depth': 3,
+        })
+
+        body.newObject.assert_any_call("PartDesign::Hole", "Body_Hole")
+        self.assertEqual(hole_sketch.AttachmentSupport, [(tip, 'Face6')])
+        self.assertEqual(hole_sketch.AttachmentOffset.Base, _Vec(10, 5, 5))
+        self.assertEqual(hole.Depth, 3)
+        doc.addObject.assert_not_called()
+        assert_success_contains(self, result, "Face6", "PartDesign::Hole in Body")
+
     def test_invalid_hole_type_rejected_in_body(self):
         box = make_box_object("Pad")
         body = make_body("Body", group=[box])
@@ -843,6 +870,43 @@ class TestLinearPattern(unittest.TestCase):
         self.assertEqual(body.Tip, linpat)
         assert_success_contains(self, result, "4 instances", "x", "10mm", "PartDesign::LinearPattern", "Body")
 
+    def test_axis_names_the_direction_as_in_the_tool_schema(self):
+        """MCP FREECAD v2 (2026-10-30): the tool's schema calls the pattern
+        direction "axis"; only "direction" was read, so axis="y" patterned
+        along X (measured: holes at x 5/10/15 instead of y 5/10/15)."""
+        feat = make_part_object("Pad")
+        body = make_body("Body", group=[feat])
+        doc = make_mock_doc([body, feat])
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.linear_pattern({
+            'feature_name': 'Pad', 'axis': 'y', 'count': 3, 'spacing': 5,
+        })
+
+        self.assertEqual(body.newObject.return_value.Direction, (body.Origin.OriginFeatures[1], ['']))
+        assert_success_contains(self, result, "3 instances", "y direction")
+
+    def test_patterns_and_mirror_in_a_second_body(self):
+        """MCP FREECAD v2 (2026-10-30): a document's 2nd Body names its origin
+        features X_Axis001, XY_Plane001... (Role keeps 'X_Axis'): looked up by
+        Name, linear/polar patterns and mirror there replied "Body Body001's
+        Origin has no X_Axis feature" and made nothing (measured)."""
+        feat = make_part_object("Pad")
+        body = make_body("Body001", group=[feat])
+        for f in body.Origin.OriginFeatures:
+            f.Role, f.Name = f.Name, f.Name + "001"
+        doc = make_mock_doc([body, feat])
+        mock_FreeCAD.ActiveDocument = doc
+        feats = body.Origin.OriginFeatures
+
+        result = self.handler.linear_pattern({'feature_name': 'Pad', 'direction': 'x', 'count': 2, 'spacing': 8})
+        self.assertEqual(body.newObject.return_value.Direction, (feats[0], ['']), result)
+        result = self.handler.polar_pattern({'feature_name': 'Pad', 'axis': 'z', 'count': 2, 'angle': 360})
+        self.assertEqual(body.newObject.return_value.Axis, (feats[2], ['']), result)
+        result = self.handler.mirror_feature({'feature_name': 'Pad', 'plane': 'YZ'})
+        self.assertEqual(body.newObject.return_value.MirrorPlane, (feats[5], ['']), result)
+        assert_success_contains(self, result, "PartDesign::Mirrored", "Body001")
+
     def test_invalid_direction_rejected_in_body(self):
         feat = make_part_object("Pad")
         body = make_body("Body", group=[feat])
@@ -888,6 +952,30 @@ class TestPolarPattern(unittest.TestCase):
 
         self.assertEqual(doc.copyObject.call_count, 5)  # 6 - 1
         assert_success_contains(self, result, "6 instances", "Z", "360")
+
+    def test_standalone_copies_turn_around_the_axis(self):
+        """MCP FREECAD v2 (2026-10-30): each copy is turned around the
+        document's axis, position included. It kept the original's Base and
+        only spun on itself: a cylinder at (10, 0) patterned 4 times around Z
+        gave 4 cylinders all at (10, 0), replied "4 instances" (measured).
+        Steps as the Body's PolarPattern: 360 shared, otherwise first to last."""
+        for angle, count, want in ((360, 4, [(0, 10), (-10, 0), (0, -10)]),
+                                   (180, 3, [(0, 10), (-10, 0)])):
+            reset_mocks()
+            feat = make_part_object("F")
+            feat.Label = "F"
+            feat.Placement = _Placement(base=_Vec(10, 0, 0))
+            doc = make_mock_doc([feat])
+            mock_FreeCAD.ActiveDocument = doc
+
+            self.handler.polar_pattern({'feature_name': 'F', 'axis': 'z', 'angle': angle, 'count': count})
+
+            got = [(round(o.Placement.Base.x, 9) + 0.0, round(o.Placement.Base.y, 9) + 0.0)
+                   for o in doc.Objects[1:]]
+            self.assertEqual(got, want)
+            self.assertEqual([round(o.Placement.Rotation.angle, 9) for o in doc.Objects[1:]],
+                             [round(360 / count * i if angle == 360 else 90 * i, 9)
+                              for i in range(1, count)])
 
     def test_count_zero_rejected(self):
         """count<1 must be rejected before the `angle / count` division —
@@ -1162,7 +1250,7 @@ class TestRevolution(unittest.TestCase):
         doc.addObject.assert_not_called()
         rev = body.newObject.return_value
         self.assertEqual(rev.Profile, sketch)
-        self.assertEqual(rev.ReferenceAxis, (sketch, ['H_Axis']))
+        self.assertEqual(rev.ReferenceAxis, (body.Origin.OriginFeatures[0], ['']))   # Body's X_Axis
         self.assertEqual(rev.Angle, 270)
         assert_success_contains(self, result, "S", "270", "X", "PartDesign::Revolution", "Body")
 
@@ -1207,7 +1295,7 @@ class TestRevolution(unittest.TestCase):
 
         result = self.handler.revolution({'sketch_name': 'S', 'axis': 'z'})
         rev = body.newObject.return_value
-        self.assertEqual(rev.ReferenceAxis, (sketch, ['V_Axis']))
+        self.assertEqual(rev.ReferenceAxis, (body.Origin.OriginFeatures[2], ['']))   # Z_Axis
         assert_success_contains(self, result, "Z")
 
         body.newObject.reset_mock()
@@ -1216,7 +1304,31 @@ class TestRevolution(unittest.TestCase):
         body.newObject.assert_not_called()
 
         result = self.handler.groove({'sketch_name': 'S', 'axis': 'x'})
-        self.assertEqual(body.newObject.return_value.ReferenceAxis, (sketch, ['H_Axis']))
+        self.assertEqual(body.newObject.return_value.ReferenceAxis, (body.Origin.OriginFeatures[0], ['']))
+
+    def test_revolution_turns_around_the_body_axis_not_the_sketch_axis(self):
+        """MCP FREECAD v2 (2026-10-30): the reference is the Body's own origin
+        axis (a line through the Body's origin), not the sketch's H/V axis,
+        which runs through the SKETCH's origin: an XZ sketch shifted 5 mm along
+        x revolved "around Z" around x = 5 (126 mm3 D4 cylinder instead of the
+        754 mm3 ring). In a 2nd Body the axis is named Z_Axis001: matched by
+        its Role."""
+        sketch = make_sketch("S")
+        sketch.Placement = _Placement(base=_Vec(5, 0, 0), rotation=_Rotation(_Vec(1, 0, 0), 90))
+        body = make_body("Body001", group=[sketch])
+        for f in body.Origin.OriginFeatures:
+            f.Role, f.Name = f.Name, f.Name + "001"
+        doc = make_mock_doc([body, sketch])
+        mock_FreeCAD.ActiveDocument = doc
+
+        for op, args in ((self.handler.revolution, {'angle': 360}),
+                         (self.handler.groove, {'angle': 90}),
+                         (self.handler.create_helix, {'pitch': 5, 'height': 20})):
+            body.newObject.reset_mock()
+            result = op({'sketch_name': 'S', 'axis': 'z', **args})
+            self.assertEqual(body.newObject.return_value.ReferenceAxis,
+                             (body.Origin.OriginFeatures[2], ['']), result)
+            self.assertNotEqual(body.newObject.return_value.ReferenceAxis[0], sketch)
 
 
 class TestGroove(unittest.TestCase):
@@ -1604,7 +1716,7 @@ class TestCreateHelix(unittest.TestCase):
         doc.addObject.assert_not_called()
         helix = body.newObject.return_value
         self.assertEqual(helix.Profile, sketch)
-        self.assertEqual(helix.ReferenceAxis, (sketch, ['H_Axis']))
+        self.assertEqual(helix.ReferenceAxis, (body.Origin.OriginFeatures[0], ['']))   # X_Axis
         self.assertEqual(helix.Mode, 'pitch-turns-angle')
         self.assertEqual(helix.Pitch, 5)
         self.assertEqual(helix.Turns, 3)
@@ -1621,7 +1733,7 @@ class TestCreateHelix(unittest.TestCase):
         })
 
         helix = body.newObject.return_value
-        self.assertEqual(helix.ReferenceAxis, (sketch, ['V_Axis']))
+        self.assertEqual(helix.ReferenceAxis, (body.Origin.OriginFeatures[1], ['']))   # Y_Axis
         self.assertEqual(helix.Mode, 'pitch-height-angle')
         self.assertEqual(helix.Height, 20)
         self.assertTrue(helix.LeftHanded)
@@ -1759,7 +1871,9 @@ class TestShellSolid(unittest.TestCase):
 
         doc.addObject.assert_called_with("Part::Thickness", "Shell")
         shell = doc.Objects[-1]
-        self.assertEqual(shell.Value, 2)
+        # MCP FREECAD v2 (2026-10-30): walls inside the part. A positive value
+        # offsets outward: a 20x20x10 box grew to 24x24x12 (2912 mm3, measured)
+        self.assertEqual(shell.Value, -2)
         # Part::Thickness has no Source property at all (confirmed live:
         # AttributeError on assignment, unconditionally) - the base object
         # reference is carried entirely by .Faces's own (object, subelement)
@@ -1874,6 +1988,31 @@ class TestDraftFaces(unittest.TestCase):
         mock_FreeCAD.ActiveDocument = doc
         result = self.handler.draft_faces({'object_name': 'X', 'angle': 5})
         assert_error_contains(self, result, "no faces")
+
+    def test_faces_hinge_on_the_neutral_plane(self):
+        """MCP FREECAD v2 (2026-10-30): neutral_plane (default XY) was read but
+        never set; FreeCAD then guessed one from the face's first edge and the
+        y=0 side of a 20x10x5 pad turned about a VERTICAL edge, a plan-view
+        wedge (+87.5 mm3) where the XY plane removes 21.9 mm3 (measured)."""
+        box = make_box_object("Pad")
+        body = make_body("Body", tip=box, group=[box])
+        doc = make_mock_doc([body, box])
+        mock_FreeCAD.ActiveDocument = doc
+        draft = body.newObject.return_value
+        draft.State = []
+        planes = body.Origin.OriginFeatures
+
+        result = self.handler.draft_faces({'object_name': 'Pad', 'faces': [1], 'angle': 5})
+        self.assertEqual(draft.NeutralPlane, (planes[3], ['']))          # XY_Plane
+        assert_success_contains(self, result, "5° angle", "neutral plane XY")
+
+        self.handler.draft_faces({'object_name': 'Pad', 'faces': [1], 'angle': 5, 'neutral_plane': 'yz'})
+        self.assertEqual(draft.NeutralPlane, (planes[5], ['']))
+
+        body.newObject.reset_mock()
+        result = self.handler.draft_faces({'object_name': 'Pad', 'faces': [1], 'neutral_plane': 'QQ'})
+        assert_error_contains(self, result, "invalid neutral_plane", "qq")
+        body.newObject.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

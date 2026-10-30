@@ -60,6 +60,18 @@ def _given_faces(args) -> list:
     return [args['face_index']] if args.get('face_index') is not None else []
 
 
+def _origin_feature(body, role: str):
+    """The Body's origin axis or plane `role` ('X_Axis', 'XY_Plane'...), or None.
+    MCP FREECAD v2 (2026-10-30): matched by its Role, not its Name -- in a
+    document's 2nd Body they are named X_Axis001, XY_Plane001..., and linear /
+    polar patterns and mirror there replied "Body Body001's Origin has no
+    X_Axis feature" (measured), making nothing."""
+    for f in body.Origin.OriginFeatures:
+        if getattr(f, "Role", None) == role or f.Name == role:
+            return f
+    return None
+
+
 class PartDesignOpsHandler(BaseHandler):
     """Handler for PartDesign workbench operations."""
 
@@ -558,12 +570,18 @@ class PartDesignOpsHandler(BaseHandler):
             return f"Error creating auto chamfer: {e}"
 
     @staticmethod
-    def _sketch_axis_ref(sketch, axis, what: str):
-        """(reference, None) or (None, error). `axis` names a BODY axis (x, y, z,
-        as for patterns and the standalone revolution), mapped to the sketch's
-        own H_Axis or V_Axis that runs along it (MCP FREECAD v2, 2026-10-14).
-        The letters used to name the SKETCH's axes: on an XZ sketch "y" (its
-        V axis) revolved around Z while the reply said "around Y-axis"."""
+    def _sketch_axis_ref(sketch, axis, what: str, body=None):
+        """(ReferenceAxis value, None) or (None, error). `axis` names a BODY axis
+        (x, y, z, as for patterns and the standalone revolution), checked against
+        the sketch's own H_Axis or V_Axis that runs along it (MCP FREECAD v2,
+        2026-10-14). The letters used to name the SKETCH's axes: on an XZ sketch
+        "y" (its V axis) revolved around Z while the reply said "around Y-axis".
+        MCP FREECAD v2 (2026-10-30): the reference is the Body's own origin axis,
+        the LINE through the Body's origin. The sketch's H/V axis runs through
+        the SKETCH's origin: an XZ sketch shifted 5 mm along x (profile x 5..7)
+        revolved "around Z" turned around x = 5 -- a 126 mm3 D4 cylinder instead
+        of the 754 mm3 ring r 5..7 -- and a helix profile 10 mm off its sketch
+        origin was Invalid (measured)."""
         a = str(axis).lower()
         if a not in ("x", "y", "z"):
             return None, f"Invalid axis '{axis}': must be 'x', 'y' or 'z'"
@@ -573,7 +591,10 @@ class PartDesignOpsHandler(BaseHandler):
                     "V_Axis": rot.multVec(FreeCAD.Vector(0, 1, 0))}
         for ref, d in in_plane.items():
             if abs(abs(d.dot(unit[a])) - 1.0) < 1e-9:
-                return ref, None
+                origin_axis = _origin_feature(body, a.upper() + "_Axis") if body is not None else None
+                if origin_axis is not None:
+                    return (origin_axis, ['']), None
+                return (sketch, [ref]), None
         held = [k for k in "xyz"
                 if any(abs(abs(d.dot(unit[k])) - 1.0) < 1e-9 for d in in_plane.values())]
         if held:
@@ -683,7 +704,14 @@ class PartDesignOpsHandler(BaseHandler):
             if not base_obj:
                 return f"Object not found: {object_name}"
 
-            body = self.find_body_for_object(base_obj, doc) if face_index is not None else None
+            # MCP FREECAD v2 (2026-10-30): face_index on the Body itself drills
+            # from its Tip (the Body's faces are its Tip's), inside the Body. It
+            # took the CSG path below: a Part::Cut BESIDE the Body at the global
+            # (x, y), face ignored -- the Body kept 1000 mm3, no hole, replied
+            # "Created simple hole" (measured).
+            body = None
+            if face_index is not None:
+                body, base_obj = self._dressup_target(base_obj, doc)
 
             # MCP FREECAD v2 (NikeTheBee, 2026-10-12): without face_index, an
             # object inside a PartDesign Body used to fall through to the CSG
@@ -872,7 +900,10 @@ class PartDesignOpsHandler(BaseHandler):
         """
         try:
             feature_name = args.get('feature_name', '')
-            direction = args.get('direction', 'x')
+            # MCP FREECAD v2 (2026-10-30): the tool's schema names the pattern
+            # direction "axis" (as polar_pattern); only "direction" was read, so
+            # axis="y" patterned along X (measured: holes at x 5/10/15, y 5).
+            direction = args.get('direction') or args.get('axis') or 'x'
             count = args.get('count', 3)
             spacing = args.get('spacing', 10)
             name = args.get('name', 'LinearPattern')
@@ -894,9 +925,7 @@ class PartDesignOpsHandler(BaseHandler):
                 axis_name = direction.upper() + "_Axis"
                 if axis_name not in ("X_Axis", "Y_Axis", "Z_Axis"):
                     return f"Invalid direction '{direction}': must be 'x', 'y', or 'z'"
-                axis_obj = next(
-                    (f for f in body.Origin.OriginFeatures if f.Name == axis_name), None
-                )
+                axis_obj = _origin_feature(body, axis_name)
                 if axis_obj is None:
                     return f"Body {body.Name}'s Origin has no {axis_name} feature"
 
@@ -1003,9 +1032,7 @@ class PartDesignOpsHandler(BaseHandler):
                 axis_name = axis.upper() + "_Axis"
                 if axis_name not in ("X_Axis", "Y_Axis", "Z_Axis"):
                     return f"Invalid axis '{axis}': must be 'x', 'y', or 'z'"
-                axis_obj = next(
-                    (f for f in body.Origin.OriginFeatures if f.Name == axis_name), None
-                )
+                axis_obj = _origin_feature(body, axis_name)
                 if axis_obj is None:
                     return f"Body {body.Name}'s Origin has no {axis_name} feature"
 
@@ -1032,8 +1059,13 @@ class PartDesignOpsHandler(BaseHandler):
                     f"(PartDesign::PolarPattern in {body.Name})"
                 )
 
-            # No Body — standalone doc.copyObject approach (unchanged).
-            angle_step = angle / count
+            # No Body — standalone doc.copyObject approach.
+            # MCP FREECAD v2 (2026-10-30): steps as PartDesign::PolarPattern
+            # spaces them (the Body path): a full 360 deg shares the turn, any
+            # other angle runs from the first copy to the last. angle / count
+            # put 3 copies over 180 deg at 0/60/120 (the Body path: 0/90/180).
+            full_turn = abs(abs(angle) - 360) < 1e-9
+            angle_step = angle / count if full_turn or count < 2 else angle / (count - 1)
 
             # No fallback: an unrecognized axis used to silently rotate
             # around Z while the success message still echoed the
@@ -1048,9 +1080,14 @@ class PartDesignOpsHandler(BaseHandler):
                 copy.Label = f"{feature.Label}_Polar{i}"
                 rotation_angle = angle_step * i
                 rotation = FreeCAD.Rotation(axis_vector, rotation_angle)
+                # MCP FREECAD v2 (2026-10-30): turned around the document's
+                # axis, position included. The copy kept the original's Base and
+                # only spun on itself: a cylinder at (10, 0) patterned 4 times
+                # around Z gave 4 cylinders all at (10, 0), replied "Created
+                # polar pattern: 4 instances" (measured).
                 new_placement = FreeCAD.Placement(
-                    feature.Placement.Base,
-                    feature.Placement.Rotation.multiply(rotation)
+                    rotation.multVec(feature.Placement.Base),
+                    rotation.multiply(feature.Placement.Rotation)
                 )
                 copy.Placement = new_placement
                 copies.append(copy)
@@ -1100,9 +1137,7 @@ class PartDesignOpsHandler(BaseHandler):
                 origin_planes = {"XY_Plane", "XZ_Plane", "YZ_Plane"}
                 if plane_name not in origin_planes:
                     return f"Invalid plane '{plane}': must be 'XY', 'XZ', or 'YZ'"
-                plane_obj = next(
-                    (f for f in body.Origin.OriginFeatures if f.Name == plane_name), None
-                )
+                plane_obj = _origin_feature(body, plane_name)
                 if plane_obj is None:
                     return f"Body {body.Name}'s Origin has no {plane_name} feature"
 
@@ -1210,15 +1245,15 @@ class PartDesignOpsHandler(BaseHandler):
             body = self.find_body_for_object(sketch, doc)
 
             if body:
-                # ReferenceAxis is the sketch's H_Axis or V_Axis: the one
-                # running along the requested body axis
-                ref_axis, err = self._sketch_axis_ref(sketch, axis, "revolving")
+                # ReferenceAxis is the Body's own axis, which must run along
+                # the sketch's H_Axis or V_Axis
+                ref_axis, err = self._sketch_axis_ref(sketch, axis, "revolving", body)
                 if err:
                     return err
 
                 revolution = body.newObject("PartDesign::Revolution", name)
                 revolution.Profile = sketch
-                revolution.ReferenceAxis = (sketch, [ref_axis])
+                revolution.ReferenceAxis = ref_axis
                 revolution.Angle = angle
 
                 self.recompute(doc)
@@ -1290,16 +1325,16 @@ class PartDesignOpsHandler(BaseHandler):
             if not body:
                 return f"Sketch {sketch_name} must be in a PartDesign Body"
 
-            # ReferenceAxis is the sketch's H_Axis or V_Axis: the one running
-            # along the requested body axis (validated before any object)
-            ref_axis, err = self._sketch_axis_ref(sketch, axis, "revolving")
+            # ReferenceAxis is the Body's own axis, which must run along the
+            # sketch's H_Axis or V_Axis (validated before any object)
+            ref_axis, err = self._sketch_axis_ref(sketch, axis, "revolving", body)
             if err:
                 return err
 
             groove = body.newObject("PartDesign::Groove", name)
             groove.Profile = sketch
             groove.Angle = angle
-            groove.ReferenceAxis = (sketch, [ref_axis])
+            groove.ReferenceAxis = ref_axis
 
             self.recompute(doc)
 
@@ -1620,9 +1655,23 @@ class PartDesignOpsHandler(BaseHandler):
                         f"({n_faces} faces, valid range 1-{n_faces})")
 
             if body:
+                # MCP FREECAD v2 (2026-10-30): the faces hinge on the Body's
+                # neutral_plane (default XY: they taper going up +Z). It was read
+                # but never set, and FreeCAD then guesses one from the face's
+                # first edge: on a 20x10x5 pad the y=0 side turned 5 deg about a
+                # VERTICAL edge, a plan-view wedge adding 87.5 mm3 where the XY
+                # neutral plane removes 21.9 mm3 (measured).
+                neutral_plane = args.get('neutral_plane', 'XY')
+                plane_obj = None
+                if neutral_plane:
+                    plane_obj = _origin_feature(body, str(neutral_plane).upper() + "_Plane")
+                    if plane_obj is None:
+                        return f"Invalid neutral_plane '{neutral_plane}': must be 'XY', 'XZ' or 'YZ'"
                 draft = body.newObject("PartDesign::Draft", name)
                 draft.Angle = angle
                 draft.Reversed = False
+                if plane_obj is not None:
+                    draft.NeutralPlane = (plane_obj, [''])
                 face_names = [f"Face{idx}" for idx in face_indices]
                 draft.Base = (obj, face_names)
 
@@ -1632,7 +1681,9 @@ class PartDesignOpsHandler(BaseHandler):
                 if err:
                     return err
 
-                return f"Created draft: {draft.Name} on {len(face_indices)} selected faces with {angle}° angle"
+                hinge = f", neutral plane {str(neutral_plane).upper()}" if plane_obj is not None else ""
+                return (f"Created draft: {draft.Name} on {len(face_indices)} selected faces "
+                        f"with {angle}° angle{hinge}")
             else:
                 return "Draft operation requires object to be in a PartDesign Body"
 
@@ -1730,7 +1781,11 @@ class PartDesignOpsHandler(BaseHandler):
             # (object, subelement_names) tuple; this line was both invalid
             # and redundant.
             shell = doc.addObject("Part::Thickness", name)
-            shell.Value = thickness
+            # MCP FREECAD v2 (2026-10-30): walls INSIDE the part, as the Body's
+            # PartDesign::Thickness and the closed shell make them. A positive
+            # Part::Thickness value offsets outward: a 20x20x10 box shelled 2 mm
+            # grew to 24x24x12 (2912 mm3; inward: 20x20x10, 1952 mm3, measured).
+            shell.Value = -abs(thickness)
             shell.Join = 2
 
             # Part::Thickness.Faces is an App::PropertyLinkSubList — it takes
@@ -1941,13 +1996,13 @@ class PartDesignOpsHandler(BaseHandler):
             if body:
                 # Same mapping as revolution()/groove(): a helix's
                 # ReferenceAxis must lie in the sketch's own plane.
-                ref_axis, err = self._sketch_axis_ref(sketch, axis, "winding")
+                ref_axis, err = self._sketch_axis_ref(sketch, axis, "winding", body)
                 if err:
                     return err
 
                 helix = body.newObject("PartDesign::AdditiveHelix", name)
                 helix.Profile = sketch
-                helix.ReferenceAxis = (sketch, [ref_axis])
+                helix.ReferenceAxis = ref_axis
                 # Mode must be set before Pitch/Turns/Height -- confirmed
                 # live that AdditiveHelix only treats the Mode-selected
                 # pair as live input; the third value is a read-only

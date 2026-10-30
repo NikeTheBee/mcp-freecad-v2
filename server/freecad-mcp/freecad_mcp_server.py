@@ -1447,6 +1447,10 @@ async def main():
                                              "Required on a headless FreeCAD."},
                     "distance": {"type": "number", "description": "Distance for chamfer", "default": 1},
                     "angle": {"type": "number", "description": "Angle for revolution/draft", "default": 360},
+                    # MCP FREECAD v2: read by draft but never offered
+                    "neutral_plane": {"type": "string", "enum": ["XY", "XZ", "YZ"], "default": "XY",
+                                      "description": "draft: the Body plane the faces hinge on "
+                                                     "(XY: they taper going up +Z)"},
                     "thickness": {"type": "number", "description": "Thickness value", "default": 2},
                     # Pattern parameters
                     "count": {"type": "integer", "description": "Pattern count", "default": 3},

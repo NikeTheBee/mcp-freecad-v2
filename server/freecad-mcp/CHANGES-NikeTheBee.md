@@ -160,6 +160,13 @@ It runs `git subtree pull --squash` on a clean tree. Then run the base's unit te
 | `AICopilot/handlers/sketch_ops.py` (`add_external_geometry`) | geo_ids come from `len(ExternalGeo)` before and after `addExternal`; adding nothing is an error. | `ExternalGeometryCount` does not exist in 1.1: the reference was added but the reply was an error (a retry added it twice), and the geo_id formula was wrong. |
 | `AICopilot/handlers/sketch_ops.py` (`verify_sketch`) | Closed and open wires together give INVALID, with the remedy. | A closed profile plus a stray line read USABLE, while Pad failed with "Wire is not closed.". |
 | `AICopilot/handlers/sketch_ops.py` (`add_fillet`) | The new arc's geo_id falls back to `GeometryCount - 1`. | `fillet()` returns None in 1.1: the reply said "geo_id=None". |
+| `AICopilot/handlers/partdesign_ops.py` (`_sketch_axis_ref`, revolution, groove, create_helix) | ReferenceAxis = the Body's origin axis instead of the sketch's H/V axis (same validation). | The sketch's axes pass through the sketch origin: an XZ profile shifted 5 mm revolved "around Z-axis" into a 126 mm3 cylinder instead of the 754 mm3 ring; a shifted helix was Invalid. |
+| `AICopilot/handlers/partdesign_ops.py` (`_origin_feature`, linear_pattern, polar_pattern, mirror_feature, draft) | Origin features found by Role (Name as fallback). | A second Body names them X_Axis001...: patterns and mirror refused every Body but the first. |
+| `AICopilot/handlers/partdesign_ops.py` (`linear_pattern`) | Reads `axis` as well as `direction`. | `axis` is the schema's only name for it and was ignored: axis=y patterned along X. |
+| `AICopilot/handlers/partdesign_ops.py` (`polar_pattern`, no Body) | Copies are rotated about the axis, position included; step = PolarPattern's rule. | The copies kept their position and only turned on themselves: 4 cylinders all at (10,0), "4 instances". |
+| `AICopilot/handlers/partdesign_ops.py` (`hole_wizard`) | `face_index` with the Body as object drills a PartDesign::Hole from its Tip. | A Part::Cut was built beside the Body at global (x,y), the face ignored, the Body unchanged, reply "Created simple hole". |
+| `AICopilot/handlers/partdesign_ops.py` (`_create_draft_with_selection`), `freecad_mcp_server.py` (schema) | `NeutralPlane` set from `neutral_plane` (Body XY/XZ/YZ, default XY), validated; offered in the schema. | Read but never applied: FreeCAD guessed a vertical hinge, a plan-view wedge adding 87.5 mm3 instead of removing 21.9 mm3. |
+| `AICopilot/handlers/partdesign_ops.py` (`_create_shell_with_selection`) | `Part::Thickness.Value = -abs(thickness)`. | A shell of a plain Part object grew outward: a 20x20x10 box became 24x24x12 (2912 mm3); a Body shell is inward (1952 mm3). |
 
 ## Test status
 
