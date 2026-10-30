@@ -37,10 +37,14 @@ class SketchOpsHandler(BaseHandler):
                 return f"Error creating sketch: {NO_ACTIVE_DOCUMENT_ERROR}"
 
             # (x,y,z,w) quaternion args to FreeCAD.Rotation for each plane.
+            # MCP FREECAD v2: YZ is FreeCAD's own YZ_Plane (sketch x -> +Y,
+            # y -> +Z). (0, 1, 0, 1) mapped sketch x to global -Z: a 20 x 10
+            # rectangle at (5, 5) on "YZ" spanned Z -25..-5 and Y 5..15
+            # instead of Y 5..25 and Z 5..15. XZ already matched XZ_Plane.
             plane_rotations = {
                 'XY': (0, 0, 0, 1),
                 'XZ': (1, 0, 0, 1),
-                'YZ': (0, 1, 0, 1),
+                'YZ': (0.5, 0.5, 0.5, 0.5),
             }
             rotation_args = plane_rotations.get(plane.upper())
             if rotation_args is None:
@@ -283,6 +287,13 @@ class SketchOpsHandler(BaseHandler):
                 verdict = "INVALID - Conflicting/redundant constraints; fix them first"
             elif profile_problem:
                 verdict = f"INVALID - {profile_problem}: the Pad would fail or be broken"
+            elif closed_wires > 0 and open_wires > 0:
+                # MCP FREECAD v2: a closed 10x10 square plus one stray line
+                # read "USABLE - Has closed profile", yet its Pad (and a
+                # Part::Extrusion) failed with "Wire is not closed."
+                verdict = (f"INVALID - {open_wires} open wire(s) beside the closed profile: "
+                           f"Pad/Pocket fail ('Wire is not closed'); delete them or make "
+                           f"them construction geometry")
             elif dof == 0 and closed_wires > 0 and open_wires == 0:
                 verdict = "VALID - Ready for pad/pocket/extrusion"
             elif closed_wires > 0:
@@ -602,16 +613,16 @@ class SketchOpsHandler(BaseHandler):
                 math.radians(90), math.radians(270)
             ))
 
-            # Coincident constraints to close the shape
-            sketch.addConstraint(Sketcher.Constraint('Coincident', g0, 2, g1, 1))
-            sketch.addConstraint(Sketcher.Constraint('Coincident', g1, 2, g2, 1))
-            sketch.addConstraint(Sketcher.Constraint('Coincident', g2, 2, g3, 1))
-            sketch.addConstraint(Sketcher.Constraint('Coincident', g3, 2, g0, 1))
-            # Tangent between lines and arcs
-            sketch.addConstraint(Sketcher.Constraint('Tangent', g0, g1))
-            sketch.addConstraint(Sketcher.Constraint('Tangent', g1, g2))
-            sketch.addConstraint(Sketcher.Constraint('Tangent', g2, g3))
-            sketch.addConstraint(Sketcher.Constraint('Tangent', g3, g0))
+            # Close the outline with endpoint-to-endpoint tangency (coincident
+            # AND tangent at each joint), as the Sketcher's own slot tool does.
+            # MCP FREECAD v2: Coincident + edge-to-edge Tangent at the same joint
+            # is redundant for the solver: a 20x6 slot solved with code -2,
+            # RedundantConstraints [5, 6, 7, 8], an empty Shape, and its Pad
+            # failed -- while the reply said "Added slot".
+            sketch.addConstraint(Sketcher.Constraint('Tangent', g0, 2, g1, 1))
+            sketch.addConstraint(Sketcher.Constraint('Tangent', g1, 2, g2, 1))
+            sketch.addConstraint(Sketcher.Constraint('Tangent', g2, 2, g3, 1))
+            sketch.addConstraint(Sketcher.Constraint('Tangent', g3, 2, g0, 1))
 
             self.recompute(doc)
 
@@ -646,12 +657,14 @@ class SketchOpsHandler(BaseHandler):
             if not sketch:
                 return f"Sketch not found: {sketch_name}"
 
-            # fillet() returns the index of the new arc geometry
             result = sketch.fillet(geo_id, pos_id, radius)
+            # MCP FREECAD v2: fillet() returns None (FreeCAD 1.1), so the reply
+            # read "new arc geo_id=None"; the new arc is appended last.
+            if not isinstance(result, int):
+                result = sketch.GeometryCount - 1
             self.recompute(doc)
 
-            # result is the new arc's geo_id -- previously computed and
-            # discarded, even though it's the one piece of information a
+            # result is the new arc's geo_id -- the one piece of information a
             # caller most needs after this call (to add further
             # constraints to the new arc).
             return (f"Added fillet to {sketch_name} at geo_id={geo_id}, "
@@ -750,7 +763,15 @@ class SketchOpsHandler(BaseHandler):
 
             # --- Fix a point ---
             elif ct == 'Fix':
-                c = Sketcher.Constraint('Lock', g1, p1)
+                # MCP FREECAD v2: the Sketcher has no 'Lock' constraint type --
+                # Constraint('Lock', 0, 1) raised "Invalid parameters", so Fix
+                # always failed. Lock the point where it is, as the Sketcher's
+                # Lock tool does: its X and Y coordinates (2 constraints).
+                if p1 not in (1, 2, 3):
+                    return "Fix needs a point: pos_id1 = 1 (start), 2 (end) or 3 (centre)"
+                pt = sketch.getPoint(g1, p1)
+                c = [Sketcher.Constraint('DistanceX', g1, p1, pt.x),
+                     Sketcher.Constraint('DistanceY', g1, p1, pt.y)]
 
             # --- Symmetric ---
             elif ct == 'Symmetric':
@@ -799,7 +820,10 @@ class SketchOpsHandler(BaseHandler):
             else:
                 return f"Unknown constraint type: {constraint_type}"
 
-            idx = sketch.addConstraint(c)
+            if isinstance(c, list):     # Fix: X and Y of one point
+                idx = [sketch.addConstraint(ci) for ci in c]
+            else:
+                idx = sketch.addConstraint(c)
 
             expr_msg = ""
             if expression is not None:
@@ -940,15 +964,25 @@ class SketchOpsHandler(BaseHandler):
             if not object_name or not edge_name:
                 return "object_name and edge_name are required"
 
+            # MCP FREECAD v2: the geo_ids are read from ExternalGeo, which holds
+            # the two axes (-1, -2) then each external edge (-3, -4, ...).
+            # sketch.ExternalGeometryCount does not exist (FreeCAD 1.1): the
+            # reference WAS added, yet the call replied "Error adding external
+            # geometry" (a retry would add it twice). Its -(count + 1) could
+            # not give -3 for the first edge either way (-2 = the V axis
+            # without the axes counted, -4 with them).
+            before = len(sketch.ExternalGeo)
             sketch.addExternal(object_name, edge_name)
             self.recompute(doc)
-
-            # Count external geometry to report the geo_id
-            ext_count = sketch.ExternalGeometryCount
-            ext_geo_id = -(ext_count + 1)  # -3 for first, -4 for second, etc.
+            after = len(sketch.ExternalGeo)
+            if after <= before:
+                return (f"Error adding external geometry: {object_name}.{edge_name} "
+                        f"added no geometry to {sketch_name}")
+            ids = list(range(-(before + 1), -(after + 1), -1))
+            ids_msg = f"geo_id={ids[0]}" if len(ids) == 1 else f"geo_ids={ids}"
 
             return (f"Added external geometry reference to {sketch_name}: "
-                    f"{object_name}.{edge_name}, geo_id≈{ext_geo_id}")
+                    f"{object_name}.{edge_name}, {ids_msg}")
 
         except Exception as e:
             return f"Error adding external geometry: {e}"

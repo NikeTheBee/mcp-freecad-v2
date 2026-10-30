@@ -100,6 +100,36 @@ class TestCreateSketch(unittest.TestCase):
         result = self.handler.create_sketch({'plane': 'YZ', 'name': 'S'})
         assert_success_contains(self, result, "YZ")
 
+    def test_yz_plane_axes_match_freecad_yz_plane(self):
+        """MCP FREECAD v2: (0, 1, 0, 1) sent sketch x to global -Z -- a 20 x 10
+        rectangle at (5, 5) on "YZ" spanned Z -25..-5 instead of Y 5..25.
+        FreeCAD's YZ_Plane is (0.5, 0.5, 0.5, 0.5): x -> +Y, y -> +Z, normal +X."""
+        doc = make_mock_doc()
+        mock_FreeCAD.ActiveDocument = doc
+        real_rotation = mock_FreeCAD.Rotation
+        mock_FreeCAD.Rotation = MagicMock(name="Rotation")
+        self.addCleanup(setattr, mock_FreeCAD, "Rotation", real_rotation)
+
+        result = self.handler.create_sketch({'plane': 'YZ', 'name': 'S'})
+
+        assert_success_contains(self, result, "YZ")
+        q = mock_FreeCAD.Rotation.call_args.args
+
+        def rot(v):     # rotate v by the (x, y, z, w) quaternion q, normalised
+            n = math.sqrt(sum(c * c for c in q))
+            x, y, z, w = (c / n for c in q)
+            tx = 2 * (y * v[2] - z * v[1])
+            ty = 2 * (z * v[0] - x * v[2])
+            tz = 2 * (x * v[1] - y * v[0])
+            return tuple(round(c, 9) + 0.0 for c in (
+                v[0] + w * tx + (y * tz - z * ty),
+                v[1] + w * ty + (z * tx - x * tz),
+                v[2] + w * tz + (x * ty - y * tx)))
+
+        self.assertEqual(rot((1, 0, 0)), (0.0, 1.0, 0.0))   # sketch x -> +Y
+        self.assertEqual(rot((0, 1, 0)), (0.0, 0.0, 1.0))   # sketch y -> +Z
+        self.assertEqual(rot((0, 0, 1)), (1.0, 0.0, 0.0))   # normal  -> +X
+
     def test_invalid_plane_rejected_instead_of_silent_xy(self):
         """An unrecognized plane used to leave sketch.Placement at
         doc.addObject's default (identical to the XY branch) while still
@@ -210,6 +240,18 @@ class TestVerifySketchConstraintVerdict(unittest.TestCase):
         result = self._verify(_closed_profile_sketch(dof=0, solve_code=-3))
         self.assertIn("solver code -3", result)
         self.assertIn("INVALID", result)
+
+    def test_open_wire_beside_closed_profile_is_invalid(self):
+        """MCP FREECAD v2: a closed square plus one stray line read "USABLE -
+        Has closed profile", yet its Pad failed with "Wire is not closed."."""
+        s = _closed_profile_sketch(dof=0)
+        stray = MagicMock()
+        stray.isClosed = MagicMock(return_value=False)
+        s.Shape.Wires = s.Shape.Wires + [stray]
+        self.handler._diagnose_open_wires = MagicMock(return_value="")
+        result = self._verify(s)
+        self.assertIn("Verdict: INVALID - 1 open wire(s) beside the closed profile", result)
+        self.assertNotIn("USABLE", result)
 
 
 # ---------------------------------------------------------------------------
@@ -401,6 +443,22 @@ class TestAddSlot(unittest.TestCase):
         self.assertNotIn("must be greater", result)
         self.assertTrue(s.addGeometry.called)
 
+    def test_joints_use_endpoint_tangency_not_coincident_plus_edge_tangent(self):
+        """MCP FREECAD v2: Coincident + edge-to-edge Tangent at each joint is
+        redundant for the solver -- a real 20x6 slot solved with code -2,
+        RedundantConstraints [5, 6, 7, 8] and an empty Shape (its Pad failed).
+        Each joint is one endpoint-to-endpoint Tangent (g_a, 2, g_b, 1)."""
+        s = _make_real_sketch_mock("S")
+        mock_FreeCAD.ActiveDocument = make_mock_doc([s])
+        mock_Sketcher.Constraint.reset_mock()
+
+        self.handler.add_slot({'sketch_name': 'S', 'length': 20, 'width': 6})
+
+        made = [c.args for c in mock_Sketcher.Constraint.call_args_list]
+        self.assertEqual(made, [('Tangent', 0, 2, 1, 1), ('Tangent', 1, 2, 2, 1),
+                                ('Tangent', 2, 2, 3, 1), ('Tangent', 3, 2, 0, 1)])
+        self.assertEqual(s.addConstraint.call_count, 4)
+
 
 # ---------------------------------------------------------------------------
 # add_constraint — dispatch table
@@ -537,19 +595,37 @@ class TestAddConstraint(unittest.TestCase):
         self.assertEqual(sc_call.args[0], 'Angle')
         self.assertAlmostEqual(sc_call.args[3], math.pi / 4, places=4)
 
-    def test_fix_maps_to_lock_constraint(self):
-        """Fix is renamed to Lock internally."""
+    def test_fix_locks_the_point_x_and_y_where_it_is(self):
+        """MCP FREECAD v2: Fix built Constraint('Lock', ...), a type the
+        Sketcher does not have ("Invalid parameters: ('Lock', 0, 1)"), so it
+        always failed. It now locks the point's current X and Y, as the
+        Sketcher's Lock tool does."""
         s = _make_real_sketch_mock("S")
+        s.getPoint = MagicMock(return_value=MagicMock(x=-3.0, y=-4.0))
         doc = make_mock_doc([s])
         mock_FreeCAD.ActiveDocument = doc
+        mock_Sketcher.Constraint.reset_mock()
 
-        self.handler.add_constraint({
+        result = self.handler.add_constraint({
             'sketch_name': 'S', 'constraint_type': 'Fix',
             'geo_id1': 0, 'pos_id1': 1,
         })
 
-        sc_call = mock_Sketcher.Constraint.call_args
-        self.assertEqual(sc_call.args[0], 'Lock')
+        s.getPoint.assert_called_once_with(0, 1)
+        made = [c.args for c in mock_Sketcher.Constraint.call_args_list]
+        self.assertEqual(made, [('DistanceX', 0, 1, -3.0), ('DistanceY', 0, 1, -4.0)])
+        self.assertEqual(s.addConstraint.call_count, 2)
+        assert_success_contains(self, result, "Fix", "index=[0, 1]")
+
+    def test_fix_refuses_an_edge(self):
+        s = _make_real_sketch_mock("S")
+        mock_FreeCAD.ActiveDocument = make_mock_doc([s])
+        result = self.handler.add_constraint({
+            'sketch_name': 'S', 'constraint_type': 'Fix',
+            'geo_id1': 0, 'pos_id1': 0,
+        })
+        self.assertIn("Fix needs a point", result)
+        s.addConstraint.assert_not_called()
 
     # -- expression binding (issue #48) --------------------------------
 
@@ -756,6 +832,72 @@ class TestCreateSketchNoDocument(unittest.TestCase):
     def test_does_not_call_newDocument(self):
         self.handler.create_sketch({'plane': 'XY', 'name': 'S'})
         mock_FreeCAD.newDocument.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# add_fillet / add_external_geometry replies (MCP FREECAD v2)
+# ---------------------------------------------------------------------------
+
+class TestAddFilletReply(unittest.TestCase):
+    def setUp(self):
+        reset_mocks()
+        self.handler = make_handler(SketchOpsHandler)
+
+    def test_reply_names_the_new_arc_when_fillet_returns_none(self):
+        """FreeCAD 1.1's SketchObject.fillet() returns None: the reply read
+        "new arc geo_id=None". The arc is appended last."""
+        s = _make_real_sketch_mock("S")
+        s.GeometryCount = 5          # rectangle (0-3) + the fillet arc
+        s.fillet = MagicMock(return_value=None)
+        mock_FreeCAD.ActiveDocument = make_mock_doc([s])
+
+        result = self.handler.add_fillet({'sketch_name': 'S', 'geo_id': 0,
+                                          'pos_id': 2, 'radius': 2})
+
+        s.fillet.assert_called_once_with(0, 2, 2)
+        assert_success_contains(self, result, "new arc geo_id=4")
+
+
+class TestAddExternalGeometry(unittest.TestCase):
+    """ExternalGeo holds the two axes (-1, -2) then each external edge (-3...).
+    sketch.ExternalGeometryCount does not exist on FreeCAD 1.1: the reference
+    was added, yet the reply was "Error adding external geometry"."""
+
+    def setUp(self):
+        reset_mocks()
+        self.handler = make_handler(SketchOpsHandler)
+
+    def _sketch(self, adds=1):
+        s = _make_real_sketch_mock("S")
+        del s.ExternalGeometryCount          # absent on FreeCAD 1.1
+        s.ExternalGeo = ['H_Axis', 'V_Axis']
+        s.addExternal = MagicMock(
+            side_effect=lambda obj, sub: s.ExternalGeo.extend([f"{obj}.{sub}"] * adds))
+        mock_FreeCAD.ActiveDocument = make_mock_doc([s])
+        return s
+
+    def test_first_and_second_edges_get_minus_3_and_minus_4(self):
+        s = self._sketch()
+        r1 = self.handler.add_external_geometry({'sketch_name': 'S', 'object_name': 'Box',
+                                                 'edge_name': 'Edge2'})
+        r2 = self.handler.add_external_geometry({'sketch_name': 'S', 'object_name': 'Box',
+                                                 'edge_name': 'Edge9'})
+        assert_success_contains(self, r1, "Box.Edge2", "geo_id=-3")
+        assert_success_contains(self, r2, "Box.Edge9", "geo_id=-4")
+        self.assertEqual(s.addExternal.call_count, 2)
+
+    def test_reference_adding_several_edges_lists_them_all(self):
+        self._sketch(adds=4)                 # e.g. a face: its 4 edges
+        r = self.handler.add_external_geometry({'sketch_name': 'S', 'object_name': 'Box',
+                                                'edge_name': 'Face1'})
+        assert_success_contains(self, r, "geo_ids=[-3, -4, -5, -6]")
+
+    def test_nothing_added_is_an_error(self):
+        self._sketch(adds=0)
+        r = self.handler.add_external_geometry({'sketch_name': 'S', 'object_name': 'Box',
+                                                'edge_name': 'Edge1'})
+        self.assertTrue(r.startswith("Error"), r)
+        self.assertIn("added no geometry", r)
 
 
 if __name__ == '__main__':

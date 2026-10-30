@@ -495,6 +495,27 @@ def main() -> int:
         op(inst, "partdesign_operations", {"operation": "pad", "sketch_name": "S", "length": 3})
         close(body_volume(inst), 600 - math.pi * 4 * 3, "sketch rect + centred circle, pad 3", rel=1e-5)
 
+        # YZ sketch: x -> +Y, y -> +Z like FreeCAD's YZ_Plane (x went to -Z: Z -25..-5);
+        # a slot solves (its redundant joints left an empty shape, "Added slot")
+        py(inst, "import FreeCAD\nfor _n in list(FreeCAD.listDocuments()):\n    FreeCAD.closeDocument(_n)\n"
+                 "d = FreeCAD.newDocument('SK2')\nd.addObject('PartDesign::Body', 'Body')\n'ok'")
+        for args in ({"operation": "create_sketch", "name": "S", "plane": "YZ"},
+                     {"operation": "add_rectangle", "sketch_name": "S", "x": 5, "y": 5,
+                      "width": 20, "height": 10, "constrain": True}):
+            op(inst, "sketch_operations", args)
+        op(inst, "partdesign_operations", {"operation": "pad", "sketch_name": "S", "length": 2})
+        bb = json.loads(py(inst, "import FreeCAD, json\n"
+                              "b = FreeCAD.ActiveDocument.Body.Shape.optimalBoundingBox(False, False)\n"
+                              "json.dumps([b.XMin, b.XMax, b.YMin, b.YMax, b.ZMin, b.ZMax])").strip("'\""))
+        assert all(abs(g - w) < 1e-6 for g, w in zip(bb, (0, 2, 5, 25, 5, 15))), bb
+        py(inst, "import FreeCAD\nfor _n in list(FreeCAD.listDocuments()):\n    FreeCAD.closeDocument(_n)\n"
+                 "d = FreeCAD.newDocument('SK3')\nd.addObject('PartDesign::Body', 'Body')\n'ok'")
+        op(inst, "sketch_operations", {"operation": "create_sketch", "name": "S", "plane": "XY"})
+        op(inst, "sketch_operations", {"operation": "add_slot", "sketch_name": "S", "x": 3, "y": 4,
+                                       "length": 20, "width": 6})
+        op(inst, "partdesign_operations", {"operation": "pad", "sketch_name": "S", "length": 2})
+        close(body_volume(inst), ((20 - 6) * 6 + math.pi * 9) * 2, "slot 20x6 padded 2", rel=1e-7)
+
         # spatial query: the cylinder really pierces the box
         py(inst, SETUP)
         txt = str(op(inst, "spatial_query", {"operation": "interference_check",
