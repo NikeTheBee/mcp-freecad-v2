@@ -274,6 +274,33 @@ class TestPolarArray(unittest.TestCase):
         assert_error_contains(self, result, "does not support", "axis")
 
 
+class TestPolarArrayAngle(unittest.TestCase):
+    """MCP FREECAD v2 (2026-10-30): Draft spaces the copies by angle/count only
+    for exactly 360 (else angle/(count-1)): with -360 the 4th of 4 copies landed
+    back on the 1st, one position missing."""
+
+    def setUp(self):
+        reset_mocks()
+        self.handler = make_handler(DraftOpsHandler)
+        doc = make_mock_doc([make_box_object("B")])
+        mock_FreeCAD.ActiveDocument = doc
+        mock_Draft.make_polar_array = MagicMock(return_value=MagicMock(Name="P"))
+
+    def test_minus_360_is_a_full_turn(self):
+        self.handler.polar_array({'object_name': 'B', 'count': 4, 'angle': -360})
+        self.assertEqual(mock_Draft.make_polar_array.call_args.kwargs['angle'], 360)
+
+    def test_angles_beyond_a_turn_or_zero_are_refused(self):
+        for angle in (0, 400, -720):
+            result = self.handler.polar_array({'object_name': 'B', 'count': 4, 'angle': angle})
+            assert_error_contains(self, result, "invalid angle")
+        mock_Draft.make_polar_array.assert_not_called()
+
+    def test_partial_arc_is_passed_as_is(self):
+        self.handler.polar_array({'object_name': 'B', 'count': 3, 'angle': -90})
+        self.assertEqual(mock_Draft.make_polar_array.call_args.kwargs['angle'], -90)
+
+
 # ---------------------------------------------------------------------------
 # Path array
 # ---------------------------------------------------------------------------

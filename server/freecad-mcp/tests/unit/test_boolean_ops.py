@@ -8,7 +8,7 @@ shape parameter assembly, source visibility hiding, and error paths
 """
 
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from handlers.boolean_ops import BooleanOpsHandler
 
@@ -21,6 +21,7 @@ from tests.unit._freecad_mocks import (
     mock_FreeCAD,
     reset_mocks,
 )
+from tests.unit._freecad_mocks import _Vec
 
 
 class TestFuseObjects(unittest.TestCase):
@@ -205,6 +206,153 @@ class TestCommonObjects(unittest.TestCase):
         doc.addObject.assert_called_with("Part::MultiCommon", "Intersection")
         common = doc.Objects[-1]
         self.assertEqual(list(common.Shapes), [a, b])
+
+
+def _results_with_solids(doc, n):
+    """Booleans created from now on hold n solids (n=0: OCCT's EMPTY compound)."""
+    original = doc.addObject.side_effect
+
+    def add(type_id, name=None):
+        obj = original(type_id, name)
+        obj.Shape.Solids = [MagicMock() for _ in range(n)]
+        obj.Shape.Volume = 1000.0 * n
+        return obj
+    doc.addObject.side_effect = add
+
+
+class TestEmptyAndSplitResults(unittest.TestCase):
+    """MCP FREECAD v2 (2026-10-30): OCCT answers a cut that swallows its base, or
+    a common of disjoint solids, with an EMPTY compound -- not a null shape. The
+    isNull() guard never fired: the sources were hidden and the reply said
+    "Created ..., volume 0 mm3"."""
+
+    def setUp(self):
+        reset_mocks()
+        self.handler = make_handler(BooleanOpsHandler)
+
+    def test_cut_swallowing_the_base_is_refused_and_not_kept(self):
+        base, t1, t2 = make_box_object("Base"), make_box_object("T1"), make_box_object("T2")
+        doc = make_mock_doc([base, t1, t2])
+        mock_FreeCAD.ActiveDocument = doc
+        _results_with_solids(doc, 0)
+
+        result = self.handler.cut_objects({'base': 'Base', 'tools': ['T1', 'T2']})
+
+        assert_error_contains(self, result, "empty", "sources left visible", "not kept")
+        self.assertTrue(base.Visibility)
+        self.assertTrue(t1.Visibility)
+        removed = [c.args[0] for c in doc.removeObject.call_args_list]
+        self.assertEqual(sorted(removed), ["Cut", "Cut_Tools"])
+
+    def test_common_of_disjoint_solids_is_refused_and_not_kept(self):
+        a, b = make_box_object("A"), make_box_object("B")
+        doc = make_mock_doc([a, b])
+        mock_FreeCAD.ActiveDocument = doc
+        _results_with_solids(doc, 0)
+
+        result = self.handler.common_objects({'objects': ['A', 'B']})
+
+        assert_error_contains(self, result, "empty", "do not overlap", "not kept")
+        self.assertTrue(a.Visibility)
+        self.assertTrue(b.Visibility)
+        doc.removeObject.assert_called_once_with("Common")
+
+    def test_fuse_of_solids_that_do_not_touch_says_so(self):
+        a, b = make_box_object("A"), make_box_object("B")
+        doc = make_mock_doc([a, b])
+        mock_FreeCAD.ActiveDocument = doc
+        _results_with_solids(doc, 2)
+
+        result = self.handler.fuse_objects({'objects': ['A', 'B']})
+
+        assert_success_contains(self, result, "2 separate solids")
+
+    def test_one_solid_fuse_says_nothing_about_pieces(self):
+        a, b = make_box_object("A"), make_box_object("B")
+        doc = make_mock_doc([a, b])
+        mock_FreeCAD.ActiveDocument = doc
+        _results_with_solids(doc, 1)
+
+        result = self.handler.fuse_objects({'objects': ['A', 'B']})
+
+        self.assertNotIn("separate", result)
+
+
+class TestContainerFrame(unittest.TestCase):
+    """MCP FREECAD v2 (2026-10-30): a Part boolean reads each operand in its
+    container's frame. A common of a box in an App::Part moved by 100 mm and a
+    free box overlapping it by 500 mm3 came out EMPTY; the cut of one by the
+    other "removed NOTHING"."""
+
+    def setUp(self):
+        reset_mocks()
+        self.handler = make_handler(BooleanOpsHandler)
+        self.patch = patch.object(mock_FreeCAD, 'DocumentObject', MagicMock, create=True)
+        self.patch.start()
+        self.addCleanup(self.patch.stop)
+
+    @staticmethod
+    def _cell(moved=True):
+        cell = MagicMock()
+        cell.Name = "Cell"
+        cell.TypeId = "App::Part"
+        pl = MagicMock()
+        pl.isIdentity = MagicMock(return_value=not moved)
+        pl.Base = _Vec(100, 0, 0) if moved else _Vec()
+        cell.getGlobalPlacement = MagicMock(return_value=pl)
+        return cell
+
+    @staticmethod
+    def _in(obj, parent):
+        obj.getParentGeoFeatureGroup = MagicMock(return_value=parent)
+        return obj
+
+    def test_operands_sharing_a_moved_container_get_the_result_inside_it(self):
+        cell = self._cell()
+        a, b = self._in(make_box_object("A"), cell), self._in(make_box_object("B"), cell)
+        doc = make_mock_doc([a, b])
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.common_objects({'objects': ['A', 'B']})
+
+        common = next(o for o in doc.Objects if o.TypeId == "Part::MultiCommon")
+        cell.addObject.assert_called_once_with(common)
+        assert_success_contains(self, result, "inside Cell")
+
+    def test_cut_tools_fusion_goes_in_the_container_too(self):
+        cell = self._cell()
+        objs = [self._in(make_box_object(n), cell) for n in ("Base", "T1", "T2")]
+        doc = make_mock_doc(objs)
+        mock_FreeCAD.ActiveDocument = doc
+
+        self.handler.cut_objects({'base': 'Base', 'tools': ['T1', 'T2']})
+
+        added = {c.args[0].TypeId for c in cell.addObject.call_args_list}
+        self.assertEqual(added, {"Part::Cut", "Part::MultiFuse"})
+
+    def test_operands_in_differently_placed_frames_are_refused(self):
+        a = self._in(make_box_object("A"), self._cell())
+        b = self._in(make_box_object("B"), None)
+        doc = make_mock_doc([a, b])
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.cut_objects({'base': 'B', 'tools': ['A']})
+
+        assert_error_contains(self, result, "cannot make this boolean", "A in Cell",
+                              "(100, 0, 0)", "B at the document root")
+        doc.addObject.assert_not_called()
+
+    def test_unmoved_container_and_root_stay_at_the_root(self):
+        cell = self._cell(moved=False)
+        a = self._in(make_box_object("A"), cell)
+        b = self._in(make_box_object("B"), None)
+        doc = make_mock_doc([a, b])
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.fuse_objects({'objects': ['A', 'B']})
+
+        assert_success_contains(self, result, "Created fusion")
+        cell.addObject.assert_not_called()
 
 
 if __name__ == '__main__':

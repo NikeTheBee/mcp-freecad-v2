@@ -36,6 +36,26 @@ class PartOpsHandler(BaseHandler):
             faces = list(getattr(profile, "Faces", []) or [])
             return faces[0].normalAt(0, 0) if faces else FreeCAD.Vector(0, 0, 1)
 
+    @staticmethod
+    def _not_a_solid(feature, label: str) -> str | None:
+        """Why a loft/sweep asked to be solid is not one, else None (MCP FREECAD v2).
+        Open profiles gave a Part::Loft "solid" of volume 0 that is not even valid,
+        and a Part::Sweep that is a mere shell; both were replied "Created ..."
+        and their State is fine. None when it cannot be measured (test mocks)."""
+        try:
+            shape = feature.Shape
+            solids = shape.Solids
+            if not isinstance(solids, (list, tuple)):
+                return None
+            if solids and shape.isValid() and float(shape.Volume) > 1e-9:
+                return None
+            what = (f"an invalid solid of volume {float(shape.Volume):.6g} mm³" if solids
+                    else f"a {str(shape.ShapeType).lower()}, not a solid")
+        except Exception:
+            return None
+        return (f"{label} is {what}: its profiles are probably open. Close them, or pass "
+                f"solid=False for a surface; result not kept")
+
     def extrude(self, args: dict[str, Any]) -> str:
         """Extrude a sketch or wire profile."""
         try:
@@ -101,6 +121,9 @@ class PartOpsHandler(BaseHandler):
             axis_vec = axis_vector_or_none(axis)
             if axis_vec is None:
                 return f"Invalid axis '{axis}': must be 'x', 'y', or 'z'"
+            # MCP FREECAD v2: 0 failed with an OCCT message, 720 silently gave 360
+            if not 0 < abs(float(angle)) <= 360:
+                return f"Invalid angle {angle}: must be non-zero and at most 360 degrees"
 
             shape = sketch.Shape
             import Part
@@ -112,13 +135,21 @@ class PartOpsHandler(BaseHandler):
             profile = self._profile(shape)
             if profile is None:
                 return f"Sketch {profile_sketch} has no valid wires or faces to revolve"
+            # MCP FREECAD v2: an axis along the sketch's normal turns the profile
+            # within its own plane -- an XY sketch revolved around z made a "solid"
+            # of volume 0, replied "Revolved ... by 360°" (extrude refuses its twin).
+            normal = self._plane_normal(sketch, profile)
+            if abs(float(axis_vec.dot(normal))) > 1.0 - 1e-9:
+                return (f"Invalid axis '{axis}': it is the normal of {profile_sketch}'s plane, the profile "
+                        "would turn within its own plane (no volume); use an axis lying in the sketch's plane")
             revolved = profile.revolve(pos, axis_vec, angle)
 
             revolve_obj = doc.addObject("Part::Feature", f"{profile_sketch}_revolved")
             revolve_obj.Shape = revolved
             self.recompute(doc)
 
-            return f"Revolved {profile_sketch} by {angle}° around {axis} axis"
+            return (f"Revolved {profile_sketch} by {angle}° around {axis} axis through the sketch's origin "
+                    f"({pos.x:g}, {pos.y:g}, {pos.z:g}): {revolve_obj.Name}")
 
         except Exception as e:
             return f"Error revolving profile: {e}"
@@ -175,8 +206,14 @@ class PartOpsHandler(BaseHandler):
             if err:
                 return err
 
+            # MCP FREECAD v2: the parametric branches are chosen by TYPE. Chosen by
+            # property names, a Part::Helix (Radius + Height) kept its pitch -- 10
+            # turns instead of 5, wire 628.6 mm instead of 314.8 -- and a PartDesign
+            # Fillet (Radius) only got a bigger fillet while the reply said "Scaled".
+            type_id = getattr(obj, 'TypeId', '')
+
             # Check if this is a parametric object (Box, Cylinder, etc.)
-            if hasattr(obj, 'Length') and hasattr(obj, 'Width') and hasattr(obj, 'Height'):
+            if type_id == 'Part::Box':
                 # Box object
                 old_dims = f"{obj.Length.Value}x{obj.Width.Value}x{obj.Height.Value}"
                 obj.Length = obj.Length.Value * scale_factor
@@ -186,8 +223,8 @@ class PartOpsHandler(BaseHandler):
                 self.recompute(doc)
                 return f"Scaled {object_name} by factor {scale_factor} ({old_dims}mm → {new_dims}mm)"
 
-            elif hasattr(obj, 'Radius') and hasattr(obj, 'Height'):
-                # Cylinder/Cone object
+            elif type_id == 'Part::Cylinder':
+                # Cylinder object
                 old_dims = f"R{obj.Radius.Value}xH{obj.Height.Value}"
                 obj.Radius = obj.Radius.Value * scale_factor
                 obj.Height = obj.Height.Value * scale_factor
@@ -197,7 +234,7 @@ class PartOpsHandler(BaseHandler):
                 self.recompute(doc)
                 return f"Scaled {object_name} by factor {scale_factor} ({old_dims}mm → {new_dims}mm)"
 
-            elif hasattr(obj, 'Radius'):
+            elif type_id == 'Part::Sphere':
                 # Sphere object
                 old_radius = obj.Radius.Value
                 obj.Radius = obj.Radius.Value * scale_factor
@@ -207,13 +244,18 @@ class PartOpsHandler(BaseHandler):
             else:
                 # Non-parametric object - create scaled copy
                 if hasattr(obj, 'Shape'):
-                    matrix = FreeCAD.Matrix()
-                    matrix.scale(scale_factor, scale_factor, scale_factor)
-                    scaled_shape = obj.Shape.transformGeometry(matrix)
+                    # MCP FREECAD v2: an exact similarity, in the document frame.
+                    # transformGeometry rebuilt every face as a B-spline: a scaled cone
+                    # measured 3293.48 mm3 instead of 8 x 408.41 = 3267.26, a torus +1 %,
+                    # and a bore was no longer a cylinder. Same centre as before: the
+                    # document origin (now said in the reply).
+                    scaled_shape = self._world_shape(obj).copy()
+                    scaled_shape.scale(float(scale_factor), FreeCAD.Vector(0, 0, 0))
                     scaled_obj = doc.addObject("Part::Feature", f"{object_name}_scaled")
                     scaled_obj.Shape = scaled_shape
                     self.recompute(doc)
-                    return f"Created scaled copy: {scaled_obj.Name} (factor {scale_factor})"
+                    return (f"Created scaled copy: {scaled_obj.Name} (factor {scale_factor}, about the "
+                            f"document origin (0, 0, 0): a part away from it moves by the same factor)")
                 else:
                     return f"Cannot scale {object_name} - not a parametric object"
 
@@ -274,7 +316,8 @@ class PartOpsHandler(BaseHandler):
         try:
             sketches = args.get('sketches', [])
             ruled = args.get('ruled', False)
-            closed = args.get('closed', True)
+            # `closed` has always set Loft.Solid; `solid` (as for sweep) wins
+            closed = args.get('solid', args.get('closed', True))
             name = args.get('name', 'Loft')
 
             if len(sketches) < 2:
@@ -300,6 +343,10 @@ class PartOpsHandler(BaseHandler):
 
             err = self._check_feature_state(loft, "Loft")
             if err:
+                return err
+            err = self._not_a_solid(loft, f"Loft {loft.Name}") if closed else None
+            if err:
+                doc.removeObject(loft.Name)
                 return err
 
             return f"Created loft: {loft.Name} through {len(sketches)} profiles"
@@ -336,6 +383,10 @@ class PartOpsHandler(BaseHandler):
 
             err = self._check_feature_state(sweep, "Sweep")
             if err:
+                return err
+            err = self._not_a_solid(sweep, f"Sweep {sweep.Name}") if solid else None
+            if err:
+                doc.removeObject(sweep.Name)
                 return err
 
             return f"Created sweep: {sweep.Name} with profile {profile_sketch} along path {path_sketch}"

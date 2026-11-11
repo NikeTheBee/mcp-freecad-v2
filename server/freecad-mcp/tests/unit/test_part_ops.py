@@ -22,6 +22,7 @@ from tests.unit._freecad_mocks import (
     make_cylinder_object,
     make_handler,
     make_mock_doc,
+    make_part_object,
     make_sketch,
     make_sphere_object,
     mock_FreeCAD,
@@ -152,6 +153,22 @@ class TestRevolve(unittest.TestCase):
         self.handler = make_handler(PartOpsHandler)
 
     def test_revolve_full_circle(self):
+        # An XY sketch (the mock's plane) revolves around an axis lying in it:
+        # 'y'. This test used 'z' -- the sketch's normal, a zero-volume result.
+        sketch = make_sketch("RevS", has_wires=True)
+        doc = make_mock_doc([sketch])
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.revolve({
+            'profile_sketch': 'RevS', 'angle': 360, 'axis': 'y',
+        })
+
+        assert_success_contains(self, result, "RevS", "360", "y", "RevS_revolved")
+
+    def test_revolve_around_the_sketch_normal_is_refused(self):
+        """MCP FREECAD v2 (2026-10-30): an XY sketch revolved around z turns
+        within its own plane -- a "solid" of volume 0 replied "Revolved ... by
+        360°"."""
         sketch = make_sketch("RevS", has_wires=True)
         doc = make_mock_doc([sketch])
         mock_FreeCAD.ActiveDocument = doc
@@ -160,7 +177,20 @@ class TestRevolve(unittest.TestCase):
             'profile_sketch': 'RevS', 'angle': 360, 'axis': 'z',
         })
 
-        assert_success_contains(self, result, "RevS", "360", "z")
+        assert_error_contains(self, result, "invalid axis", "normal")
+        doc.addObject.assert_not_called()
+
+    def test_revolve_angle_out_of_range_is_refused(self):
+        """720 silently gave a 360° solid; 0 failed with an OCCT message."""
+        sketch = make_sketch("RevS", has_wires=True)
+        doc = make_mock_doc([sketch])
+        mock_FreeCAD.ActiveDocument = doc
+        for angle in (0, 720, -400):
+            result = self.handler.revolve({
+                'profile_sketch': 'RevS', 'angle': angle, 'axis': 'y',
+            })
+            assert_error_contains(self, result, "invalid angle")
+        doc.addObject.assert_not_called()
 
     def test_missing_sketch(self):
         doc = make_mock_doc([])
@@ -500,6 +530,105 @@ class TestShapeString(unittest.TestCase):
         mock_Part.makeCompound.assert_called_once()
         flat = mock_Part.makeCompound.call_args.args[0]
         self.assertEqual(len(flat), 3)
+
+
+def _next_result_shape(doc, type_id, solids, shape_type="Solid", valid=True, volume=0.0):
+    """Give the next doc.addObject(type_id) a real-looking shape."""
+    original = doc.addObject.side_effect
+
+    def add(t, name=None):
+        obj = original(t, name)
+        if t == type_id:
+            obj.State = []
+            obj.Shape.Solids = [MagicMock() for _ in range(solids)]
+            obj.Shape.ShapeType = shape_type
+            obj.Shape.isValid = MagicMock(return_value=valid)
+            obj.Shape.Volume = volume
+        return obj
+    doc.addObject.side_effect = add
+
+
+class TestLoftSweepNotASolid(unittest.TestCase):
+    """MCP FREECAD v2 (2026-10-30): a solid loft of open profiles is an invalid
+    "solid" of volume 0, a solid sweep of an open profile a mere shell; both
+    computed with a fine State and were replied "Created ..."."""
+
+    def setUp(self):
+        reset_mocks()
+        self.handler = make_handler(PartOpsHandler)
+
+    def test_invalid_zero_volume_loft_is_refused_and_removed(self):
+        doc = make_mock_doc([make_sketch("S1"), make_sketch("S2")])
+        mock_FreeCAD.ActiveDocument = doc
+        _next_result_shape(doc, "Part::Loft", solids=1, valid=False, volume=0.0)
+
+        result = self.handler.loft({'sketches': ['S1', 'S2'], 'name': 'L'})
+
+        assert_error_contains(self, result, "invalid solid", "open", "solid=false", "not kept")
+        doc.removeObject.assert_called_once_with("L")
+
+    def test_shell_sweep_is_refused_and_removed(self):
+        doc = make_mock_doc([make_sketch("P"), make_sketch("Path")])
+        mock_FreeCAD.ActiveDocument = doc
+        _next_result_shape(doc, "Part::Sweep", solids=0, shape_type="Shell")
+
+        result = self.handler.sweep({'profile_sketch': 'P', 'path_sketch': 'Path'})
+
+        assert_error_contains(self, result, "a shell, not a solid", "not kept")
+        doc.removeObject.assert_called_once_with("Sweep")
+
+    def test_surface_requested_is_not_judged(self):
+        doc = make_mock_doc([make_sketch("P"), make_sketch("Path")])
+        mock_FreeCAD.ActiveDocument = doc
+        _next_result_shape(doc, "Part::Sweep", solids=0, shape_type="Shell")
+
+        result = self.handler.sweep({'profile_sketch': 'P', 'path_sketch': 'Path', 'solid': False})
+
+        assert_success_contains(self, result, "Created sweep")
+        doc.removeObject.assert_not_called()
+
+    def test_real_solid_loft_passes(self):
+        doc = make_mock_doc([make_sketch("S1"), make_sketch("S2")])
+        mock_FreeCAD.ActiveDocument = doc
+        _next_result_shape(doc, "Part::Loft", solids=1, volume=1570.8)
+
+        result = self.handler.loft({'sketches': ['S1', 'S2']})
+
+        assert_success_contains(self, result, "Created loft")
+
+
+class TestScaleByType(unittest.TestCase):
+    """MCP FREECAD v2 (2026-10-30): the parametric branches were chosen by
+    property names (a Part::Helix kept its pitch: 10 turns instead of 5; a
+    PartDesign Fillet only got a bigger radius), and the scaled copy went
+    through transformGeometry (B-splines: a cone 3293.48 mm3 instead of
+    3267.26)."""
+
+    def setUp(self):
+        reset_mocks()
+        self.handler = make_handler(PartOpsHandler)
+
+    def _scaled_copy(self, type_id):
+        obj = make_part_object("Obj")
+        obj.TypeId = type_id
+        obj.Radius = 5.0
+        obj.Height = 10.0
+        doc = make_mock_doc([obj])
+        mock_FreeCAD.ActiveDocument = doc
+        result = self.handler.scale_object({'object_name': 'Obj', 'scale_factor': 2})
+        return obj, result
+
+    def test_helix_is_scaled_as_a_whole_shape(self):
+        obj, result = self._scaled_copy("Part::Helix")
+        assert_success_contains(self, result, "scaled copy", "Obj_scaled", "document origin")
+        self.assertEqual(obj.Radius, 5.0)       # not "R10" with the pitch unchanged
+        obj.Shape.scale.assert_called_once_with(2.0, _Vec(0, 0, 0))
+        obj.Shape.transformGeometry.assert_not_called()
+
+    def test_partdesign_fillet_is_not_scaled_by_its_radius(self):
+        obj, result = self._scaled_copy("PartDesign::Fillet")
+        self.assertEqual(obj.Radius, 5.0)
+        obj.Shape.scale.assert_called_once()
 
 
 if __name__ == '__main__':

@@ -98,6 +98,16 @@ class DraftOpsHandler(BaseHandler):
             if err:
                 return err
 
+            # MCP FREECAD v2: Draft spaces the copies by angle/count only when the
+            # angle is exactly 360 (else angle/(count-1), both ends included): with
+            # -360 the 4th of 4 copies landed back on the 1st (-120° steps), one
+            # position missing and two parts stacked. A full turn is a full turn.
+            if abs(float(angle)) == 360:
+                angle = 360
+            elif not 0 < abs(float(angle)) < 360:
+                return (f"Invalid angle {angle}: a polar array spans more than 0 and at most "
+                        "360 degrees (360 = a full turn, copies evenly spaced)")
+
             # make_polar_array's axis= parameter is a FreeCAD.Vector, not a
             # string — confirmed against Draft/draftmake/make_polararray.py.
             axis_vector = {

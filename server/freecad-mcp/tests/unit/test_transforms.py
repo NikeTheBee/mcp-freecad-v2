@@ -7,11 +7,13 @@ helpers approach before expanding to primitives, boolean_ops, part_ops.
 """
 
 import unittest
+from unittest.mock import MagicMock, patch
 
 from handlers.transforms import TransformsHandler
 
 from tests.unit._freecad_mocks import (
     _Placement,
+    _Rotation,
     _Vec,
     assert_error_contains,
     assert_success_contains,
@@ -211,6 +213,85 @@ class TestArrayObject(unittest.TestCase):
         for c in copies:
             self.assertEqual(c.Placement.Base.y, 0.0)
             self.assertEqual(c.Placement.Base.z, 0.0)
+
+
+class _TPlacement:
+    """Translation-only placement with the algebra of the attachment path."""
+
+    def __init__(self, base=None, rotation=None):
+        self.Base = base if base is not None else _Vec()
+        self.Rotation = rotation if rotation is not None else _Rotation()
+
+    def multiply(self, other):
+        return _TPlacement(self.Base + other.Base, self.Rotation)
+
+    def inverse(self):
+        return _TPlacement(_Vec(-self.Base.x, -self.Base.y, -self.Base.z), self.Rotation)
+
+
+class TestAttachedObjects(unittest.TestCase):
+    """MCP FREECAD v2 (2026-10-30): an attached sketch's Placement is recomputed
+    from its attachment, so "Moved S by (0, 0, 10)" / "Rotated S by 90°" left it
+    where it was. The change now goes through AttachmentOffset."""
+
+    def setUp(self):
+        reset_mocks()
+        self.handler = TransformsHandler()
+
+    @staticmethod
+    def _attached(placement_base, offset_base):
+        obj = make_box_object("S")
+        obj.MapMode = "FlatFace"
+        obj.Placement = _TPlacement(placement_base)
+        obj.AttachmentOffset = _TPlacement(offset_base)
+        return obj
+
+    def test_move_goes_through_the_attachment_offset(self):
+        # attached at (2, 0, 0) with an offset of (3, 0, 0): placed at (5, 0, 0)
+        obj = self._attached(_Vec(5, 0, 0), _Vec(3, 0, 0))
+        doc = make_mock_doc([obj])
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.move_object({'object_name': 'S', 'x': 10, 'y': 0, 'z': 0})
+
+        assert_success_contains(self, result, "attachment offset")
+        self.assertEqual(obj.AttachmentOffset.Base, _Vec(13, 0, 0))
+        self.assertEqual(obj.MapMode, "FlatFace")
+
+    def test_absolute_move_goes_through_the_attachment_offset(self):
+        obj = self._attached(_Vec(5, 0, 0), _Vec(3, 0, 0))
+        doc = make_mock_doc([obj])
+        mock_FreeCAD.ActiveDocument = doc
+
+        self.handler.move_object({'object_name': 'S', 'x': 0, 'y': 0, 'z': 7, 'relative': False})
+
+        self.assertEqual(obj.AttachmentOffset.Base, _Vec(-2, 0, 7))
+
+    def test_rotate_goes_through_the_attachment_offset(self):
+        obj = self._attached(_Vec(5, 0, 0), _Vec(3, 0, 0))
+        rotation_before = obj.Placement.Rotation
+        doc = make_mock_doc([obj])
+        mock_FreeCAD.ActiveDocument = doc
+
+        result = self.handler.rotate_object({'object_name': 'S', 'axis': 'z', 'angle': 90})
+
+        assert_success_contains(self, result, "attachment offset")
+        self.assertIs(obj.Placement.Rotation, rotation_before)
+        self.assertIsInstance(obj.AttachmentOffset, _TPlacement)
+
+    def test_a_placement_the_recompute_puts_back_is_reported(self):
+        """A PartDesign Pad is placed by FreeCAD: "Moved Pad by (10, 0, 0)" was
+        replied while the recompute put it back."""
+        box = make_box_object("Pad")
+        box.Placement = _Placement(_Vec(0, 0, 0))
+        doc = make_mock_doc([box])
+        doc.recompute.side_effect = lambda: setattr(box.Placement, 'Base', _Vec(0, 0, 0))
+        mock_FreeCAD.ActiveDocument = doc
+
+        with patch.object(mock_FreeCAD, 'DocumentObject', MagicMock, create=True):
+            result = self.handler.move_object({'object_name': 'Pad', 'x': 10, 'y': 0, 'z': 0})
+
+        assert_error_contains(self, result, "did not move", "its sketch, its body")
 
 
 if __name__ == '__main__':

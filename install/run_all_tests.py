@@ -75,6 +75,7 @@ CORE_TESTS = [
     ("../examples/resume_between_sessions.py", "RESUME_DEMO_OK"),
     ("assembly_test.py", "ASSEMBLY_OK"),
     ("gear_test.py", "GEAR_OK"),
+    ("base_ops_direct_test.py", "BASE_OPS_OK"),
 ]
 FREECAD_TESTS = (CORE_TESTS if os.environ.get("MCPFC_SKIP_GRAFTS")
                  else GRAFT_TESTS + CORE_TESTS)

@@ -10,6 +10,37 @@ from .base import BaseHandler
 class TransformsHandler(BaseHandler):
     """Handler for transform operations (move, rotate, copy, array)."""
 
+    @staticmethod
+    def _attached(obj) -> bool:
+        mode = getattr(obj, 'MapMode', None)
+        return isinstance(mode, str) and mode != 'Deactivated' and hasattr(obj, 'AttachmentOffset')
+
+    @staticmethod
+    def _place_attached(obj, target) -> str:
+        """MCP FREECAD v2: an attached object (a sketch on a plane or a face) has its
+        Placement recomputed from its attachment, so setting it was undone by the
+        recompute: "Moved S by (0, 0, 10)" / "Rotated S by 90°" left it exactly where
+        it was. It gets `target` through its AttachmentOffset instead."""
+        attachment = obj.Placement.multiply(obj.AttachmentOffset.inverse())
+        obj.AttachmentOffset = attachment.inverse().multiply(target)
+        return " (through its attachment offset: it stays attached)"
+
+    @staticmethod
+    def _not_placed(obj, base=None, rotation=None) -> bool:
+        """True when, after the recompute, a real document object is not where it
+        was put (FreeCAD computes its placement). False for test mocks."""
+        try:
+            if not isinstance(obj, FreeCAD.DocumentObject):
+                return False
+            pl = obj.Placement
+            if base is not None and pl.Base.distanceToPoint(base) > 1e-7:
+                return True
+            probe = FreeCAD.Vector(1, 2, 3)
+            return rotation is not None and \
+                pl.Rotation.multVec(probe).distanceToPoint(rotation.multVec(probe)) > 1e-7
+        except Exception:
+            return False
+
     def move_object(self, args: dict[str, Any]) -> str:
         """Move an object.
 
@@ -30,18 +61,28 @@ class TransformsHandler(BaseHandler):
             if err:
                 return self.log_and_return("move_object", args, error=Exception(err))
 
-            if relative:
+            b = obj.Placement.Base
+            target = FreeCAD.Vector(b.x + x, b.y + y, b.z + z) if relative else FreeCAD.Vector(x, y, z)
+            note = ""
+            if self._attached(obj):
+                note = self._place_attached(obj, FreeCAD.Placement(target, obj.Placement.Rotation))
+            elif relative:
                 obj.Placement.Base = FreeCAD.Vector(
                     obj.Placement.Base.x + x,
                     obj.Placement.Base.y + y,
                     obj.Placement.Base.z + z
                 )
-                result = f"Moved {object_name} by ({x}, {y}, {z})"
             else:
                 obj.Placement.Base = FreeCAD.Vector(x, y, z)
-                result = f"Moved {object_name} to ({x}, {y}, {z})"
+            result = (f"Moved {object_name} by ({x}, {y}, {z})" if relative
+                      else f"Moved {object_name} to ({x}, {y}, {z})") + note
 
             self.recompute(doc)
+            if self._not_placed(obj, base=target):
+                p = obj.Placement.Base
+                return self.log_and_return("move_object", args, error=Exception(
+                    f"{object_name} did NOT move: FreeCAD recomputes its placement (it is at "
+                    f"({p.x:g}, {p.y:g}, {p.z:g})); move what it follows instead (its sketch, its Body)"))
             duration = time.time() - start_time
             return self.log_and_return("move_object", args, result=result, duration=duration)
 
@@ -78,12 +119,20 @@ class TransformsHandler(BaseHandler):
             # (MCP FREECAD v2): old * new turned an already-rotated object around
             # its OWN axis while the reply named the global one
             rotation = FreeCAD.Rotation(axis_vector, angle)
-            obj.Placement.Rotation = rotation.multiply(obj.Placement.Rotation)
+            target = rotation.multiply(obj.Placement.Rotation)
+            note = ""
+            if self._attached(obj):
+                note = self._place_attached(obj, FreeCAD.Placement(obj.Placement.Base, target))
+            else:
+                obj.Placement.Rotation = target
             self.recompute(doc)
+            if self._not_placed(obj, rotation=target):
+                return (f"Error rotating object: {object_name} did NOT turn: FreeCAD recomputes "
+                        "its placement; turn what it follows instead (its sketch, its Body)")
 
             b = obj.Placement.Base
             return (f"Rotated {object_name} by {angle}° around the {axis.upper()}-axis through its "
-                    f"placement point ({b.x:g}, {b.y:g}, {b.z:g})")
+                    f"placement point ({b.x:g}, {b.y:g}, {b.z:g})" + note)
 
         except Exception as e:
             return f"Error rotating object: {e}"
