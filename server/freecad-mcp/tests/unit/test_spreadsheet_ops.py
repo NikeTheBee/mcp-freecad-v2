@@ -611,5 +611,146 @@ class TestCsvBomStripping(unittest.TestCase):
         self.assertEqual(sheet._cells_data.get('A1'), 'name')
 
 
+def _sheet_like_freecad(name, cells):
+    """A sheet whose get() RAISES for an empty cell, as FreeCAD 1.1.1 does
+    (measured: "Invalid cell address or property: B2"); getContents() of an
+    empty cell is ''. make_spreadsheet's get() returns '' instead."""
+    sheet = make_spreadsheet(name)
+    sheet._cells_data.update(cells)
+
+    def _get(cell):
+        if cell.upper() not in sheet._cells_data:
+            raise ValueError(f"Invalid cell address or property: {cell}")
+        return sheet._cells_data[cell.upper()]
+
+    sheet.get = MagicMock(side_effect=_get)
+    sheet.getContents = MagicMock(side_effect=lambda c: sheet._cells_data.get(c.upper(), ''))
+    return sheet
+
+
+class TestEmptyCellsV2(unittest.TestCase):
+    """MCP FREECAD v2: get_cell on an empty cell replied "Error getting cell",
+    and export_csv of a sheet holding only A1 and C3 listed 7 "errors"."""
+
+    def setUp(self):
+        reset_mocks()
+        self.handler = make_handler(SpreadsheetOpsHandler)
+
+    def test_get_cell_on_an_empty_cell_is_null(self):
+        mock_FreeCAD.ActiveDocument = make_mock_doc([_sheet_like_freecad("S", {'A1': '1'})])
+        payload = json.loads(self.handler.get_cell({'spreadsheet_name': 'S', 'cell': 'B2'}))
+        self.assertIsNone(payload['value'])
+        self.assertEqual(payload['formula'], '')
+
+    def test_get_cell_still_reports_a_real_error(self):
+        sheet = _sheet_like_freecad("S", {})
+        sheet.getContents = MagicMock(return_value='=Gone.x')   # not empty, yet get() fails
+        mock_FreeCAD.ActiveDocument = make_mock_doc([sheet])
+        result = self.handler.get_cell({'spreadsheet_name': 'S', 'cell': 'A1'})
+        self.assertTrue(result.startswith("Error getting cell"), result)
+
+    def test_export_of_a_sparse_sheet_lists_no_errors(self):
+        sheet = _sheet_like_freecad("S", {'A1': '1', 'C3': '2'})
+        mock_FreeCAD.ActiveDocument = make_mock_doc([sheet])
+        payload = json.loads(self.handler.export_csv({
+            'spreadsheet_name': 'S', 'start_cell': 'A1', 'end_cell': 'C3'}))
+        self.assertEqual(payload['errors'], [])
+        self.assertEqual(payload['csv'], '1,,\r\n,,\r\n,,2\r\n')
+
+    def test_a_formula_freecad_could_not_parse_is_said(self):
+        """FreeCAD stores "=2*" as the TEXT "'=2*" (sheet Up-to-date); the reply
+        was "Set S.A2 = =2*"."""
+        sheet = _sheet_like_freecad("S", {})
+        sheet.getContents = MagicMock(return_value="'=2*")
+        mock_FreeCAD.ActiveDocument = make_mock_doc([sheet])
+        result = self.handler.set_cell({'spreadsheet_name': 'S', 'cell': 'A2', 'value': '=2*'})
+        self.assertIn("formula not understood in A2", result)
+
+    def test_a_parsed_formula_has_no_warning(self):
+        sheet = _sheet_like_freecad("S", {})
+        sheet.getContents = MagicMock(return_value="=B2 * 2")
+        mock_FreeCAD.ActiveDocument = make_mock_doc([sheet])
+        result = self.handler.import_csv({'spreadsheet_name': 'S', 'csv_data': '1,=B2*2\n'})
+        self.assertNotIn("WARNING", result)
+
+    def test_set_cell_range_null_leaves_the_cell_empty(self):
+        sheet = make_spreadsheet("S")
+        mock_FreeCAD.ActiveDocument = make_mock_doc([sheet])
+        self.handler.set_cell_range({'spreadsheet_name': 'S', 'start_cell': 'A1',
+                                     'values': [[None, 3]]})
+        self.assertEqual(sheet._cells_data['A1'], '')
+        self.assertEqual(sheet._cells_data['B1'], '3')
+
+
+class TestBindExpressionV2(unittest.TestCase):
+    """MCP FREECAD v2: bind_expression (shared with varset_ops)."""
+
+    def setUp(self):
+        reset_mocks()
+        self.handler = make_handler(SpreadsheetOpsHandler)
+
+    def test_a_label_is_written_as_the_internal_name(self):
+        """'Param Sheet' resolved fine but "Param Sheet.tall" did not parse."""
+        box = make_part_object("Box1")
+        sheet = make_spreadsheet("Spreadsheet")
+        sheet.Label = "Param Sheet"
+        mock_FreeCAD.ActiveDocument = make_mock_doc([box, sheet])
+        result = self.handler.bind_property({
+            'object_name': 'Box1', 'property_name': 'Height',
+            'spreadsheet_name': 'Param Sheet', 'cell': 'tall'})
+        box.setExpression.assert_called_once_with('Height', 'Spreadsheet.tall')
+        self.assertTrue(result.startswith("Bound"), result)
+
+    def test_a_value_of_the_wrong_unit_is_not_bound(self):
+        """A 30 deg angle bound to Box.Length made a 30 mm box, replied "Bound"."""
+        class Deg:
+            class Unit:
+                Type = 'Angle'
+
+            def __str__(self):
+                return "30.0 deg"
+
+        box = make_part_object("Box1")
+        box.getTypeIdOfProperty = MagicMock(return_value='App::PropertyLength')
+        box.evalExpression = MagicMock(return_value=Deg())
+        mock_FreeCAD.ActiveDocument = make_mock_doc([box, make_spreadsheet("Params")])
+        result = self.handler.bind_property({
+            'object_name': 'Box1', 'property_name': 'Length',
+            'spreadsheet_name': 'Params', 'cell': 'tilt'})
+        self.assertTrue(result.startswith("Error: not bound -- unit mismatch"), result)
+        self.assertIn("30.0 deg", result)
+        box.setExpression.assert_not_called()
+
+    def test_a_value_of_the_right_unit_is_bound(self):
+        class Mm:
+            class Unit:
+                Type = 'Length'
+
+        box = make_part_object("Box1")
+        box.getTypeIdOfProperty = MagicMock(return_value='App::PropertyLength')
+        box.evalExpression = MagicMock(return_value=Mm())
+        mock_FreeCAD.ActiveDocument = make_mock_doc([box, make_spreadsheet("Params")])
+        result = self.handler.bind_property({
+            'object_name': 'Box1', 'property_name': 'Length',
+            'spreadsheet_name': 'Params', 'cell': 'len'})
+        self.assertTrue(result.startswith("Bound"), result)
+
+    def test_binding_never_deletes_the_feature(self):
+        """The creation-time 'adds no material' check removed an existing Pad
+        from its Body when it was bound (old reply: '...; not kept')."""
+        from unittest.mock import patch
+
+        pad = make_part_object("Boss")
+        mock_FreeCAD.ActiveDocument = make_mock_doc([pad, make_spreadsheet("Params")])
+        # patched on the instance: other test modules re-import handlers.base
+        with patch.object(self.handler, '_no_material_change',
+                          return_value="Boss.Length adds no material; not kept") as nm:
+            result = self.handler.bind_property({
+                'object_name': 'Boss', 'property_name': 'Length',
+                'spreadsheet_name': 'Params', 'cell': 'boss'})
+        nm.assert_not_called()
+        self.assertTrue(result.startswith("Bound"), result)
+
+
 if __name__ == '__main__':
     unittest.main()

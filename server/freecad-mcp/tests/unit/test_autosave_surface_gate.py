@@ -380,6 +380,18 @@ SAVE_REGISTER = {
         "why": "dispatch: reads each dynamic VarSet property by name for the listing; a read",
         "shapes": ["getattr(varset, name)"],
     },
+    ("handlers/varset_ops.py", "VarSetOpsHandler.add_property"): {
+        "why": "dispatch: reads back the enumeration value just set, for the reply; a read",
+        "shapes": ["getattr(varset, name, value)"],
+    },
+    ("handlers/varset_ops.py", "VarSetOpsHandler.set_property"): {
+        "why": "dispatch: reads back the value FreeCAD kept (it clamps out-of-range values), for the reply; a read",
+        "shapes": ["getattr(varset, name, None)"],
+    },
+    ("handlers/base.py", "BaseHandler._unit_mismatches"): {
+        "why": "dispatch: reads each expression-bound property named by its ExpressionEngine path to check its unit; a read",
+        "shapes": ["getattr(o, name)"],
+    },
     ("handlers/view_ops.py", "ViewOpsHandler.set_view"): {
         "why": "dispatch: views[view_type] is drawn from a literal dict of Std_View* commands; not a save",
         "shapes": ["FreeCADGui.runCommand", "FreeCADGui.runCommand(views[view_type], 0)"],

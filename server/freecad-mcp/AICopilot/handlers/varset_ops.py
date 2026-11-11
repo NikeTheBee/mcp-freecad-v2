@@ -118,6 +118,33 @@ def _property_value_for_json(raw_value):
     return str(raw_value), None
 
 
+def _kept_value_note(requested, stored) -> str:
+    """MCP FREECAD v2: FreeCAD silently clamps a value outside a property's
+    range (Length -5 -> 0 mm, Angle 400 -> 360 deg, Percent 150 -> 100) and
+    the reply echoed the requested value ("Set VS.W = -5"). '' when the
+    property holds what was asked (unit strings compared by value: "2 in" is
+    50.8 mm), else a warning naming the value FreeCAD kept."""
+    try:
+        if isinstance(requested, bool) or isinstance(stored, bool):
+            return ""
+        if isinstance(requested, (int, float)):
+            want = float(requested)
+        elif isinstance(requested, str):
+            import FreeCAD
+            want = FreeCAD.Units.Quantity(requested).Value
+        else:
+            return ""
+        got = stored.Value if hasattr(stored, 'Value') else stored
+        if not isinstance(got, (int, float)):
+            return ""
+        if abs(float(got) - want) <= 1e-9 * max(1.0, abs(want)):
+            return ""
+    except Exception:
+        return ""
+    return (f"\n  WARNING: FreeCAD kept {stored}, not {requested} "
+            "(outside the range this property allows)")
+
+
 def _contains_reference(expr_str: str, needle: str) -> bool:
     """True if `needle` (e.g. "Params.Width") appears in `expr_str` as a
     whole reference, not as a substring of a longer identifier.
@@ -201,7 +228,20 @@ class VarSetOpsHandler(BaseHandler):
             # ignored, so binding the new property right away set the bound
             # dimension to 0 (an invalid part). Apply it through set_property.
             value = args.get('value')
-            if value is not None and type_ != 'App::PropertyEnumeration':
+            if value is not None and type_ == 'App::PropertyEnumeration':
+                # MCP FREECAD v2: the initial value of an enumeration was dropped
+                # silently (enum_vals ["x","y"], value "y" -> the property read "x").
+                try:
+                    setattr(varset, name, value)
+                except Exception as e:
+                    self.recompute(doc)
+                    return (f"Added property {varset_name}.{name} ({type_}); "
+                            f"Error setting its value {value!r}: {e} "
+                            f"(options: {list(enum_vals or [])})")
+                self.recompute(doc)
+                return (f"Added property {varset_name}.{name} ({type_}) = "
+                        f"{getattr(varset, name, value)}" + self._recompute_errors(doc))
+            elif value is not None:
                 set_msg = self.set_property({'varset_name': varset_name, 'name': name,
                                              'value': value})
                 return f"Added property {varset_name}.{name} ({type_}); {set_msg}"
@@ -272,7 +312,9 @@ class VarSetOpsHandler(BaseHandler):
             setattr(varset, name, value)
             self.recompute(doc)
 
-            return f"Set {varset_name}.{name} = {value}" + self._recompute_errors(doc)
+            return (f"Set {varset_name}.{name} = {value}"
+                    + _kept_value_note(value, getattr(varset, name, None))
+                    + self._recompute_errors(doc))
 
         except Exception as e:
             return f"Error setting property: {e}"

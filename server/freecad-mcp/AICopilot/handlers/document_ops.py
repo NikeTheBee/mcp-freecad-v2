@@ -1,6 +1,7 @@
 # Document operation handlers for FreeCAD MCP
 
 import json
+import os
 from typing import Any
 
 import FreeCAD
@@ -86,8 +87,26 @@ class DocumentOpsHandler(BaseHandler):
                 path_err = self._validate_file_path(filename)
                 if path_err:
                     return f"Error: {path_err}"
-                doc.saveAs(filename)
-                return f"Document saved as: {filename}"
+                # MCP FREECAD v2: FreeCAD appends ".FCStd" to a name without it
+                # (Document::checkFileName): saving as "docC" wrote docC.FCStd
+                # while the reply named "docC". And saveAs replaced any existing
+                # file silently: saving document B as A's file left A.FCStd
+                # holding only B. Check the file FreeCAD will really write.
+                target = filename
+                if (FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Document")
+                        .GetBool("CheckExtension", True)
+                        and not filename.lower().endswith(".fcstd")):
+                    target += "FCStd" if filename.endswith(".") else ".FCStd"
+                own = doc.FileName if isinstance(doc.FileName, str) else ""
+                if (os.path.exists(target) and not args.get('overwrite')
+                        and not (own and os.path.normcase(os.path.abspath(own))
+                                 == os.path.normcase(os.path.abspath(target)))):
+                    return (f"Error: {target} already exists and is not this document's file; "
+                            "nothing saved. Pass overwrite=true to replace it, or choose "
+                            "another filename.")
+                doc.saveAs(target)
+                saved = doc.FileName if isinstance(doc.FileName, str) and doc.FileName else target
+                return f"Document saved as: {saved}"
             else:
                 doc.save()
                 return f"Document saved: {doc.Name}"
@@ -421,7 +440,10 @@ class DocumentOpsHandler(BaseHandler):
             feature.Shape = src_obj.Shape.copy()
 
             if x != 0 or y != 0 or z != 0:
-                feature.Placement.Base = FreeCAD.Vector(x, y, z)
+                # MCP FREECAD v2: x/y/z are an OFFSET (docstring, tool schema) but
+                # replaced the position: a source at (100, 50, 0) inserted with
+                # x=5 landed at (5, 0, 0), its y lost; x=0 kept (100, 50, 0).
+                feature.Placement.Base = feature.Placement.Base + FreeCAD.Vector(x, y, z)
 
             dst_doc.recompute()
             bb = self._exact_bbox(feature.Shape)

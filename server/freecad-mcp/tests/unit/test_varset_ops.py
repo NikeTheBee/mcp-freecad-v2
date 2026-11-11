@@ -30,6 +30,7 @@ import handlers.varset_ops as varset_ops_module
 from handlers.varset_ops import _PROP_DYNAMIC_BIT, VarSetOpsHandler, _property_value_for_json
 
 from tests.unit._freecad_mocks import (
+    MockVarSet,
     assert_error_contains,
     assert_success_contains,
     make_dep_edge,
@@ -376,6 +377,47 @@ class TestSetProperty(unittest.TestCase):
             'varset_name': 'Params', 'name': 'Target', 'value': 5,
         })
         assert_error_contains(self, result, "must be an object name")
+
+    def test_a_clamped_value_is_not_echoed_as_stored(self):
+        """MCP FREECAD v2: FreeCAD clamps out of range (Length -5 -> 0 mm,
+        Angle 400 -> 360 deg); the reply said "Set Params.Width = -5"."""
+        class ClampingVarSet(MockVarSet):
+            def __setattr__(self, name, value):
+                if name == 'Width' and isinstance(value, (int, float)) and value < 0:
+                    value = 0.0
+                super().__setattr__(name, value)
+
+        vs = ClampingVarSet("Params")
+        vs.addProperty('App::PropertyLength', 'Width')
+        mock_FreeCAD.ActiveDocument = make_mock_doc([vs])
+        result = self.handler.set_property({'varset_name': 'Params', 'name': 'Width', 'value': -5})
+        self.assertIn("WARNING: FreeCAD kept", result)
+        self.assertIn("not -5", result)
+
+    def test_a_value_kept_as_given_has_no_warning(self):
+        vs = self._varset_with_length()
+        mock_FreeCAD.ActiveDocument = make_mock_doc([vs])
+        result = self.handler.set_property({'varset_name': 'Params', 'name': 'Width', 'value': 12.5})
+        self.assertNotIn("WARNING", result)
+
+    def test_add_enumeration_applies_its_initial_value(self):
+        """MCP FREECAD v2: value "B" was dropped; the property read "A"."""
+        vs = make_varset("Params")
+        mock_FreeCAD.ActiveDocument = make_mock_doc([vs])
+        result = self.handler.add_property({
+            'varset_name': 'Params', 'type': 'App::PropertyEnumeration', 'name': 'Grade',
+            'enum_vals': ['A', 'B'], 'value': 'B'})
+        self.assertEqual(vs._values['Grade'], 'B')
+        self.assertIn("= B", result)
+
+    def test_add_enumeration_with_a_value_not_listed_says_so(self):
+        vs = make_varset("Params")
+        mock_FreeCAD.ActiveDocument = make_mock_doc([vs])
+        result = self.handler.add_property({
+            'varset_name': 'Params', 'type': 'App::PropertyEnumeration', 'name': 'Grade',
+            'enum_vals': ['A', 'B'], 'value': 'Z'})
+        self.assertIn("Error setting its value 'Z'", result)
+        self.assertEqual(vs._values['Grade'], 'A')
 
 
 class TestGetProperty(unittest.TestCase):

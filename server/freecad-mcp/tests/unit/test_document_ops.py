@@ -182,6 +182,44 @@ class TestSaveDocument:
         result = doc_handler.save_document({})
         assert "Error" in result
 
+    @staticmethod
+    def _track_file_name(mock_doc):
+        def save_as(path):
+            mock_doc.FileName = path
+        mock_doc.saveAs.side_effect = save_as
+
+    def test_another_existing_file_is_not_replaced(self, doc_handler, mock_doc, tmp_path):
+        """MCP FREECAD v2: saving document B as A's file left A.FCStd holding only B."""
+        other = tmp_path / "partA.FCStd"
+        other.write_bytes(b"A's model")
+        result = doc_handler.save_document({"filename": str(other)})
+        assert result.startswith("Error") and "already exists" in result and "overwrite" in result
+        mock_doc.saveAs.assert_not_called()
+        assert other.read_bytes() == b"A's model"
+
+    def test_overwrite_true_replaces_it(self, doc_handler, mock_doc, tmp_path):
+        other = tmp_path / "partA.FCStd"
+        other.write_bytes(b"A's model")
+        self._track_file_name(mock_doc)
+        result = doc_handler.save_document({"filename": str(other), "overwrite": True})
+        mock_doc.saveAs.assert_called_once_with(str(other))
+        assert result == f"Document saved as: {other}"
+
+    def test_its_own_file_is_saved_again(self, doc_handler, mock_doc, tmp_path):
+        own = tmp_path / "mine.FCStd"
+        own.write_bytes(b"old")
+        mock_doc.FileName = str(own)
+        result = doc_handler.save_document({"filename": str(own)})
+        mock_doc.saveAs.assert_called_once_with(str(own))
+        assert result == f"Document saved as: {own}"
+
+    def test_reply_names_the_file_freecad_writes(self, doc_handler, mock_doc, tmp_path):
+        """FreeCAD appends .FCStd: "docC" was written docC.FCStd, replied "docC"."""
+        self._track_file_name(mock_doc)
+        result = doc_handler.save_document({"filename": str(tmp_path / "docC")})
+        mock_doc.saveAs.assert_called_once_with(str(tmp_path / "docC.FCStd"))
+        assert result == f"Document saved as: {tmp_path / 'docC.FCStd'}"
+
 
 # ---------------------------------------------------------------------------
 # list_objects
@@ -674,6 +712,41 @@ class TestInsertShape:
         assert "Inserted" in result
         assert "Box_ref" in result
         assert "20.0" in result
+
+    def test_xyz_offset_the_source_placement(self, doc_handler, mock_freecad):
+        """MCP FREECAD v2: x/y/z are an offset (docstring, schema); a source at
+        (100, 50, 0) inserted with x=5 landed at (5, 0, 0)."""
+        class V(tuple):
+            def __new__(cls, x, y, z):
+                return super().__new__(cls, (x, y, z))
+
+            def __add__(self, o):
+                return V(*(a + b for a, b in zip(self, o)))
+
+        class FakePlacement:
+            Base = V(100, 50, 0)
+
+        class FakeBB:
+            XLength = YLength = ZLength = 10.0
+
+        class FakeFeature:
+            Name = "SB_ref"
+            Shape = None
+            Placement = FakePlacement()
+
+        src_obj = MagicMock()
+        src_obj.Shape.copy.return_value = MagicMock(BoundBox=FakeBB())
+        src_doc = MagicMock()
+        src_doc.getObject.return_value = src_obj
+        feature = FakeFeature()
+        dst_doc = MagicMock()
+        dst_doc.addObject.return_value = feature
+        mock_freecad.listDocuments.return_value = {"SrcDoc": src_doc}
+        mock_freecad.getDocument.return_value = src_doc
+        mock_freecad.ActiveDocument = dst_doc
+        mock_freecad.Vector = V
+        doc_handler.insert_shape({"source_doc": "SrcDoc", "source_object": "SB", "x": 5})
+        assert feature.Placement.Base == (105, 50, 0)
 
 
 # ---------------------------------------------------------------------------

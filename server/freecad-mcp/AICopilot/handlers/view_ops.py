@@ -525,7 +525,10 @@ class ViewOpsHandler(BaseHandler):
             else:
                 doc.recompute()
                 elapsed = _time.time() - t0
-                return f"Recomputed document '{doc.Name}' in {elapsed:.2f}s"
+                # MCP FREECAD v2: replied "Recomputed document 'P8' in 0.00s" with a
+                # Box (Length 0) left Invalid; recompute() never raises.
+                return (f"Recomputed document '{doc.Name}' in {elapsed:.2f}s"
+                        + self._recompute_errors(doc))
         except Exception as e:
             return f"Error in recompute: {e}"
 

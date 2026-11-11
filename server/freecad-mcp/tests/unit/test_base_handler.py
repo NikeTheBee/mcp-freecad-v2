@@ -1196,7 +1196,9 @@ class TestBindExpression:
 
     def test_success_builds_expression_and_recomputes(self, base_handler, mock_freecad):
         obj = MagicMock(Label="Cube", State=[])
-        target = MagicMock(Label="Params")
+        # MCP FREECAD v2: the expression names the target by its internal Name
+        # (every FreeCAD object has one), so the mock carries it.
+        target = MagicMock(Name="Params", Label="Params")
         doc = self._make_doc({"Cube": obj, "Params": target})
         mock_freecad.ActiveDocument = doc
         result = base_handler.bind_expression(
@@ -1204,6 +1206,18 @@ class TestBindExpression:
         assert result == "Bound Cube.Length to Params.Width"
         obj.setExpression.assert_called_once_with("Length", "Params.Width")
         doc.recompute.assert_called_once()
+
+    def test_a_target_found_by_label_is_written_by_name(self, base_handler, mock_freecad):
+        """MCP FREECAD v2: Label "My Params" resolved, but "My Params.Width"
+        failed to parse; the expression must use the Name."""
+        obj = MagicMock(Label="Cube", State=[])
+        target = MagicMock(Name="VarSet", Label="My Params")
+        doc = self._make_doc({"Cube": obj, "VarSet": target})
+        mock_freecad.ActiveDocument = doc
+        result = base_handler.bind_expression(
+            "Cube", "Length", "My Params", "Width", target_noun="VarSet")
+        obj.setExpression.assert_called_once_with("Length", "VarSet.Width")
+        assert result == "Bound Cube.Length to VarSet.Width"
 
     def test_object_not_found(self, base_handler, mock_freecad):
         doc = self._make_doc({})
@@ -1421,6 +1435,34 @@ class TestRecomputeErrors:
     def test_nothing_when_all_computed(self):
         doc = MagicMock()
         doc.Objects = [MagicMock(Name="Pad", State=["Up-to-date"])]
+        assert self._errors(doc) == ""
+
+    @staticmethod
+    def _bound_box(unit_type, text):
+        class Q:
+            class Unit:
+                Type = unit_type
+
+            def __str__(self):
+                return text
+
+        box = MagicMock(Name="Box", State=["Up-to-date"])
+        box.ExpressionEngine = [("Length", "Params.length")]
+        box.getTypeIdOfProperty = MagicMock(return_value="App::PropertyLength")
+        box.Length = Q()
+        return box
+
+    def test_flags_a_bound_length_holding_an_angle(self):
+        """MCP FREECAD v2: a cell "45 deg" bound to Box.Length made a 45 mm box
+        (Length read "45.0 deg"), recompute OK, replied "Set Params.B1 = 45 deg"."""
+        doc = MagicMock()
+        doc.Objects = [self._bound_box("Angle", "45.0 deg")]
+        msg = self._errors(doc)
+        assert "unit mismatch" in msg and "Box.Length expects Length" in msg and "45.0 deg" in msg
+
+    def test_a_bound_length_in_mm_is_fine(self):
+        doc = MagicMock()
+        doc.Objects = [self._bound_box("Length", "45.0 mm")]
         assert self._errors(doc) == ""
 
 

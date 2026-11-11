@@ -51,6 +51,38 @@ def _parse_cell_ref(cell: str) -> tuple[str, int] | None:
     return m.group(1), int(m.group(2))
 
 
+def _is_empty_cell(spreadsheet, cell: str) -> bool:
+    """MCP FREECAD v2: Sheet.get() RAISES "Invalid cell address or property"
+    for an empty cell (FreeCAD 1.1.1) -- it does not return None. True only
+    when the cell's stored contents are confirmed empty."""
+    try:
+        return spreadsheet.getContents(cell) == ''
+    except Exception:
+        return False
+
+
+def _formula_warning(spreadsheet, written) -> str:
+    """MCP FREECAD v2: FreeCAD keeps a formula it cannot parse as TEXT: "=2*"
+    was stored as "'=2*", the sheet stayed Up-to-date and the reply said
+    "Set S.A2 = =2*". `written` is [(cell, text)]; '' unless one of those
+    formulas became text."""
+    bad = []
+    for cell, text in written:
+        if not text.startswith('='):
+            continue
+        try:
+            contents = spreadsheet.getContents(cell)
+        except Exception:
+            continue
+        if isinstance(contents, str) and contents.startswith("'"):
+            bad.append(cell)
+    if not bad:
+        return ""
+    more = f" (+{len(bad) - 6} more)" if len(bad) > 6 else ""
+    return (f"\n  WARNING: formula not understood in {', '.join(bad[:6])}{more} -- "
+            "FreeCAD stored it as text, not as a formula")
+
+
 class SpreadsheetOpsHandler(BaseHandler):
     """Handler for Spreadsheet workbench operations."""
 
@@ -91,10 +123,12 @@ class SpreadsheetOpsHandler(BaseHandler):
                 return err
 
             # A null value clears the cell rather than writing the literal "None".
-            spreadsheet.set(cell, '' if value is None else str(value))
+            text = '' if value is None else str(value)
+            spreadsheet.set(cell, text)
             self.recompute(doc)
 
-            return f"Set {spreadsheet_name}.{cell} = {value}" + self._recompute_errors(doc)
+            return (f"Set {spreadsheet_name}.{cell} = {value}"
+                    + _formula_warning(spreadsheet, [(cell, text)]) + self._recompute_errors(doc))
 
         except Exception as e:
             return f"Error setting cell: {e}"
@@ -109,7 +143,14 @@ class SpreadsheetOpsHandler(BaseHandler):
             if err:
                 return err
 
-            value = spreadsheet.get(cell)
+            try:
+                value = spreadsheet.get(cell)
+            except Exception:
+                # MCP FREECAD v2: an empty cell was replied "Error getting cell:
+                # Invalid cell address or property" -- get() raises for it.
+                if not _is_empty_cell(spreadsheet, cell):
+                    raise
+                value = None
             # getContents returns the stored expression/formula (e.g. "=A1+B1");
             # spreadsheet.get() evaluates it away. Surface both so a read→write
             # round-trip doesn't silently replace a live formula with a literal,
@@ -210,6 +251,7 @@ class SpreadsheetOpsHandler(BaseHandler):
             start_col, start_row = parsed
 
             cells_set = 0
+            written = []
             for row_idx, row_values in enumerate(values):
                 if not isinstance(row_values, list):
                     row_values = [row_values]
@@ -217,13 +259,16 @@ class SpreadsheetOpsHandler(BaseHandler):
                     col_num = _col_to_num(start_col) + col_idx
                     col_letter = _num_to_col(col_num)
                     cell = f"{col_letter}{start_row + row_idx}"
-                    spreadsheet.set(cell, str(value))
+                    # MCP FREECAD v2: a null wrote the text "None" (set_cell clears).
+                    text = '' if value is None else str(value)
+                    spreadsheet.set(cell, text)
+                    written.append((cell, text))
                     cells_set += 1
 
             self.recompute(doc)
 
             return (f"Set {cells_set} cells in {spreadsheet_name} starting at {start_cell}"
-                    + self._recompute_errors(doc))
+                    + _formula_warning(spreadsheet, written) + self._recompute_errors(doc))
 
         except Exception as e:
             return f"Error setting cell range: {e}"
@@ -388,18 +433,20 @@ class SpreadsheetOpsHandler(BaseHandler):
             import csv as _csv
             import io as _io
             cells_set = 0
+            written = []
             reader = _csv.reader(_io.StringIO(csv_data), delimiter=delimiter)
             for row_idx, values in enumerate(reader):
                 for col_idx, value in enumerate(values):
                     col_letter = _num_to_col(start_col_num + col_idx)
                     cell = f"{col_letter}{start_row + row_idx}"
                     spreadsheet.set(cell, value)
+                    written.append((cell, value))
                     cells_set += 1
 
             self.recompute(doc)
 
             return (f"Imported {cells_set} cells from CSV into {spreadsheet_name}"
-                    + self._recompute_errors(doc))
+                    + _formula_warning(spreadsheet, written) + self._recompute_errors(doc))
 
         except Exception as e:
             return f"Error importing CSV: {e}"
@@ -460,7 +507,10 @@ class SpreadsheetOpsHandler(BaseHandler):
                         row_values.append("" if value is None else str(value))
                     except Exception as e:
                         row_values.append("")
-                        errors.append(f"{cell}: {e}")
+                        # MCP FREECAD v2: get() raises for every EMPTY cell too; a
+                        # sheet with A1 and C3 filled listed 7 "errors" (B1..B3).
+                        if not _is_empty_cell(spreadsheet, cell):
+                            errors.append(f"{cell}: {e}")
                 writer.writerow(row_values)
             csv_data = buf.getvalue()
 

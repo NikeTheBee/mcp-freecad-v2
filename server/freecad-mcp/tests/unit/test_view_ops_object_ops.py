@@ -121,3 +121,28 @@ class TestDeleteObject:
             fc.ActiveDocument = make_mock_doc()
             result = make_handler().delete_object({"object_name": "Ghost"})
         assert "not found" in result.lower()
+
+
+class TestRecomputeDocument:
+    """MCP FREECAD v2: the whole-document recompute replied "Recomputed
+    document 'P8' in 0.00s" while a Box (Length 0) stayed Invalid."""
+
+    @staticmethod
+    def _recompute(doc):
+        handler = make_handler()
+        handler.get_document = lambda: doc
+        return handler.recompute_object({})
+
+    def test_names_the_objects_left_invalid(self):
+        doc = make_mock_doc()
+        doc.Objects[0].State = ["Touched", "Invalid"]
+        doc.Objects[1].State = ["Up-to-date"]
+        result = self._recompute(doc)
+        assert "1 object(s) are in error: Box" in result
+
+    def test_clean_document_reply_unchanged(self):
+        doc = make_mock_doc()
+        for o in doc.Objects:
+            o.State = ["Up-to-date"]
+        result = self._recompute(doc)
+        assert result.startswith("Recomputed document 'TestDoc'") and "WARNING" not in result

@@ -437,13 +437,57 @@ class BaseHandler:
             bad = [o.Name for o in doc.Objects
                    if 'Invalid' in (getattr(o, 'State', None) or [])]
         except Exception:
-            return ""
-        if not bad:
-            return ""
-        more = f" (+{len(bad) - limit} more)" if len(bad) > limit else ""
-        return (f"\n  WARNING: after the recompute {len(bad)} object(s) are in error: "
-                f"{', '.join(bad[:limit])}{more} -- they keep their last good shape, "
-                f"the model does NOT reflect this value")
+            bad = []
+        msg = ""
+        if bad:
+            more = f" (+{len(bad) - limit} more)" if len(bad) > limit else ""
+            msg = (f"\n  WARNING: after the recompute {len(bad)} object(s) are in error: "
+                   f"{', '.join(bad[:limit])}{more} -- they keep their last good shape, "
+                   f"the model does NOT reflect this value")
+        wrong = BaseHandler._unit_mismatches(doc)
+        if wrong:
+            msg += ("\n  WARNING: unit mismatch -- " + "; ".join(wrong[:limit])
+                    + " -- FreeCAD used the number as is: give the value the right unit")
+        return msg
+
+    # MCP FREECAD v2: the unit a quantity property's value must have, by property TypeId.
+    _QUANTITY_KIND = {
+        "App::PropertyLength": "Length", "App::PropertyDistance": "Length",
+        "App::PropertyAngle": "Angle", "App::PropertyArea": "Area",
+        "App::PropertyVolume": "Volume",
+    }
+
+    @staticmethod
+    def _unit_mismatches(doc) -> list:
+        """MCP FREECAD v2: expression-bound quantity properties whose value has
+        the wrong unit. FreeCAD takes the unit from the expression without
+        checking it: a cell "45 deg" bound to Box.Length gave a 45 mm box (its
+        Length read "45.0 deg") and "180 mm" bound to Cylinder.Angle doubled the
+        cylinder, both replied "Set ..." with no warning and recompute() OK.
+        Only top-level properties of the types above are checked."""
+        found = []
+        try:
+            objects = list(doc.Objects)
+        except Exception:
+            return found
+        for o in objects:
+            try:
+                bound = list(getattr(o, 'ExpressionEngine', None) or [])
+            except Exception:
+                continue
+            for path, expr in bound:
+                try:
+                    name = path[1:] if path.startswith('.') else path
+                    if '.' in name:
+                        continue
+                    kind = BaseHandler._QUANTITY_KIND.get(o.getTypeIdOfProperty(name))
+                    value = getattr(o, name)
+                    got = value.Unit.Type
+                    if kind and isinstance(got, str) and got not in (kind, '', '1'):
+                        found.append(f"{o.Name}.{name} expects {kind} but {expr} gives {value}")
+                except Exception:
+                    continue
+        return found
 
     def find_font(self, font_file: str = '') -> str:
         """Find a usable .ttf font file, trying the given path then common system locations.
@@ -1361,7 +1405,29 @@ class BaseHandler:
             if val_err:
                 return val_err
 
-        expression = f"{target_name}.{target_ref}"
+        # MCP FREECAD v2: the target is resolved by Name OR Label above, but the
+        # expression used the caller's string: a Label such as "Param Sheet"
+        # failed with "Failed to parse expression" although every other op
+        # accepts it. The internal Name always parses and names that object.
+        expression = f"{getattr(target, 'Name', target_name)}.{target_ref}"
+
+        # MCP FREECAD v2: FreeCAD binds a value of any unit: a VarSet Angle of
+        # 30 deg bound to Box.Length gave a 30 mm box, replied "Bound", and the
+        # Length then read "30.0 deg" and refused any mm value ("Not matching
+        # Unit!"). Refuse before binding, from the expression's own value.
+        kind = None
+        with contextlib.suppress(Exception):
+            if '.' not in property_name:
+                kind = self._QUANTITY_KIND.get(obj.getTypeIdOfProperty(property_name))
+        if kind:
+            got = value = None
+            with contextlib.suppress(Exception):
+                value = obj.evalExpression(expression)
+                got = value.Unit.Type
+            if isinstance(got, str) and got not in (kind, '', '1'):
+                return (f"Error: not bound -- unit mismatch: {object_name}.{property_name} "
+                        f"expects {kind} but {expression} is {value} ({got})")
+
         obj.setExpression(property_name, expression)
         self.recompute(doc)
 
@@ -1369,7 +1435,11 @@ class BaseHandler:
         # and a failed recompute doesn't raise -- it marks the feature's
         # State Invalid instead. Without this check, a bad target_ref would
         # report unconditional success.
-        state_err = self._check_feature_state(obj, f"{object_name}.{property_name}")
+        # MCP FREECAD v2: material=False -- the no-material check deletes a
+        # feature that adds/removes nothing; right for a feature just created,
+        # wrong for an existing one being bound (it would vanish from the Body).
+        state_err = self._check_feature_state(obj, f"{object_name}.{property_name}",
+                                              material=False)
         if state_err:
             return f"Error: expression bound but {state_err}"
 

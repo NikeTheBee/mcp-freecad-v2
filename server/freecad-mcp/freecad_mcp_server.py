@@ -1685,7 +1685,8 @@ async def main():
                                  "default": "isometric"},
                     # Document parameters
                     "document_name": {"type": "string", "description": "Document name", "default": "Unnamed"},
-                    "filename": {"type": "string", "description": "save_document: file path to save to. screenshot: also keep the PNG at this path (must end in .png)"},
+                    "filename": {"type": "string", "description": "save_document: file path to save to ('.FCStd' is appended when missing). screenshot: also keep the PNG at this path (must end in .png)"},
+                    "overwrite": {"type": "boolean", "description": "save_document: replace an existing file that is not this document's own file (default false: refused)", "default": False},
                     # Object parameters
                     "object_name": {"type": "string", "description": "Object name for operations (recompute: omit to recompute the whole document instead of one object)"},
                     "force": {"type": "boolean", "description": "recompute: touch() the object first so it recomputes even if not already marked dirty (default true, only meaningful with object_name)", "default": True},
