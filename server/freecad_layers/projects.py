@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from typing import Any, Dict, List
 
 from . import (CURRENT_FILE, PROJECT_NAME, PROJECTS, current_project, safe_out_path, safe_under,
@@ -43,7 +44,16 @@ def _set_current(name: str) -> None:
     p = safe_out_path(_root() / CURRENT_FILE, {".json"}, overwrite=True)
     tmp = p.with_name(p.name + ".tmp")
     tmp.write_text(json.dumps({"name": name}), encoding="utf-8")
-    os.replace(tmp, p)
+    for attempt in range(20):
+        try:
+            os.replace(tmp, p)
+            return
+        except PermissionError:
+            # Windows refuses the replace while another process reads the file
+            # (measured: a switch during a read failed with WinError 5)
+            if attempt == 19:
+                raise
+            time.sleep(0.05)
 
 
 def names() -> List[str]:

@@ -56,8 +56,8 @@ solid can still be the wrong part.
 checkpoint.save("before_fins", note="clean body+nose", doc=FreeCAD.ActiveDocument)
 checkpoint.list_checkpoints()                         # [{name, file, at, note, ...}]
 checkpoint.restore("before_fins")                     # reloads FROM DISK, returns the doc
-checkpoint.restore("before_fins", replace_active=True)  # true rollback: the current doc is
-                                                        # saved to recovery/ then closed
+checkpoint.restore("before_fins", replace_active=True)  # true rollback: the open doc it was
+                                                        # taken from is saved to recovery/, closed
 ```
 Different names never share a file; re-saving the same name replaces that checkpoint.
 

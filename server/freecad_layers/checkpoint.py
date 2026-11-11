@@ -112,23 +112,28 @@ def restore(name: str, replace_active: bool = False):
     """Reload the named checkpoint from disk and return it (becomes active).
 
     Any open document backed by the checkpoint file is closed first, so the
-    result is always the saved content. With replace_active=True the current
-    active document is saved to /recovery and closed (true rollback); by
-    default it stays open next to the restored one.
+    result is always the saved content. With replace_active=True the open
+    document the checkpoint was taken from is saved to /recovery and closed
+    (true rollback); by default it stays open next to the restored one.
     """
     path = _path_of(name)
+    entry = next(c for c in list_checkpoints() if c.get("name") == name)
     for dname, d in list(FreeCAD.listDocuments().items()):
         if _same_file(d.FileName, path):
             FreeCAD.closeDocument(dname)
-    if replace_active and FreeCAD.ActiveDocument is not None:
-        from . import recovery
-        abandoned = FreeCAD.ActiveDocument
-        recovery.autosave(abandoned, reason=f"before-restore-{_slug(name)}")
-        FreeCAD.closeDocument(abandoned.Name)
     from . import recovery
+    if replace_active:
+        # the document being rolled back, not whichever is active: with another
+        # design in front, that one was closed, the stale document stayed open
+        # and the rollback opened beside it as "<name>1" (its autosaves then
+        # went to another folder: recover brought the stale one back)
+        source = entry.get("source_doc")
+        abandoned = FreeCAD.listDocuments().get(source) if source else FreeCAD.ActiveDocument
+        if abandoned is not None:
+            recovery.autosave(abandoned, reason=f"before-restore-{_slug(name)}")
+            FreeCAD.closeDocument(abandoned.Name)
     # a copy, named after the checkpointed document: the checkpoint file itself
     # never becomes the document's file (a save would overwrite it)
-    entry = next(c for c in list_checkpoints() if c.get("name") == name)
     doc = recovery.open_copy(path, entry.get("source_doc") or path.stem,
                              origin=f"checkpoint-{path.stem}")
     # the rollback is the latest work now: after a crash, recover() must bring

@@ -403,7 +403,7 @@ _out = f"recorded {_a['feature']}" + (f"; autosaved {_saved}" if _saved else "")
 def checkpoint(action: str, name: str = "", note: str = "",
                replace_active: bool = True) -> str:
     """action: save | restore | list. restore reloads from disk; with replace_active the
-    current document is autosaved to recovery and closed (true rollback)."""
+    open document it was taken from is autosaved to recovery and closed (true rollback)."""
     return _run("""
 if _a['action'] == 'save':
     _out = checkpoint.save(_a['name'], _a['note'])

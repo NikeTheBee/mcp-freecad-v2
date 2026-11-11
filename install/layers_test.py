@@ -97,6 +97,18 @@ assert saved, ("abandoned work was not autosaved", copies)
 lost = FreeCAD.openDocument(saved)
 assert lost.getObject("B").Length.Value == 555, "recovery copy is not the abandoned state"
 FreeCAD.closeDocument(lost.Name)
+# with ANOTHER design in front, the rollback still replaces the document it was taken
+# from: the active one was closed instead, the stale "Work" stayed and the rollback
+# opened beside it as "Work1"
+back.getObject("B").Length = 777
+back.recompute()
+other = FreeCAD.newDocument("Other")
+FreeCAD.setActiveDocument("Other")
+back = checkpoint.restore("good", replace_active=True)
+assert "Other" in FreeCAD.listDocuments(), "the unrelated active document was closed"
+assert back.Name == "Work" and back.getObject("B").Length.Value == 10, (back.Name, list(FreeCAD.listDocuments()))
+FreeCAD.closeDocument("Other")
+print("rollback replaces the checkpointed document, not the active one: OK")
 # the newest copy is the rollback itself: recover() after a crash brings back the
 # state the user chose, not the one abandoned
 assert "restored-good" in copies[0], copies
