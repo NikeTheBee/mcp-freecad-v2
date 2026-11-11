@@ -61,6 +61,23 @@ def main() -> int:
         assert other and "outside the configured FreeCAD" in other, other
         print("2b. trust: configured folder or its bin\\ accepted, any other folder refused: OK")
 
+        # a listener nobody has connected to yet is still the port's owner (Windows
+        # build 26300 reports it without the LISTEN state: the launcher saw the port
+        # free, started a second FreeCAD that died on "address already in use")
+        import os
+        fresh = socket.socket()
+        fresh.bind(("127.0.0.1", 0))
+        port = fresh.getsockname()[1]
+        assert launcher.port_owners(port) == set(), "a socket that is only bound is no listener"
+        fresh.listen(1)
+        assert launcher.port_owners(port) == {os.getpid()}, launcher.port_owners(port)
+        fresh.close()
+        udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)       # not a TCP listener
+        udp.bind(("127.0.0.1", 0))
+        assert launcher.port_owners(udp.getsockname()[1]) == set()
+        udp.close()
+        print("2d. a fresh listener (no client yet) owns its port; bound-only and UDP do not: OK")
+
         sup = subprocess.Popen([str(VENV_PY), str(LAUNCHER), "--supervise", "60"],
                                env=inst.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                text=True)

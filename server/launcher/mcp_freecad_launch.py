@@ -105,8 +105,22 @@ def find_freecadcmd() -> Path | None:
 def port_owners(port: int = PORT) -> set:
     """PIDs of every process listening on <port> (IPv4 or IPv6, any address):
     a squatter on 0.0.0.0 or ::1 counts as much as one on 127.0.0.1."""
-    return {c.pid for c in psutil.net_connections(kind="inet")
-            if c.status == psutil.CONN_LISTEN and c.laddr and c.laddr.port == port}
+    return {c.pid for c in psutil.net_connections(kind="inet") if is_listener(c, port)}
+
+
+def is_listener(c, port: int) -> bool:
+    """Is this psutil connection a TCP socket listening on <port>?
+
+    Not `status == LISTEN` alone: since a Windows update (build 26300, Nov 2026) a
+    listener that no client has reached yet is reported with a state psutil does
+    not know (CONN_NONE). The launcher then saw the port as free while FreeCAD
+    served it: it started a second FreeCAD, which died on "address already in
+    use", and every session failed to connect. A TCP socket on the port with no
+    remote end is a listener (a socket that is only bound is not in the table).
+    """
+    # pid 0: rows Windows keeps for closed connections, never a live listener
+    return (bool(c.pid) and c.type == socket.SOCK_STREAM and bool(c.laddr) and c.laddr.port == port
+            and not c.raddr and c.status in (psutil.CONN_LISTEN, psutil.CONN_NONE))
 
 
 def port_owner(port: int = PORT, freecadcmd: Path | None = None) -> int | None:

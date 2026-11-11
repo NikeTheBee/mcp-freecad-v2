@@ -86,7 +86,10 @@ class Instance:
         """Kill whatever FreeCAD currently serves the test port (by PID)."""
         import psutil
         for c in psutil.net_connections(kind="inet"):
-            if c.status == psutil.CONN_LISTEN and c.laddr and c.laddr.port == self.port:
+            # a fresh listener may be reported without the LISTEN state (see the
+            # launcher's is_listener): the test FreeCAD was then never stopped
+            if (c.pid and c.type == socket.SOCK_STREAM and c.laddr and c.laddr.port == self.port
+                    and not c.raddr and c.status in (psutil.CONN_LISTEN, psutil.CONN_NONE)):
                 try:
                     psutil.Process(c.pid).kill()
                     psutil.Process(c.pid).wait(10)
