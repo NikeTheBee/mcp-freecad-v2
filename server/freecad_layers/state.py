@@ -72,9 +72,13 @@ def _migrate(s: Dict[str, Any]) -> Dict[str, Any]:
 # -- locking ----------------------------------------------------------------
 
 @contextlib.contextmanager
-def _locked() -> Iterator[None]:
-    """Exclusive inter-process lock on project_state/state.json.lock."""
-    lock_path = _state_path().with_suffix(".json.lock")
+def _locked(p: Path) -> Iterator[None]:
+    """Exclusive inter-process lock on project_state/state.json.lock.
+
+    The lock, the read and the write take ONE path, resolved once per call: each
+    looked up the selected project, so a switch in between (another session)
+    wrote project A's whole memory over project B's."""
+    lock_path = p.with_suffix(".json.lock")
     fd = os.open(str(lock_path), os.O_RDWR | os.O_CREAT, 0o600)
     deadline = time.monotonic() + LOCK_TIMEOUT_S
     try:
@@ -120,12 +124,12 @@ def load() -> Dict[str, Any]:
     last good backup if state.json is corrupt (flagged in `_recovered`).
     Takes the lock: on Windows an open reader would make a writer's atomic
     replace fail."""
-    with _locked():
-        return _load_nolock()
-
-
-def _load_nolock() -> Dict[str, Any]:
     p = _state_path()
+    with _locked(p):
+        return _load_nolock(p)
+
+
+def _load_nolock(p: Path) -> Dict[str, Any]:
     if not p.exists():
         return _empty()
     try:
@@ -141,8 +145,7 @@ def _load_nolock() -> Dict[str, Any]:
         return s
 
 
-def _write(state: Dict[str, Any]) -> None:
-    p = _state_path()
+def _write(state: Dict[str, Any], p: Path) -> None:
     data = {k: v for k, v in state.items() if not k.startswith("_")}
     data["updated"] = _now()
     tmp = p.with_name(f"state.json.{os.getpid()}.tmp")
@@ -163,16 +166,18 @@ def _write(state: Dict[str, Any]) -> None:
 def save(state: Dict[str, Any]) -> None:
     """Atomic, locked write: a crash mid-write must never corrupt the project
     memory (NF2 — the memory IS the recovery mechanism)."""
-    with _locked():
-        _write(state)
+    p = _state_path()
+    with _locked(p):
+        _write(state, p)
 
 
 def update(fn: Callable[[Dict[str, Any]], Any]) -> Any:
     """Locked read-modify-write: `fn(state)` mutates the state in place."""
-    with _locked():
-        s = _load_nolock()
+    p = _state_path()
+    with _locked(p):
+        s = _load_nolock(p)
         out = fn(s)
-        _write(s)
+        _write(s, p)
         return out
 
 

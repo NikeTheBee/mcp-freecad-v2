@@ -132,6 +132,104 @@ assert a != b and os.path.exists(a) and os.path.exists(b), (a, b)
 assert recovery.latest(doc.Name) == b, (recovery.latest(doc.Name), b)
 print("same-millisecond autosaves get distinct names, latest() = newest: OK")
 
+# --- the latest copy is the last one WRITTEN, whatever the wall clock says ------
+# Autumn DST change (or a clock / time zone set back): the local time in the name
+# goes back an hour. The next autosave sorted below the copies of the hour before,
+# was pruned the moment it was written, and recover() reopened an older state.
+import types  # noqa: E402
+dst = FreeCAD.newDocument("Dst")
+dbox = dst.addObject("Part::Box", "B")
+dst.recompute()
+_real_mod = recovery.time
+_back = [0]
+recovery.time = types.SimpleNamespace(
+    time=_real_mod.time, strftime=_real_mod.strftime,
+    localtime=lambda t=None: _real_mod.localtime((_real_mod.time() if t is None else t) - _back[0]))
+try:
+    for i in range(recovery.KEEP):
+        dbox.Length = 10 + i
+        dst.recompute()
+        recovery.autosave(dst)
+    _back[0] = 3000                 # 03:00 CEST becomes 02:10 CET
+    _real_mod.sleep(0.1)            # the change falls between two saves, not inside one file-time tick
+    dbox.Length = 99
+    dst.recompute()
+    newest = recovery.autosave(dst)
+finally:
+    recovery.time = _real_mod
+assert os.path.exists(newest), "the newest autosave was pruned as soon as it was written"
+assert recovery.latest("Dst") == newest, (recovery.latest("Dst"), newest)
+FreeCAD.closeDocument("Dst")
+dst = recovery.open_latest("Dst")
+assert dst.getObject("B").Length.Value == 99, dst.getObject("B").Length.Value
+# Same millisecond, an untagged copy then a tagged one (a step's autosave, then the
+# rollback's "restored-..."): both took sequence 00 and the TAG decided the order.
+# File times are coarse (5 distinct values for 30 quick writes here): in one tick
+# they tie, then the name decides.
+_real_time = recovery.time.time
+recovery.time.time = lambda: 4102444800.456
+try:
+    first = recovery.autosave(dst)
+    dst.getObject("B").Length = 7
+    dst.recompute()
+    second = recovery.autosave(dst, reason="restored-x")
+finally:
+    recovery.time.time = _real_time
+_tick = os.stat(first).st_mtime_ns
+for f in (first, second):
+    os.utime(f, ns=(_tick, _tick))
+assert recovery.latest("Dst") == second, (recovery.latest("Dst"), second)
+print("latest copy = last written (clock set back, same-millisecond tags): OK")
+
+# --- a failed save, or one cut short by a crash, is never "the latest copy" -----
+# autosave reserves the name (an empty file) before FreeCAD writes it: a saveCopy
+# that raised, or a FreeCAD killed during it, left that empty file as the newest
+# copy, so recover() opened nothing
+class _FailingSave:
+    Name = "Dst"
+
+    def saveCopy(self, path):
+        raise OSError("disk full (simulated)")
+
+
+try:
+    recovery.autosave(_FailingSave())
+except OSError:
+    pass
+else:
+    raise AssertionError("a failed save was reported as saved")
+assert recovery.latest("Dst") == second, (recovery.latest("Dst"), second)
+_cut = os.path.join(os.path.dirname(second), "21991231-235959-999-00.FCStd")
+open(_cut, "wb").close()                          # what a crash during saveCopy leaves
+assert recovery.latest("Dst") == second, (recovery.latest("Dst"), second)
+FreeCAD.closeDocument("Dst")
+dst = recovery.open_latest("Dst")
+assert dst.getObject("B").Length.Value == 7, dst.getObject("B").Length.Value
+recovery.autosave(dst)
+assert not os.path.exists(_cut), "the empty leftover of a cut save was kept"
+print("a failed or interrupted autosave is never the latest copy: OK")
+
+# --- documents whose names differ only by case keep their own copies -----------
+# FreeCAD names are case-sensitive, Windows folders are not: "Case" and "case"
+# shared one recovery folder, so recover("Case") reopened the copy of "case"
+up = FreeCAD.newDocument("Case")
+up.addObject("Part::Box", "Upper")
+up.recompute()
+low = FreeCAD.newDocument("case")
+low.addObject("Part::Sphere", "Lower")
+low.recompute()
+assert (up.Name, low.Name) == ("Case", "case"), (up.Name, low.Name)
+recovery.autosave(up)
+recovery.autosave(low)
+assert {"Case", "case"} <= {e["doc"] for e in recovery.list_recovery()}, recovery.list_recovery()
+FreeCAD.closeDocument("Case")
+FreeCAD.closeDocument("case")
+for _name, _obj in (("Case", "Upper"), ("case", "Lower")):
+    _r = recovery.open_latest(_name)
+    assert _r.Name == _name and _r.getObject(_obj) is not None, (_name, _r.Name, [o.Name for o in _r.Objects])
+assert {"Case", "case"} <= set(FreeCAD.listDocuments()), list(FreeCAD.listDocuments())
+print("documents named alike but for case keep separate recovery copies: OK")
+
 # --- audit P1: output gate refuses NTFS streams and device names -----------
 from freecad_layers import safe_out_path
 for bad in (os.path.join(_tmp, "evil.exe:x.csv"), os.path.join(_tmp, "CON.csv"),

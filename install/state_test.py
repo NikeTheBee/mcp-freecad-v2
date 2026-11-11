@@ -90,6 +90,26 @@ def main() -> int:
     print(f"summary for 1000 features: {len(sm)} chars")
     assert len(sm) < 1500, len(sm)
 
+    # 6. one read-modify-write = one project. The lock, the read and the write each
+    #    looked up the selected project: another session switching in between wrote
+    #    project Alpha's whole memory over Beta's (measured with two processes; here
+    #    the switch happens inside the update, deterministically)
+    from freecad_layers import projects
+    projects.create("Alpha")
+    state.add_constraint("alpha only")
+    projects.create("Beta")
+    state.add_constraint("beta only")
+    projects.switch("Alpha")
+    state.update(lambda s: (s["constraints"].append("alpha 2"), projects.switch("Beta")))
+    root = Path(tmp.name) / "projects"
+    a, b = (json.loads((root / n / "project_state" / "state.json").read_text(encoding="utf-8"))
+            for n in ("Alpha", "Beta"))
+    print("after a switch during an update:", a["project"], a["constraints"], "|",
+          b["project"], b["constraints"])
+    assert a["project"] == "Alpha" and a["constraints"] == ["alpha only", "alpha 2"], a
+    assert b["project"] == "Beta" and b["constraints"] == ["beta only"], b
+    print("a project switch during an update never writes into the other project: OK")
+
     tmp.cleanup()
     print("STATE_OK")
     return 0
