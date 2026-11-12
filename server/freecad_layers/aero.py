@@ -89,14 +89,21 @@ def tip_mach(rpm: float, prop_diameter_m: float) -> float:
 def wing_loading(mass_kg: float, wing_area_m2: float) -> float:
     """Weight per wing area [N/m²]."""
     _pos(mass_kg=mass_kg, wing_area_m2=wing_area_m2)
-    return mass_kg * G / wing_area_m2
+    wl = mass_kg * G / wing_area_m2
+    # Units trap: a FreeCAD face area is in mm². 0.30 m² given as 300000 returned
+    # a 0.008 m/s stall speed without a word. The lightest indoor models fly at
+    # ~0.1 N/m²; below 0.01 the area is not in m².
+    if wl < 0.01:
+        raise ValueError(f"implausible wing loading {wl:.2g} N/m²: wing_area_m2="
+                         f"{wing_area_m2!r} must be in m² (mm² × 1e-6)")
+    return wl
 
 
 def stall_speed(mass_kg: float, wing_area_m2: float,
                 cl_max: float = 1.3, rho: float = RHO) -> float:
     """V_stall = √(2W / (ρ·S·CLmax)) [m/s]."""
-    _pos(mass_kg=mass_kg, wing_area_m2=wing_area_m2, cl_max=cl_max, rho=rho)
-    return math.sqrt(2.0 * mass_kg * G / (rho * wing_area_m2 * cl_max))
+    _pos(cl_max=cl_max, rho=rho)
+    return math.sqrt(2.0 * wing_loading(mass_kg, wing_area_m2) / (rho * cl_max))
 
 
 # ── verdicts ─────────────────────────────────────────────────────────────────
@@ -126,7 +133,15 @@ def check_multirotor(mass_kg: float, n_motors: int, prop_diameter_m: float,
         res["issues"].append(f"marginal control authority: T/W={tw:.2f} < 2 recommended")
     if dl > 400.0:
         res["issues"].append(f"very high disk loading ({dl:.0f} N/m²): inefficient hover")
-    res["ok"] = not any("cannot hover" in i for i in res["issues"])
+    # Units trap: the CAD model is in mm, this module in metres. A 10" prop given
+    # as 254 (mm) or 10 (inches) returned "OK ... hover=0.1W disk=0.0N/m2".
+    # No multirotor flies below ~1 N/m² (real ones: 30-400).
+    implausible = dl < 1.0
+    if implausible:
+        res["issues"].append(
+            f"implausible disk loading ({dl:.2g} N/m²): prop_diameter_m="
+            f"{prop_diameter_m!r} must be in metres (not mm or inches)")
+    res["ok"] = not implausible and not any("cannot hover" in i for i in res["issues"])
     return res
 
 

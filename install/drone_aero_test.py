@@ -4,6 +4,7 @@ Validates the momentum-theory sizing helpers in server/freecad_layers/aero.py
 against a realistic 450 mm quadcopter and a small fixed wing. Pure Python —
 runs under freecadcmd or system Python. Sentinel: DRONE_AERO_OK
 """
+import math
 import sys
 from pathlib import Path
 
@@ -53,6 +54,29 @@ def main() -> int:
             return 1
         except ValueError as e:
             print(f"refused {bad}: {e}")
+    # exact values (hand computation), not only plausibility windows
+    t = 1.2 * 9.81 / 4
+    a = math.pi * 0.127 ** 2
+    p_exact = 4 * t ** 1.5 / math.sqrt(2 * 1.225 * a) / 0.7
+    assert abs(aero.hover_power(1.2, 0.254, 4) - p_exact) < 1e-9, p_exact
+    assert abs(aero.flight_time_min(55.5, p_exact) - 55.5 * 0.8 * 0.85 / p_exact * 60) < 1e-9
+    assert abs(aero.disk_loading(1.2, 0.254, 4) - 1.2 * 9.81 / (4 * a)) < 1e-9
+    assert abs(vs - math.sqrt(2 * 1.5 * 9.81 / (1.225 * 0.30 * 1.3))) < 1e-12, vs
+    assert abs(m - math.pi * 0.254 * 200 / 340.3) < 1e-12, m
+
+    # units trap (the CAD model is in mm): a prop in mm or inches, a wing area in
+    # mm² used to give "OK ... hover=0.1W" and a 0.008 m/s stall speed.
+    for d in (254.0, 10.0):
+        v = aero.verdict_multirotor(1.2, 4, d, 8.0)
+        assert v.startswith("FAIL") and "metres" in v, v
+    for call in (lambda: aero.stall_speed(1.5, 300000.0),
+                 lambda: aero.wing_loading(1.5, 300000.0)):
+        try:
+            call()
+            print("FAIL: wing area in mm² accepted")
+            return 1
+        except ValueError as e:
+            print(f"refused: {e}")
     print("DRONE_AERO_OK")
     return 0
 

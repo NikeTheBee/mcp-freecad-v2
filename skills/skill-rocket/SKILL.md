@@ -43,7 +43,11 @@ Then set parametric properties on `obj` (e.g. `obj.Diameter`, `obj.Thickness`, `
 ## Stability — centre of pressure (§4.3, no CFD)
 CP and static margin come from the analytical **Barrowman** method (subsonic) — no OpenFOAM needed.
 Use `barrowman_cp(rocket)` + `stability_calibers(cp, cg, d_ref)` from `install/rocket_cp_test.py`:
-nose (CN=2), conical transitions, and fins are summed → CP from the tip. A rocket is **stable** when
+nose (CN=2; CP at 0.466 L ogive, 2/3 L cone, 1/2 L parabola / Von Karman, 1/3 L elliptical — an unknown
+shape name is refused, never computed as an ogive), conical transitions (a boat-tail has a **negative**
+CN and pulls the CP forward) and ≥3 fins are summed → CP from the tip; a total CN ≤ 0 is refused.
+Limits: one fin set, 3–4 fins (with 6+ the plain N-proportional fin term overestimates the fin force by
+~10 %: keep extra margin), small angle of attack. A rocket is **stable** when
 CP is **behind** CG; aim for a static margin of ~1–2 calibers (`(CP−CG)/d_ref`). For transonic/supersonic
 or precise drag, that's the CFD path (CfdOF/OpenFOAM, external — see `docs/CAHIER_DES_CHARGES.md` §12).
 

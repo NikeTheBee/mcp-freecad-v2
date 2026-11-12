@@ -44,6 +44,9 @@ aero.verdict_multirotor(mass_kg=1.2, n_motors=4, prop_diameter_m=0.254,
                         max_thrust_per_motor_n=8.0, battery_wh=55.5)
 ```
 Inputs are validated (mass, motors, diameters must be > 0 → clear `ValueError`).
+**Units are SI, the CAD model is in mm**: prop diameter in metres (10" = 0.254), wing area in m²
+(`face.Area * 1e-6`), mass in kg. A diameter in mm/inches gives `FAIL ... implausible disk loading`,
+an area in mm² a `ValueError` — convert, don't work around.
 Limits: momentum theory ignores profile drag and interference — hover power ±15–25 %.
 
 ## Flow analysis (drag / lift) — external CFD only
