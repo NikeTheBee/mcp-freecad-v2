@@ -211,8 +211,39 @@ def material():
           str(m))
 
 
+def step_import():
+    # a STEP assembly keeps its part names and structure; `name` labels a single import
+    # (Part.insert flattened it: "Left bracket"/"Right pin" became "asm", "asm001")
+    import shutil
+    import tempfile
+    import Import
+    from handlers.mesh_ops import MeshOpsHandler
+    src = fresh("StepSrc")
+    asm = src.addObject("App::Part", "Product")
+    for n, lab in (("L", "Left bracket"), ("R", "Right pin")):
+        o = box(src, n, 10, 10, 10, 50 if n == "R" else 0)
+        o.Label = lab
+        asm.addObject(o)
+    src.recompute()
+    out = tempfile.mkdtemp(prefix="mcpfc_step_")
+    try:
+        f = os.path.join(out, "asm.step")
+        Import.export([asm], f)
+        Import.export([src.getObject("L")], os.path.join(out, "one.step"))
+        doc = fresh("StepIn")
+        MeshOpsHandler().import_file({"file_path": f})
+        labels = sorted(o.Label for o in doc.Objects if o.TypeId == "Part::Feature")
+        check("STEP import keeps the part names", labels == ["Left bracket", "Right pin"], str(labels))
+        doc = fresh("StepOne")
+        MeshOpsHandler().import_file({"file_path": os.path.join(out, "one.step"), "name": "MyBlock"})
+        labels = [o.Label for o in doc.Objects if o.TypeId == "Part::Feature"]
+        check("STEP import applies `name` to a single import", labels == ["MyBlock"], str(labels))
+    finally:
+        shutil.rmtree(out, ignore_errors=True)
+
+
 def main():
-    for part in (booleans, part_ops, transforms, draft, material):
+    for part in (booleans, part_ops, transforms, draft, material, step_import):
         try:
             part()
         except Exception:

@@ -506,20 +506,43 @@ class MeshOpsHandler(BaseHandler):
                         duration=time.time() - start_time)
 
                 objects_before = {o.Name for o in doc.Objects}
-                Part.insert(file_path, doc.Name)
+                # MCP FREECAD v2: Part.insert flattened a STEP assembly and dropped its
+                # names ("Left bracket"/"Right pin" became "asm", "asm001"). STEP goes
+                # through Import.insert (names and App::Part structure kept); IGES stays
+                # on Part.insert (Import.insert gave an empty shape) and BREP too (Import
+                # does not read it).
+                if ext in ('.step', '.stp'):
+                    try:
+                        import Import
+                        Import.insert(file_path, doc.Name)
+                    except Exception:
+                        Part.insert(file_path, doc.Name)
+                else:
+                    Part.insert(file_path, doc.Name)
                 doc.recompute()
-                objects_after = {o.Name for o in doc.Objects}
-
-                new_objects = objects_after - objects_before
-                if new_objects:
-                    result = f"Imported {os.path.basename(file_path)} — {len(new_objects)} object(s):\n"
-                    for obj_name in sorted(new_objects):
-                        obj = doc.getObject(obj_name)
-                        if obj and hasattr(obj, 'Shape'):
-                            bb = self._exact_bbox(obj.Shape)
-                            result += f"  {obj_name}: {bb.XLength:.2f} x {bb.YLength:.2f} x {bb.ZLength:.2f} mm\n"
+                skip = ("App::Origin", "App::Line", "App::Plane", "App::Point")
+                new_objs = [o for o in doc.Objects
+                            if o.Name not in objects_before and o.TypeId not in skip]
+                # `name` was documented but ignored: it labels the single top-level import
+                inner = {c.Name for o in new_objs for c in (getattr(o, 'Group', None) or [])}
+                tops = [o for o in new_objs if o.Name not in inner]
+                name = args.get('name')
+                if name and len(tops) == 1:
+                    tops[0].Label = name
+                if new_objs:
+                    result = f"Imported {os.path.basename(file_path)} — {len(new_objs)} object(s):\n"
+                    for obj in new_objs:
+                        label = f" ({obj.Label})" if obj.Label != obj.Name else ""
+                        shape = getattr(obj, 'Shape', None)
+                        if shape is not None and not shape.isNull() and shape.Solids:
+                            # where the document shows it: inside an imported App::Part too
+                            bb = self._exact_bbox(self._world_shape(obj))
+                            result += (f"  {obj.Name}{label}: {bb.XLength:.2f} x {bb.YLength:.2f} x "
+                                       f"{bb.ZLength:.2f} mm at ({bb.XMin:.2f}, {bb.YMin:.2f}, {bb.ZMin:.2f})\n")
                         else:
-                            result += f"  {obj_name}\n"
+                            result += f"  {obj.Name}{label} ({obj.TypeId})\n"
+                    if name and len(tops) != 1:
+                        result += f"  (name '{name}' not applied: {len(tops)} top-level objects)\n"
                 else:
                     result = f"Imported {os.path.basename(file_path)} (no new objects detected — file may be empty)"
 
