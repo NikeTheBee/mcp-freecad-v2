@@ -51,6 +51,15 @@ def _resolve_macro_path(macro_dir: str, name: str) -> str | None:
     """
     if not name or os.sep in name or "/" in name or "\\" in name or ".." in name:
         return None
+    # MCP FREECAD v2 (security audit 2026-11-12): on Windows a name with a
+    # drive, "D:notes.txt", holds no separator and no "..", and
+    # os.path.join(macro_dir, "D:notes.txt") is "D:notes.txt": the file of
+    # that name in the working folder of drive D:, outside the macro folder
+    # (read returned it whatever its extension, run executed it). And
+    # "foo.FCMacro:hidden" named an alternate data stream of a macro, which no
+    # listing shows. A macro name never holds ":".
+    if ":" in name:
+        return None
 
     candidate = os.path.join(macro_dir, name)
     if os.path.isfile(candidate):

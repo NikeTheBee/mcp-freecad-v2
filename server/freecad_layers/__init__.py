@@ -64,14 +64,29 @@ def safe_out_path(path, allowed_exts, overwrite: bool = False) -> Path:
     raw_name = Path(path).name
     if ":" in raw_name:   # NTFS alternate data stream ("evil.exe:x.csv")
         raise ValueError(f"refusing to write {raw_name!r}: ':' is not allowed in a file name")
+    # Security audit 2026-11-12: "\\host\share\x.csv", "\\?\UNC\host\...",
+    # "\\.\pipe\x.csv" and "\\?\C:\..." were accepted, and the parent mkdir /
+    # the name reservation below then reached that host or device: an export
+    # path taken from a document or a web page made FreeCAD open an SMB session
+    # to a machine of the attacker's choice (Windows sends the user's NTLM
+    # credentials with it) and write the part there. A network share the user
+    # mapped to a drive letter still works.
+    if str(path).replace("/", "\\").startswith("\\\\"):
+        raise ValueError(f"refusing to write {str(path)!r}: network (UNC) and device paths "
+                         "are not allowed; use a local folder or a mapped drive letter")
     p = Path(path).expanduser()
     if not p.is_absolute():
         # relative to the PROJECT, not to wherever FreeCAD was started: the
         # launcher starts it in the addon folder, so "plan.dxf" landed in the code
         p = project_dir() / p
     p = p.resolve()
-    if p.stem.split(".")[0].upper() in _RESERVED:
-        raise ValueError(f"refusing to write {p.name!r}: reserved Windows device name")
+    # every component, and the forms Windows also maps to a device: "CON .csv",
+    # "COM¹.csv", "CONIN$.csv" and "sub\NUL\x.csv" passed the former check of
+    # the file name alone
+    for part in (p.parts[1:] if os.name == "nt" else (p.name,)):
+        if _device_name(part):
+            raise ValueError(f"refusing to write {p.name!r}: {part!r} is a reserved "
+                             "Windows device name")
     exts = {e.lower() if e.startswith(".") else "." + e.lower()
             for e in allowed_exts}
     if p.suffix.lower() not in exts:
@@ -87,7 +102,16 @@ def safe_out_path(path, allowed_exts, overwrite: bool = False) -> Path:
 
 
 _RESERVED = {"CON", "PRN", "AUX", "NUL", *(f"COM{i}" for i in range(1, 10)),
-             *(f"LPT{i}" for i in range(1, 10))}
+             *(f"LPT{i}" for i in range(1, 10)), "CONIN$", "CONOUT$"}
+_SUPERSCRIPT_DIGITS = str.maketrans("\u00b9\u00b2\u00b3", "123")
+
+
+def _device_name(component: str) -> bool:
+    """Is this path component a Windows device (CON, NUL, COM1...)? As Windows
+    reads it: whatever the case and the extension, with spaces before the dot,
+    and with a superscript digit (COM¹ is COM1)."""
+    stem = component.split(".")[0].rstrip(" ").upper().translate(_SUPERSCRIPT_DIGITS)
+    return stem in _RESERVED
 
 
 def safe_under(base: Path, candidate) -> Path:
@@ -97,6 +121,12 @@ def safe_under(base: Path, candidate) -> Path:
     directory (template names, checkpoint labels used as filenames, ...).
     """
     base = Path(base).resolve()
+    # "name.FCStd:stream" stays under `base` but names an NTFS alternate data
+    # stream of the file (hidden from a folder listing): refused like in
+    # safe_out_path. A leading drive ("C:\...") is judged by the check below.
+    rel = str(candidate)
+    if ":" in (rel[2:] if rel[1:2] == ":" else rel):
+        raise ValueError(f"path names an alternate data stream: {candidate!r}")
     p = (base / candidate).resolve()
     if not p.is_relative_to(base):
         raise ValueError(f"path escapes {base}: {candidate!r}")

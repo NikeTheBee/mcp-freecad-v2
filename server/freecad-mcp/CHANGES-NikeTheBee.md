@@ -181,6 +181,8 @@ It runs `git subtree pull --squash` on a clean tree. Then run the base's unit te
 | `AICopilot/handlers/view_ops.py` (`recompute_object`) | The whole-document reply names the objects left in error. | "Recomputed document" while an object stayed Invalid. |
 | `AICopilot/handlers/document_ops.py` (`save_document`), `freecad_mcp_server.py` (schema `overwrite`) | An existing file that is not the document's own is refused unless `overwrite`; the reply names the file written. | Saving document B under A's name replaced A.FCStd silently; "docC" wrote docC.FCStd but the reply said "docC". |
 | `AICopilot/handlers/document_ops.py` (`insert_shape`) | x/y/z offset the source placement. | Documented as an offset but replaced the position: (100,50,0) + x=5 landed at (5,0,0). |
+| `AICopilot/handlers/macro_ops.py` (read/run) | A macro name with a drive prefix (`D:name`) or a stream (`x.FCMacro:s`) is refused. | `D:name` opened the file of that name in drive D:'s working folder, outside the macro folder; `:stream` read a hidden NTFS stream. |
+| `AICopilot/freecad_mcp_handler.py` (`_init_windows_auth_token`) | The token file is restricted (icacls) before the token is written into it. | It was written first, then restricted: for a moment it was readable with the folder's default ACL. |
 
 ## Test status
 

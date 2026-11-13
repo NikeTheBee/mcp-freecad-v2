@@ -2926,6 +2926,28 @@ class TestInitWindowsAuthToken:
         assert [p.name for p in tmp_path.iterdir()] == ["windows_auth_token"]   # no temp left
         assert restrict.call_args.args[0].endswith(".tmp")      # restricted BEFORE it is in place
 
+    def test_token_is_written_only_after_the_file_is_restricted(self, server, monkeypatch, tmp_path):
+        """MCP FREECAD v2: the token was written, THEN the ACL restricted: for
+        the time icacls takes, the secret sat under the folder's inherited
+        ACL. The file must still be empty when it is restricted."""
+        import freecad_mcp_handler as ss_mod
+        token_path = tmp_path / "windows_auth_token"
+        monkeypatch.setattr(ss_mod, "WINDOWS_AUTH_TOKEN_DIR", str(tmp_path))
+        monkeypatch.setattr(ss_mod, "WINDOWS_AUTH_TOKEN_PATH", str(token_path))
+        seen = []
+
+        def restrict(path):
+            with open(path) as f:
+                seen.append(f.read())
+            return True
+
+        monkeypatch.setattr(ss_mod, "_restrict_token_file_to_current_user_windows", restrict)
+
+        assert server._init_windows_auth_token("abc123") == "abc123"
+
+        assert seen == [""]
+        assert token_path.read_text() == "abc123"
+
     def test_a_freecad_that_loses_the_port_keeps_the_winners_token(self, server, monkeypatch, tmp_path):
         """MCP FREECAD v2: two FreeCADs starting together (the launcher's
         supervisor and an ensure() during a restart): the one that lost the

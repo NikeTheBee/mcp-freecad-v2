@@ -245,7 +245,14 @@ print("documents named alike but for case keep separate recovery copies: OK")
 # --- audit P1: output gate refuses NTFS streams and device names -----------
 from freecad_layers import safe_out_path
 for bad in (os.path.join(_tmp, "evil.exe:x.csv"), os.path.join(_tmp, "CON.csv"),
-            os.path.join(_tmp, "nul.csv")):
+            os.path.join(_tmp, "nul.csv"),
+            # security audit 2026-11-12: all of these were accepted
+            os.path.join(_tmp, "CON .csv"), os.path.join(_tmp, "COM¹.csv"),
+            os.path.join(_tmp, "conin$.csv"),
+            *([os.path.join(_tmp, "sub", "NUL", "x.csv")] if os.name == "nt" else []),
+            "\\\\?\\" + os.path.join(_tmp, "long.csv"), "\\\\.\\" + os.path.join(_tmp, "dev.csv"),
+            "\\\\localhost\\mcpfc-no-such-share\\x.csv", "//localhost/mcpfc-no-such-share/x.csv",
+            "\\\\?\\UNC\\localhost\\mcpfc-no-such-share\\x.csv"):
     try:
         safe_out_path(bad, {".csv"})
         print(f"FAIL: accepted {bad}")
@@ -254,6 +261,15 @@ for bad in (os.path.join(_tmp, "evil.exe:x.csv"), os.path.join(_tmp, "CON.csv"),
     except ValueError:
         pass
 assert not os.path.exists(os.path.join(_tmp, "evil.exe")), "ADS host file created"
+assert not os.path.exists(os.path.join(_tmp, "long.csv")), "\\\\?\\ path written"
+assert not os.path.exists(os.path.join(_tmp, "dev.csv")), "\\\\.\\ path written"
+from freecad_layers import safe_under
+try:   # a stream of a file under the base is not "a file under the base"
+    safe_under(_tmp, "label.FCStd:hidden")
+    print("FAIL: safe_under accepted an alternate data stream"); sys.stdout.flush(); sys.exit(1)
+except ValueError:
+    pass
+assert safe_under(_tmp, os.path.join(_tmp, "in", "side.FCStd")).name == "side.FCStd"
 ok_path = safe_out_path(os.path.join(_tmp, "out", "a.csv"), {".csv"})
 try:
     safe_out_path(ok_path, {".csv"})          # name already reserved -> refused

@@ -944,12 +944,19 @@ class FreeCADSocketServer:
         # boundary on Windows. _restrict_token_file_to_current_user_windows
         # below is the actual best-effort attempt at that.
         tmp = f"{WINDOWS_AUTH_TOKEN_PATH}.{os.getpid()}.tmp"
-        fd = os.open(tmp, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600)
+        # MCP FREECAD v2 (security audit 2026-11-12): the secret used to be
+        # written first and the ACL restricted afterwards (icacls takes tens
+        # of ms to start): during that time the token sat in a file that had
+        # only the folder's inherited ACL, readable by other accounts wherever
+        # the profile folder is (a relocated or shared home). The file is now
+        # restricted while still EMPTY, and only then receives the token.
+        os.close(os.open(tmp, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600))
+        restricted = _restrict_token_file_to_current_user_windows(tmp)
+        fd = os.open(tmp, os.O_WRONLY | os.O_TRUNC)
         try:
             os.write(fd, token.encode("ascii"))
         finally:
             os.close(fd)
-        restricted = _restrict_token_file_to_current_user_windows(tmp)
         os.replace(tmp, WINDOWS_AUTH_TOKEN_PATH)   # keeps the restricted ACL
         if not restricted:
             FreeCAD.Console.PrintWarning(

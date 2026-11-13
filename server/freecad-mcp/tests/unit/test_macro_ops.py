@@ -280,6 +280,18 @@ class TestRead:
         result = json.loads(handler.read({"name": "/etc/passwd"}))
         assert "error" in result
 
+    @pytest.mark.parametrize("name", ["D:notes.txt", "Z:evil", "foo.FCMacro:hidden"])
+    def test_rejects_drive_relative_and_stream_names(self, handler, macro_dir, monkeypatch, name):
+        """MCP FREECAD v2: 'D:notes.txt' has no separator and no '..', but on
+        Windows os.path.join(macro_dir, it) is the file of that name in drive
+        D:'s working folder; 'x.FCMacro:hidden' is an alternate data stream.
+        Whatever exists on disk, such a name is not a macro."""
+        import handlers.macro_ops as macro_ops_module
+        monkeypatch.setattr(macro_ops_module.os.path, "isfile", lambda p: True)
+        assert macro_ops_module._resolve_macro_path(macro_dir, name) is None
+        assert "error" in json.loads(handler.read({"name": name}))
+        assert "error" in json.loads(handler.run({"name": name, "confirmed": True}))
+
     def test_rejects_subdir_traversal(self, handler, macro_dir):
         os.mkdir(os.path.join(macro_dir, "sub"))
         _write_macro(macro_dir, os.path.join("sub", "nested.FCMacro"), "x=1")
