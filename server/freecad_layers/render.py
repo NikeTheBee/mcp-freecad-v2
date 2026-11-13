@@ -16,9 +16,7 @@ from __future__ import annotations
 
 import math
 import time
-from typing import Any, Dict, List, Optional, Sequence
-
-import FreeCAD as App
+from typing import Any, Dict, Optional, Sequence
 
 from . import project_dir, safe_out_path, verify
 

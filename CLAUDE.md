@@ -26,7 +26,7 @@ AI-piloted FreeCAD (natural language → parametric CAD/robotics), via MCP, on W
 The launcher starts FreeCAD headless on `localhost:23456` when needed, restarts it at once if it
 dies, and refuses to run if a non-FreeCAD process holds the port (anti-squatting). Just call
 `check_freecad_connection` at session start; expect a one-time ~5–30 s cold start. Never launch
-FreeCAD manually. After a crash: `recovery.open_latest(<doc>)` (see `skill-verify`).
+FreeCAD manually. After a crash: `recover(action="open", doc=...)` (see `skill-verify`).
 Stuck (a job that never ends, `cancel_job` did nothing)? `restart_freecad`: it saves the documents
 when it safely can (untitled ones as copies in the temp folder), exits, and the launcher restarts it.
 Logs: `~/.freecad-mcp/logs/launcher.log`. The base's `spawn_freecad_instance` is Unix-only.
@@ -76,8 +76,8 @@ reliability tools — prefer them over `execute_python`).
 
 ## Pointers
 - Full spec: `@docs/CAHIER_DES_CHARGES.md` · Compatibility audit: `@docs/COMPATIBILITY.md` · Security: `@SECURITY.md`
-- Domain knowledge: `/skills/<domain>/SKILL.md` — load on demand. Available: `skill-verify` (reliability layers & tools), `skill-partdesign` (sketch/Pad/Pocket/holes + spreadsheet variants), `skill-assembly` (multi-part assemblies, fits), `skill-print3d` (STL export), `skill-exchange` (STEP/IGES), `skill-techdraw` (2D plans -> DXF), `skill-bom` (nomenclature), `skill-fem` (CalculiX setup), `skill-gear` (involute spur gears), `skill-kinematics` (linkage motion laws), `skill-rocket` (Rocketry WB), `skill-drone` (AirPlaneDesign WB + analytical aero + external CFD), `skill-robotics-ros` (CROSS URDF export + ros2_control/Gazebo), `skill-cam` (DISABLED — never emit machine G-code; read it if CNC is requested).
-- Home-grown layers (§7): `server/freecad_layers/` — `state` (project memory), `spec` (design contract), `verify` (geometry checks), `analysis` (holes, walls, printability), `fem` (CalculiX static stress), `checkpoint` (rollback), `recovery` (autosave), `projects` (several designs), `recipes` (verified, reusable), `render` (views), `bom`, `drawing`, `kinematics`, `aero`, `urdf_aug`; exposed as MCP tools by `server/layers_mcp/`. Any NEW file-writing code MUST use the shared gates `safe_out_path`/`safe_under` (SECURITY.md).
+- Domain knowledge: `/skills/<domain>/SKILL.md` — load on demand. Available: `skill-verify` (reliability layers & tools), `skill-partdesign` (sketch/Pad/Pocket/holes + spreadsheet variants), `skill-assembly` (multi-part assemblies, fits), `skill-print3d` (STL/3MF export), `skill-exchange` (STEP/IGES), `skill-techdraw` (2D plans -> DXF), `skill-bom` (nomenclature), `skill-fem` (CalculiX setup), `skill-gear` (involute spur gears), `skill-kinematics` (linkage motion laws), `skill-rocket` (Rocketry WB), `skill-drone` (AirPlaneDesign WB + analytical aero + external CFD), `skill-robotics-ros` (CROSS URDF export + ros2_control/Gazebo), `skill-cam` (DISABLED — never emit machine G-code; read it if CNC is requested).
+- Home-grown layers (§7): `server/freecad_layers/` — `state` (project memory), `spec` (design contract), `verify` (geometry checks), `analysis` (holes, walls, printability), `gate` (what `check` runs), `export` (verified files), `fem` (CalculiX static stress), `checkpoint` (rollback), `recovery` (autosave), `projects` (several designs), `recipes` (verified, reusable), `render` (views), `bom`, `drawing`, `kinematics`, `aero`, `urdf_aug`; exposed as MCP tools by `server/layers_mcp/`. Any NEW file-writing code MUST use the shared gates `safe_out_path`/`safe_under` (SECURITY.md).
 - Project memory data: `/project_state/state.json` · Checkpoints: `/checkpoints/` · Autosaves: `/recovery/`
   for the default project; named projects under `/projects/<name>/`; recipes in `/recipes/` (all gitignored)
 - Audit & repair plan: `@docs/AUDIT_2026-10-11.md` (§8 final verdict, §9 feature list).

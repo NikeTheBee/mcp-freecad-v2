@@ -15,8 +15,6 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import FreeCAD
-
 from . import gate, project_dir, safe_out_path, verify
 
 MESH = (".stl", ".3mf")

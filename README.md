@@ -94,9 +94,22 @@ trusting the AI's reading of it.
 - **Assemblies measured part by part**: the parts list counts identical parts once whatever
   their orientation, and keeps a left and a right hand apart (same measures, mirror images); holes, overhangs and printability judge each part on its own; a plan
   never puts an overall size on an iso view (a projected length is not a size).
+- **The base's modeling replies say what was made** (later sweep of the base tools): a sketch on
+  YZ follows FreeCAD's YZ plane and `Fix` holds; a draft hinges on `neutral_plane`; a Part shell
+  goes inward; a boolean that leaves nothing is refused, and works when its inputs share a
+  container; a scaled copy is exact; move/rotate of an attached object goes through its
+  AttachmentOffset; spreadsheet and VarSet bindings check units; `save_document` needs
+  `overwrite=true` to replace a file; `validate_mesh` checks the orientation. The parts list counts
+  linked sub-assemblies part by part, Draft arrays, the visible source of a mirror and Assembly links.
+  The listener serves at most 32 connections and frees a silent one after 5 s; an output path to a
+  network share or a device is refused. URDF inertials come in SI from `urdf_aug.inertial_from_shape`.
+  Mesh and CAD exports of a part inside a moved App::Part land where the document shows it, and an
+  App::Part or Link exports its real shape; a solid beside loose faces is measured as the solid only.
 - **Rollback and recovery keep the work whole**: a restored checkpoint or recovered copy reopens
   under the document's own name, as a working copy (a later save no longer overwrites the
-  checkpoint), and after a crash `recover` brings back the rollback you chose.
+  checkpoint), and after a crash `recover` brings back the rollback you chose. A rollback closes
+  the document the checkpoint was taken from (it used to close whichever was active), and the
+  newest recovery copy is the one written last.
 
 ## What's new in 2.1
 - **Stress analysis** (`fem_static`, CalculiX): displacement, von Mises stress and safety factor,
@@ -162,7 +175,8 @@ git clone https://github.com/NikeTheBee/mcp-freecad-v2 "MCP FREECAD" && cd "MCP 
 python install/bootstrap.py --with-grafts
 ```
 Needs **FreeCAD 1.1.x**, **Python 3.10+**, **git**, and an MCP client. The base server ships in the
-repository; the installer pins every other third-party component to a commit, creates a dedicated venv (`~/.freecad-mcp/venv`, nothing goes
+repository; the installer pins the grafts and `mcp-agent-notes` to a commit and the other Python
+packages to version ranges (`mcp>=2.2,<3`, `psutil>=6,<8`...), creates a dedicated venv (`~/.freecad-mcp/venv`, nothing goes
 into your system Python), registers both MCP servers, and runs the tests. It stops on the first
 error and never overwrites an unreadable Claude Desktop config. Re-running it is safe.
 Linux/macOS: the pieces are portable but untested — contributions welcome.
@@ -171,10 +185,10 @@ Linux/macOS: the pieces are portable but untested — contributions welcome.
 ```
 python install/run_all_tests.py
 ```
-~37 tests: the audit's traps (verdicts that used to pass on wrong parts), layers, grafts, the
+41 tests: the audit's traps (verdicts that used to pass on wrong parts), layers, grafts, the
 launcher (auth, crash restart, port-squatting refusal) and full MCP loops — all end-to-end tests
 run on an **isolated** FreeCAD (port 23499, private home), never on your live instance. A skipped
-test is reported as SKIP, never as a pass. The vendored base also keeps its own ~2,100 unit tests
+test is reported as SKIP, never as a pass. The vendored base also keeps its own ~2,400 unit tests
 (`pytest tests/unit` in `server/freecad-mcp`).
 
 ## Capabilities and maturity

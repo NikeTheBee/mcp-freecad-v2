@@ -2,6 +2,13 @@
 
 > Projet : système permettant de concevoir en **langage naturel** (zéro code manuel) des projets mécaniques et robotiques (train, fusée, drone, robots) dans **FreeCAD 1.1.1**, via une IA (Claude Code / Claude Desktop et tout client MCP), avec **coût de tokens minimal** et **publication publique GitHub**.
 > Version 1.0 · Statut : spécification initiale validée.
+>
+> **Écarts avec le projet actuel** (ce document reste la spécification d'origine ; l'état réel est
+> dans `README.md`) : la CAM/G-code est retirée (§4.5, §9 `skill-cam`, §12, §14.1 : `skill-cam` dit
+> maintenant de ne pas en produire) ; il n'y a pas de `skill-cfd` (la CFD reste externe, voir
+> `skill-drone`) ; RobotCAD et CfdOF n'ont pas été greffés (greffes : Rocket, AirPlaneDesign,
+> CROSS) ; la licence est PolyForm Noncommercial (D2) ; la base `blwfish/freecad-mcp` est intégrée
+> au dépôt et modifiée (`server/freecad-mcp/`), et non plus clonée.
 
 ---
 

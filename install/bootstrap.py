@@ -6,8 +6,8 @@ What it does:
   2. Checks the base server: a modified copy of `blwfish/freecad-mcp` (v8.3.0) is part of
      this repository (server/freecad-mcp, git subtree, LGPL — see its
      CHANGES-NikeTheBee.md). Nothing is downloaded for it.
-  3. Creates a dedicated venv (~/.freecad-mcp/venv) with pinned dependencies:
-     nothing is installed into your system Python.
+  3. Creates a dedicated venv (~/.freecad-mcp/venv) with version-bounded dependencies
+     (mcp-agent-notes pinned to a commit): nothing goes into your system Python.
   4. Installs the AICopilot addon into the versioned Mod dir (for GUI use).
   5. Registers two MCP servers: `freecad` (supervised launcher + base) and
      `freecad-layers` (verification, contract, checkpoints, BOM, drawings...)
@@ -311,21 +311,24 @@ def register_claude_desktop(freecadcmd: Path, dry: bool) -> bool:
     tmp = cfg.with_name(cfg.name + ".tmp")
     tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
     os.replace(tmp, cfg)
-    log(f"registered `freecad` with Claude Desktop ({cfg}, previous config backed up)")
+    log(f"registered {', '.join(f'`{n}`' for n in SERVERS)} with Claude Desktop ({cfg}, "
+        "previous config backed up)")
     return True
 
 
 # --------------------------------------------------------------------------
 def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--with-grafts", action="store_true")
+    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    ap.add_argument("--with-grafts", action="store_true",
+                    help="also clone the workbench grafts (Rocket, AirPlaneDesign, CROSS), pinned")
     ap.add_argument("--client", choices=["auto", "code", "desktop", "both", "none"],
-                    default="auto")
-    ap.add_argument("--freecad-bin")
+                    default="auto",
+                    help="MCP client(s) to register with (auto: Claude Code, else Claude Desktop)")
+    ap.add_argument("--freecad-bin", help="path to freecadcmd (default: auto-detected)")
     ap.add_argument("--python", default=sys.executable,
                     help="interpreter used to create the venv (3.10+)")
-    ap.add_argument("--skip-tests", action="store_true")
-    ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--skip-tests", action="store_true", help="do not run the test suite at the end")
+    ap.add_argument("--dry-run", action="store_true", help="say what would be done, change nothing")
     ap.add_argument("--base-ref", default=BASE_BRANCH,
                     help="upstream branch or release tag for --update-base (e.g. v8.3.0)")
     ap.add_argument("--update-base", action="store_true",

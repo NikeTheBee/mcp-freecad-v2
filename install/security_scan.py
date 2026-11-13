@@ -6,7 +6,6 @@ address. Prints SECURITY_SCAN_OK when clean. Wired into run_all_tests.py.
 """
 import re
 import subprocess
-import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent

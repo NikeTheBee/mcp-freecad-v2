@@ -20,7 +20,7 @@ Convention: planar points are (x, y) tuples in mm; angles in radians unless a
 from __future__ import annotations
 
 import math
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 Point = Tuple[float, float]
 

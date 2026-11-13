@@ -11,7 +11,8 @@ FreeCAD 1.1 today. The golden rule (cahier des charges §7.2): **never export a 
    fits the bed (any 90° turn), walls ≥ the minimum (rays on exact surfaces + the closest faces
    measured two by two; a wall between two faces meeting at an edge is still sampled: say "estimate"),
    overhang area (curved faces measured over the face: the ceiling of a horizontal hole counts; a
-   wall exactly at 45° does not). Overhangs are an advisory unless you set `max_overhang_area_mm2`.
+   wall exactly at 45° does not). The tool reports overhangs as an advisory, never a FAIL; only the
+   Python call `analysis.printability(..., max_overhang_area_mm2=...)` turns a larger area into a FAIL.
    - An assembly (several solids) is judged as parts printed **one by one**; the advisory says
      whether they would fit printed together. Print-in-place: check the assembled overhangs too.
 2. **`export(target, format="3mf")`** (or `"stl"`): refused unless `check` is OK; the file is read back

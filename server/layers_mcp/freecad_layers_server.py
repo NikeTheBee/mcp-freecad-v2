@@ -420,7 +420,7 @@ else:
 @mcp.tool()
 @_safe
 def recover(action: str = "list", doc: str = "") -> str:
-    """After a crash: action list (all autosaved copies) | open (newest copy of `doc`)."""
+    """After a crash: action list (the 20 newest autosaved copies) | open (newest copy of `doc`)."""
     return _run("""
 if _a['action'] == 'open':
     _out = f"opened {recovery.open_latest(_a['doc']).Name}"

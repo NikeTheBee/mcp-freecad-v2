@@ -159,12 +159,6 @@ def trust_problem(pid: int, freecadcmd: Path) -> str | None:
     return None
 
 
-def _alive(timeout: float = 0.5) -> bool:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.settimeout(timeout)
-        return s.connect_ex((HOST, PORT)) == 0
-
-
 def spawn(freecadcmd: Path) -> subprocess.Popen:
     flags = 0
     if sys.platform == "win32":   # survive the launcher; no console window

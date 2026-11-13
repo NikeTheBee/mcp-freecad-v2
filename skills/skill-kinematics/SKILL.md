@@ -22,6 +22,7 @@ sc.ratio_deg_per_mm(0.0)        # transmission ratio at a stroke position
 sc.dead_points()                # {'extended': -2.22, ...} -> travel limits/toggles
 ```
 ```python
+import math
 # four-bar crank-rocker: input crank angle -> output rocker angle
 fb = kin.FourBar(a=(0,0), d=(40,0), r_in=15, coupler=45, r_out=25)
 fb.law([math.radians(t) for t in range(30,120,10)])

@@ -41,8 +41,10 @@ def check_target(name: str, expect_solid: bool = True, autosave: bool = True) ->
         r = verify.sketch_check(obj)
         return {"status": r["status"], "text": verify.sketch_verdict(obj), "autosaved": None}
 
+    # one geometry check and one contract evaluation: the verdict line and the
+    # contract line each ran them again (twice the time on a heavy part)
     v = verify.check(obj, expect_solid=expect_solid)
-    lines = [verify.verdict(obj, expect_solid=expect_solid)]
+    lines = [verify.verdict_of(v)]
     body = verify.body_of(obj)
     if body is not None:
         later = obj not in (body.Tip, None)
@@ -55,8 +57,10 @@ def check_target(name: str, expect_solid: bool = True, autosave: bool = True) ->
                      + ("them" if len(beside) > 1 else "it"))
     status = v["status"]
     if any(spec.same_target(s["target"], obj.Name) for s in state.load()["specs"]):
-        c = spec.check_all(name)
-        lines.append(spec.verdict(name))
+        # the contract measures with verify.check's defaults: reuse v when it is that
+        memo = {("check", obj.Document.Name, obj.Name): v} if expect_solid else {}
+        c = spec.check_all(name, memo=memo)
+        lines.append(spec.verdict_of(c))
         if c["status"] == verify.FAIL or status == verify.FAIL:
             status = verify.FAIL
         elif c["status"] == verify.UNKNOWN:

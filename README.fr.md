@@ -107,7 +107,22 @@ au lieu de croire la lecture qu'en fait l'IA.
   longueur projetée n'est pas une dimension).
 - **Retour arrière et récupération préservent le travail** : un checkpoint restauré ou une copie
   récupérée se rouvre sous le nom du document, en copie de travail (un enregistrement n'écrase
-  plus le checkpoint), et après un plantage `recover` ramène le retour arrière choisi.
+  plus le checkpoint), et après un plantage `recover` ramène le retour arrière choisi. Un retour
+  arrière ferme le document d'où vient le checkpoint (il fermait le document actif, quel qu'il
+  soit), et la copie de récupération la plus récente est la dernière écrite.
+- **Les réponses de la base disent ce qui a été fait** (revue suivante des outils de la base) : une
+  esquisse sur YZ suit le plan YZ de FreeCAD et `Fix` tient ; une dépouille pivote sur
+  `neutral_plane` ; une coque Part va vers l'intérieur ; un booléen qui ne laisse rien est refusé,
+  et fonctionne quand ses entrées partagent un conteneur ; une copie mise à l'échelle est exacte ;
+  déplacer/tourner un objet attaché passe par son AttachmentOffset ; les liaisons tableur et VarSet
+  vérifient les unités ; `save_document` demande `overwrite=true` pour remplacer un fichier ;
+  `validate_mesh` vérifie l'orientation. La nomenclature compte les sous-assemblages liés pièce par
+  pièce, les réseaux Draft, la source visible d'une symétrie et les liens d'un Assembly. Le
+  serveur accepte au plus 32 connexions et libère une connexion muette après 5 s ; un chemin de
+  sortie vers un partage réseau ou un périphérique est refusé. Les inerties URDF sortent en SI de
+  `urdf_aug.inertial_from_shape`. Les exports maillage et CAO d'une pièce placée dans un App::Part
+  déplacé tombent là où le document la montre, un App::Part ou un lien exporte sa forme réelle ; un
+  solide accompagné de faces isolées est mesuré seul.
 
 ## Nouveautés de la 2.1
 - **Calcul de résistance** (`fem_static`, CalculiX) : déplacement, contrainte de von Mises et
@@ -177,7 +192,8 @@ git clone https://github.com/NikeTheBee/mcp-freecad-v2 "MCP FREECAD" && cd "MCP 
 python install/bootstrap.py --with-grafts
 ```
 Prérequis : **FreeCAD 1.1.x**, **Python 3.10+**, **git**, un client MCP. Le serveur de base est livré
-dans le dépôt ; l'installeur fige chaque autre composant tiers sur un commit, crée un environnement Python dédié (`~/.freecad-mcp/venv`, rien dans
+dans le dépôt ; l'installeur fige les greffes et `mcp-agent-notes` sur un commit et borne les autres paquets
+Python par version (`mcp>=2.2,<3`, `psutil>=6,<8`...), crée un environnement Python dédié (`~/.freecad-mcp/venv`, rien dans
 votre Python système), enregistre les deux serveurs MCP et lance les tests. Il s'arrête à la
 première erreur et n'écrase jamais une configuration Claude Desktop illisible. Relançable sans risque.
 
@@ -185,10 +201,10 @@ première erreur et n'écrase jamais une configuration Claude Desktop illisible.
 ```
 python install/run_all_tests.py
 ```
-~37 tests : les pièges de l'audit (verdicts qui passaient sur des pièces fausses), couches, greffes,
+41 tests : les pièges de l'audit (verdicts qui passaient sur des pièces fausses), couches, greffes,
 lanceur (authentification, relance après crash, refus d'un port usurpé) et boucles MCP complètes —
 sur une instance FreeCAD **isolée** (port 23499), jamais sur votre instance réelle. Un test ignoré
-s'affiche SKIP, jamais comme réussi. La base intégrée garde aussi ses ~2 100 tests unitaires
+s'affiche SKIP, jamais comme réussi. La base intégrée garde aussi ses ~2 400 tests unitaires
 (`pytest tests/unit` dans `server/freecad-mcp`).
 
 ## Capacités et maturité

@@ -201,12 +201,12 @@ def _on_axis(h: Dict[str, Any], c, tol: float) -> bool:
     return True
 
 
-def _eval(spec: Dict[str, Any], doc=None) -> Dict[str, Any]:
+def _eval(spec: Dict[str, Any], doc=None, memo: Optional[Dict[tuple, Any]] = None) -> Dict[str, Any]:
     """Evaluate one spec. One that cannot be evaluated (e.g. saved with bad
     parameters before they were validated) is UNKNOWN for itself — it used to
     crash every later `check` of its target."""
     try:
-        return _eval_spec(spec, doc)
+        return _eval_spec(spec, doc, {} if memo is None else memo)
     except Exception as e:  # noqa: BLE001 — reported in the result, never silent
         return {"id": spec.get("id"), "kind": spec.get("kind"), "target": spec.get("target"),
                 "status": UNKNOWN, "measured": None, "expected": spec.get("params"),
@@ -214,7 +214,18 @@ def _eval(spec: Dict[str, Any], doc=None) -> Dict[str, Any]:
                            f"remove it and record it again"[:240]}
 
 
-def _eval_spec(spec: Dict[str, Any], doc=None) -> Dict[str, Any]:
+def _measured(memo: Dict[tuple, Any], what: str, obj, fn):
+    """fn(obj), computed once per object within one evaluation of the contract:
+    five requirements on a 1,500-hole plate ran verify.check five times and
+    the hole search twice (results unchanged: nothing moves in between)."""
+    key = (what, obj.Document.Name, obj.Name) if hasattr(obj, "Document") else (what, id(obj))
+    if key not in memo:
+        memo[key] = fn(obj)
+    return memo[key]
+
+
+def _eval_spec(spec: Dict[str, Any], doc=None, memo: Optional[Dict[tuple, Any]] = None) -> Dict[str, Any]:
+    memo = {} if memo is None else memo
     kind, p, target = spec["kind"], spec["params"], spec["target"]
     res = {"id": spec["id"], "kind": kind, "target": target}
     try:
@@ -238,7 +249,7 @@ def _eval_spec(spec: Dict[str, Any], doc=None) -> Dict[str, Any]:
         return {**res, "status": FAIL, "measured": None, "expected": "object exists",
                 "message": str(e)}
 
-    v = verify.check(obj)
+    v = _measured(memo, "check", obj, verify.check)
     if v["status"] == UNKNOWN and kind == "valid":
         return {**res, "status": UNKNOWN, "measured": v["unchecked"], "expected": "OK"}
     if kind == "valid":
@@ -272,7 +283,7 @@ def _eval_spec(spec: Dict[str, Any], doc=None) -> Dict[str, Any]:
         return {**res, "status": OK if v["solids"] == p["count"] else FAIL,
                 "measured": v["solids"], "expected": p["count"]}
     if kind == "holes":
-        hs = analysis.holes(obj)
+        hs = _measured(memo, "holes", obj, analysis.holes)
         tol = p.get("tol", 0.01)
         if "diameter" in p:                 # holes with a bore of that diameter
             hs = [h for h in hs if abs(h["diameter"] - p["diameter"]) <= tol]
@@ -292,7 +303,8 @@ def _eval_spec(spec: Dict[str, Any], doc=None) -> Dict[str, Any]:
     if kind == "hole_at":
         tol = p.get("tol", 0.05)
         c = p["center"]
-        same_d = [h for h in analysis.holes(obj) if abs(h["diameter"] - p["diameter"]) <= tol]
+        same_d = [h for h in _measured(memo, "holes", obj, analysis.holes)
+                  if abs(h["diameter"] - p["diameter"]) <= tol]
         hs = [h for h in same_d if _on_axis(h, c, tol)]
         return {**res, "status": OK if hs else FAIL,
                 # where each hole of that diameter is: its axis midpoint, direction, depth
@@ -300,7 +312,7 @@ def _eval_spec(spec: Dict[str, Any], doc=None) -> Dict[str, Any]:
                              for h in same_d],
                 "expected": f"D{p['diameter']} with its axis through {c}+/-{tol}"}
     if kind == "min_wall":
-        w = analysis.min_wall(obj)
+        w = _measured(memo, "min_wall", obj, analysis.min_wall)
         if w["min_mm"] is None:
             return {**res, "status": UNKNOWN, "measured": None, "expected": f">= {p['min']}"}
         if w["min_mm"] >= p["min"] and w.get("unchecked"):
@@ -326,10 +338,14 @@ def same_target(a: str, b: str, doc=None) -> bool:
     return oa.Name == ob.Name and oa.Document.Name == ob.Document.Name
 
 
-def check_all(target: Optional[str] = None, doc=None) -> Dict[str, Any]:
+def check_all(target: Optional[str] = None, doc=None,
+              memo: Optional[Dict[tuple, Any]] = None) -> Dict[str, Any]:
     """Evaluate every spec (or those of `target`). FAIL if any spec fails,
-    UNKNOWN if one could not be evaluated, OK only if all pass."""
-    results = [_eval(s, doc) for s in list_specs()
+    UNKNOWN if one could not be evaluated, OK only if all pass.
+    `memo`: measurements already made on these objects in this state (gate passes
+    its verify.check); each object is otherwise measured once per call."""
+    memo = {} if memo is None else memo
+    results = [_eval(s, doc, memo) for s in list_specs()
                if target is None or s["kind"] == "no_interference"
                or same_target(s["target"], target, doc)]
     statuses = {r["status"] for r in results}
@@ -339,7 +355,11 @@ def check_all(target: Optional[str] = None, doc=None) -> Dict[str, Any]:
 
 def verdict(target: Optional[str] = None, doc=None) -> str:
     """One line: 'OK contract 4/4' or 'FAIL contract 3/4 | S2 bbox Plate: ...'."""
-    r = check_all(target, doc)
+    return verdict_of(check_all(target, doc))
+
+
+def verdict_of(r: Dict[str, Any]) -> str:
+    """The contract line of a check_all() result (no second evaluation)."""
     if not r["checked"]:
         return "UNKNOWN contract: no requirement recorded (spec.require(...))"
     n_ok = sum(1 for x in r["results"] if x["status"] == OK)

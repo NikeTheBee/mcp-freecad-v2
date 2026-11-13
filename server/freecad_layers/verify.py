@@ -243,7 +243,10 @@ def check(obj_or_name, doc=None, min_volume: float = 1e-6,
         sum(len(getattr(s, k)) for s in solids) == len(getattr(shp, k))
         for k in ("Faces", "Edges", "Vertexes"))
     valid = True if (not bop_issues and solids_only) else bool(shp.isValid())
-    volume = float(shp.Volume)
+    # each solid's volume once: it was computed three times (0.06 s each on a
+    # 1,500-hole plate); a lone Solid IS its only solid, same OCCT computation
+    vols = [s.Volume for s in solids]
+    volume = float(vols[0] if len(solids) == 1 and shp.ShapeType == "Solid" else shp.Volume)
     closed = (all(s.isClosed() for s in solids) if solids else bool(shp.isClosed()))
     bb = box(shp)
     res.update(valid=valid, solids=len(solids), closed=closed, volume=volume,
@@ -252,8 +255,8 @@ def check(obj_or_name, doc=None, min_volume: float = 1e-6,
                if bb.isValid() else None,
                faces=len(shp.Faces), edges=len(shp.Edges), vertexes=len(shp.Vertexes))
     if solids:
-        total = sum(s.Volume for s in solids) or 1.0
-        com = sum((s.CenterOfMass * (s.Volume / total) for s in solids),
+        total = sum(vols) or 1.0
+        com = sum((s.CenterOfMass * (sv / total) for s, sv in zip(solids, vols)),
                   FreeCAD.Vector())
         res["center_of_mass"] = [round(com.x, 4), round(com.y, 4), round(com.z, 4)]
 
@@ -261,7 +264,7 @@ def check(obj_or_name, doc=None, min_volume: float = 1e-6,
         res["issues"].append("shape.isValid() is False")
     if expect_solid and not solids:
         res["issues"].append("no solid (expected a solid body)")
-    if any(s.Volume < 0 for s in solids):
+    if any(sv < 0 for sv in vols):
         res["issues"].append("inverted solid (negative volume)")
     if solids and volume <= min_volume:
         res["issues"].append(f"degenerate volume ({volume:.3g})")
@@ -296,8 +299,12 @@ def _finish(res: Dict[str, Any]) -> Dict[str, Any]:
 
 def verdict(obj_or_name, doc=None, **kw) -> str:
     """One-line, token-minimal verdict string: 'OK|FAIL|UNKNOWN name: ...'."""
-    r = check(obj_or_name, doc, **kw)
-    base = (f"{r['status']} {r['name']}: valid={r['valid']} solids={r['solids']} "
+    return verdict_of(check(obj_or_name, doc, **kw))
+
+
+def verdict_of(r: Dict[str, Any]) -> str:
+    """The verdict line of a check() result (no second check)."""
+    base =(f"{r['status']} {r['name']}: valid={r['valid']} solids={r['solids']} "
             f"closed={r['closed']} V={r['volume']:.6g}")
     if r.get("bbox"):
         base += " bbox={}x{}x{}".format(*(f"{x:.4g}" for x in r["bbox"]))
