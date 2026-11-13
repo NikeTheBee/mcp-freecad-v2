@@ -468,6 +468,8 @@ def _make_shape(volume=1000.0, faces=6, edges=12, vertices=8,
     shape.Edges = [MagicMock(Length=1.0) for _ in range(edges)]
     shape.Vertexes = [MagicMock() for _ in range(vertices)]
     shape.Solids = [MagicMock() for _ in range(solids)]
+    if solids == 1:   # a single solid holds all the shape's faces, like a real one
+        shape.Solids[0].Faces = shape.Faces
     shape.Wires = [MagicMock() for _ in range(wires)]
     shape.Shells = [MagicMock() for _ in range(shells)]
 

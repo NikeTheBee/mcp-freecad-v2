@@ -188,6 +188,7 @@ It runs `git subtree pull --squash` on a clean tree. Then run the base's unit te
 | `AICopilot/handlers/mesh_ops.py` (`mesh_to_solid`, `simplify_mesh`, `_place_beside`) | The result goes into the source's App::Part (or gets its container's placement). | The result was created at the document root, shown 100 mm away from its source. |
 | `AICopilot/handlers/mesh_ops.py` (`get_mesh_info`) | Orientation line and verdict from `_orientation_issue`. | An inside-out mesh (signed volume -6000) read "Health: OK". |
 | `AICopilot/handlers/spatial_ops.py` (`face_relationship`, `alignment_check`) | Real angle between normals (`acos(dot)`) plus the angle between planes; a compound's centre from `_material`. | Normals 120 deg apart read 60 deg, opposite faces 0 deg; alignment_check raised on a compound. |
+| `AICopilot/handlers/base.py` (`_material`) | With one solid, the volume and centre of mass are the solid's; faces outside it are named in the note. | A compound of a 10 mm cube and an open shell measured 1818.18 mm3 (the whole compound's volume). |
 
 ## Test status
 

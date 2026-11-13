@@ -199,8 +199,20 @@ def draft():
           len(set(centres)) == 4, str(centres))
 
 
+def material():
+    # one solid plus faces outside it: the solid's volume, not the whole compound's
+    # (a 10 mm cube and an open shell of 5 faces read 1818.18 mm3)
+    import Part
+    from handlers.base import BaseHandler
+    shell = Part.Shell(Part.makeBox(10, 10, 10, App.Vector(50, 0, 0)).Faces[:5])
+    m = BaseHandler._material(Part.makeCompound([Part.makeBox(10, 10, 10), shell]))
+    check("a solid beside an open shell measures the solid only (1000 mm3)",
+          close(m["volume"], 1000.0) and close(m["com"].x, 5.0) and "not counted" in m["note"],
+          str(m))
+
+
 def main():
-    for part in (booleans, part_ops, transforms, draft):
+    for part in (booleans, part_ops, transforms, draft, material):
         try:
             part()
         except Exception:

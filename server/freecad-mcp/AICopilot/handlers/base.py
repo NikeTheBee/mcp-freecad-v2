@@ -1146,6 +1146,13 @@ class BaseHandler:
             return {"volume": None, "com": None,
                     "note": f"{_a(kind)} {kind}, not a closed solid: it has no volume"}
         if len(solids) == 1:
+            # the SOLID's measures, not the whole shape's: a compound of a 10 mm
+            # cube and an open shell read 909.09 mm3 (the shell's meaningless
+            # "volume" mixed in) and a centre of mass pulled towards the shell
+            extra = len(shape.Faces) - len(solids[0].Faces)
+            if extra > 0:
+                return {"volume": solids[0].Volume, "com": solids[0].CenterOfMass,
+                        "note": f"1 solid; {extra} face(s) outside it are not counted"}
             com = getattr(shape, "CenterOfMass", None)
             return {"volume": shape.Volume,
                     "com": com if com is not None else solids[0].CenterOfMass, "note": ""}
