@@ -189,6 +189,11 @@ It runs `git subtree pull --squash` on a clean tree. Then run the base's unit te
 | `AICopilot/handlers/mesh_ops.py` (`get_mesh_info`) | Orientation line and verdict from `_orientation_issue`. | An inside-out mesh (signed volume -6000) read "Health: OK". |
 | `AICopilot/handlers/spatial_ops.py` (`face_relationship`, `alignment_check`) | Real angle between normals (`acos(dot)`) plus the angle between planes; a compound's centre from `_material`. | Normals 120 deg apart read 60 deg, opposite faces 0 deg; alignment_check raised on a compound. |
 | `AICopilot/handlers/base.py` (`_material`) | With one solid, the volume and centre of mass are the solid's; faces outside it are named in the note. | A compound of a 10 mm cube and an open shell measured 1818.18 mm3 (the whole compound's volume). |
+| `AICopilot/handlers/assembly_ops.py` (`joint_violations`, `_joints_report`, `solve`, `create_joint`, `set_joint_offset`, `set_joint_limits`) | Each joint is measured on its two connectors after FreeCAD's solve; `solve` says `joints_not_satisfied` and lists the gaps; unmeasured joint types and an ungrounded assembly are named. | FreeCAD's solve() returned 0 ("success") with two contradictory Fixed joints (11.18 mm / 90 deg apart) and with a Revolute at 90 deg for AngleMax 10 or a Slider 30 mm out for LengthMax 5. |
+| `assembly_ops.py` (`set_joint_limits`) | Refuses limits the joint type does not use. | Length limits on a Revolute, any limit on a Fixed were stored and reported as set; FreeCAD never reads them. |
+| `assembly_ops.py` (`_vertex_off_element`) | A ref vertex must belong to its element. | Face6 + Vertex8 (on the bottom) put the part 10 mm below the face it was told to mate. |
+| `assembly_ops.py` (`create_joint` `reverse`, `_faces_overlap_note`), `freecad_mcp_server.py` (schema) | New `reverse` option (FreeCAD's flip) and an "overlap" warning. | A part starting upside down landed INSIDE the other part, with no way to flip it. |
+| `assembly_ops.py` (`add_component`) | The link starts at the part's global placement (rotation, moved containers); x/y/z set the position and keep the rotation. | The link's placement replaced the part's: a part at x=100 turned 90 deg appeared at the origin, unturned. |
 
 ## Test status
 

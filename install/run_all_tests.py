@@ -78,6 +78,7 @@ CORE_TESTS = [
     ("gear_test.py", "GEAR_OK"),
     ("base_ops_direct_test.py", "BASE_OPS_OK"),
     ("mesh_io_test.py", "MESH_IO_OK"),
+    ("assembly_ops_test.py", "ASSEMBLY_OPS_OK"),
 ]
 FREECAD_TESTS = (CORE_TESTS if os.environ.get("MCPFC_SKIP_GRAFTS")
                  else GRAFT_TESTS + CORE_TESTS)

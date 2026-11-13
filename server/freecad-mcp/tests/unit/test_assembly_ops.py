@@ -1519,14 +1519,16 @@ class TestGetPartStatus(unittest.TestCase):
 # _resolve_joint / set_joint_offset
 # ---------------------------------------------------------------------------
 
-def _make_joint_mock(name="TestJoint"):
+def _make_joint_mock(name="TestJoint", joint_type="Fixed"):
     """A mock that behaves like a real Joint FeaturePython object -- has
     JointType (so _resolve_joint accepts it), Offset1/Offset2 as real
     _Placement instances (via install_freecad_value_types, wired at
-    _freecad_mocks import time) so .Base.x/.y/.z are assertable."""
+    _freecad_mocks import time) so .Base.x/.y/.z are assertable.
+    set_joint_limits tests pass joint_type="Cylindrical": the only type
+    FreeCAD reads both length and angle limits on."""
     joint = MagicMock()
     joint.Name = name
-    joint.JointType = "Fixed"
+    joint.JointType = joint_type
     return joint
 
 
@@ -1651,14 +1653,14 @@ class TestSetJointLimits(unittest.TestCase):
         assert_error_contains(self, result, "not a joint")
 
     def test_no_limits_provided(self):
-        joint = _make_joint_mock()
+        joint = _make_joint_mock(joint_type="Cylindrical")
         doc = make_mock_doc([joint])
         mock_FreeCAD.ActiveDocument = doc
         result = self.handler.set_joint_limits({"joint_name": "TestJoint"})
         assert_error_contains(self, result, "No limits provided")
 
     def test_length_min_sets_value_and_enables(self):
-        joint = _make_joint_mock()
+        joint = _make_joint_mock(joint_type="Cylindrical")
         doc = make_mock_doc([joint])
         mock_FreeCAD.ActiveDocument = doc
 
@@ -1669,7 +1671,7 @@ class TestSetJointLimits(unittest.TestCase):
         self.assertTrue(joint.EnableLengthMin)
 
     def test_length_max_sets_value_and_enables(self):
-        joint = _make_joint_mock()
+        joint = _make_joint_mock(joint_type="Cylindrical")
         doc = make_mock_doc([joint])
         mock_FreeCAD.ActiveDocument = doc
 
@@ -1679,7 +1681,7 @@ class TestSetJointLimits(unittest.TestCase):
         self.assertTrue(joint.EnableLengthMax)
 
     def test_angle_min_sets_value_and_enables(self):
-        joint = _make_joint_mock()
+        joint = _make_joint_mock(joint_type="Cylindrical")
         doc = make_mock_doc([joint])
         mock_FreeCAD.ActiveDocument = doc
 
@@ -1689,7 +1691,7 @@ class TestSetJointLimits(unittest.TestCase):
         self.assertTrue(joint.EnableAngleMin)
 
     def test_angle_max_sets_value_and_enables(self):
-        joint = _make_joint_mock()
+        joint = _make_joint_mock(joint_type="Cylindrical")
         doc = make_mock_doc([joint])
         mock_FreeCAD.ActiveDocument = doc
 
@@ -1699,7 +1701,7 @@ class TestSetJointLimits(unittest.TestCase):
         self.assertTrue(joint.EnableAngleMax)
 
     def test_multiple_limits_at_once(self):
-        joint = _make_joint_mock()
+        joint = _make_joint_mock(joint_type="Cylindrical")
         doc = make_mock_doc([joint])
         mock_FreeCAD.ActiveDocument = doc
 
@@ -1712,7 +1714,7 @@ class TestSetJointLimits(unittest.TestCase):
         self.assertEqual(joint.AngleMax, 90)
 
     def test_omitted_limit_not_touched(self):
-        joint = _make_joint_mock()
+        joint = _make_joint_mock(joint_type="Cylindrical")
         joint.LengthMax = "untouched_sentinel"
         joint.EnableLengthMax = "untouched_flag_sentinel"
         doc = make_mock_doc([joint])
@@ -1726,7 +1728,7 @@ class TestSetJointLimits(unittest.TestCase):
     def test_inverted_length_range_rejected(self):
         """finding #19: an inverted range (min > max) used to be accepted
         silently and reported as success."""
-        joint = _make_joint_mock()
+        joint = _make_joint_mock(joint_type="Cylindrical")
         doc = make_mock_doc([joint])
         mock_FreeCAD.ActiveDocument = doc
 
@@ -1739,7 +1741,7 @@ class TestSetJointLimits(unittest.TestCase):
         self.assertNotEqual(joint.LengthMin, 50)
 
     def test_inverted_angle_range_rejected(self):
-        joint = _make_joint_mock()
+        joint = _make_joint_mock(joint_type="Cylindrical")
         doc = make_mock_doc([joint])
         mock_FreeCAD.ActiveDocument = doc
 
@@ -1751,7 +1753,7 @@ class TestSetJointLimits(unittest.TestCase):
 
     def test_equal_min_max_accepted(self):
         """min == max is a valid (if degenerate) fixed limit, not inverted."""
-        joint = _make_joint_mock()
+        joint = _make_joint_mock(joint_type="Cylindrical")
         doc = make_mock_doc([joint])
         mock_FreeCAD.ActiveDocument = doc
 
@@ -1765,7 +1767,7 @@ class TestSetJointLimits(unittest.TestCase):
         """A call that only supplies length_min must still be checked
         against an already-enabled length_max from a prior call, not just
         against itself."""
-        joint = _make_joint_mock()
+        joint = _make_joint_mock(joint_type="Cylindrical")
         joint.EnableLengthMax = True
         joint.LengthMax = 10
         doc = make_mock_doc([joint])
@@ -1778,7 +1780,7 @@ class TestSetJointLimits(unittest.TestCase):
     def test_new_min_not_checked_against_disabled_existing_max(self):
         """An existing LengthMax value that was never enabled (EnableLengthMax
         False) must not be treated as an active constraint."""
-        joint = _make_joint_mock()
+        joint = _make_joint_mock(joint_type="Cylindrical")
         joint.EnableLengthMax = False
         joint.LengthMax = 10  # stale/unused value, flag says it's not active
         doc = make_mock_doc([joint])
@@ -1787,6 +1789,102 @@ class TestSetJointLimits(unittest.TestCase):
         result = self.handler.set_joint_limits({"joint_name": "TestJoint", "length_min": 50})
 
         assert_success_contains(self, result, "LengthMin=50")
+
+    def test_length_limit_on_revolute_refused(self):
+        """MCP FREECAD v2: FreeCAD only reads length limits on
+        Cylindrical/Slider -- a length_min on a Revolute was stored and
+        reported as set although nothing ever uses it."""
+        joint = _make_joint_mock(joint_type="Revolute")
+        mock_FreeCAD.ActiveDocument = make_mock_doc([joint])
+        result = self.handler.set_joint_limits({"joint_name": "TestJoint", "length_min": 0})
+        self.assertTrue(result.startswith("Error"), result)
+        assert_error_contains(self, result, "Revolute", "length limits")
+        self.assertFalse(joint.EnableLengthMin is True)
+
+    def test_angle_limit_on_slider_refused(self):
+        joint = _make_joint_mock(joint_type="Slider")
+        mock_FreeCAD.ActiveDocument = make_mock_doc([joint])
+        result = self.handler.set_joint_limits({"joint_name": "TestJoint", "angle_max": 5})
+        self.assertTrue(result.startswith("Error"), result)
+        assert_error_contains(self, result, "Slider", "angle limits")
+
+    def test_any_limit_on_fixed_refused(self):
+        joint = _make_joint_mock(joint_type="Fixed")
+        mock_FreeCAD.ActiveDocument = make_mock_doc([joint])
+        result = self.handler.set_joint_limits({"joint_name": "TestJoint", "angle_min": -5})
+        self.assertTrue(result.startswith("Error"), result)
+
+    def test_reply_says_limits_are_not_enforced_by_solve(self):
+        joint = _make_joint_mock(joint_type="Revolute")
+        mock_FreeCAD.ActiveDocument = make_mock_doc([joint])
+        result = self.handler.set_joint_limits({"joint_name": "TestJoint", "angle_max": 10})
+        assert_success_contains(self, result, "AngleMax=10", "does not enforce")
+
+
+class TestJointsReport(unittest.TestCase):
+    """MCP FREECAD v2: FreeCAD's solve() returned 0 for joints that do not
+    hold (conflicting Fixed joints, limits); solve now measures them."""
+
+    def setUp(self):
+        reset_mocks()
+        self.handler = make_handler(AssemblyOpsHandler)
+
+    def _assembly_with(self, joints, code=0):
+        assembly = make_assembly("Asm")
+        assembly.solve = MagicMock(return_value=code)
+        _set_joints(assembly, joints)
+        mock_FreeCAD.ActiveDocument = make_mock_doc([assembly])
+        return assembly
+
+    def _joint(self, name, jtype):
+        j = MagicMock()
+        j.Name = name
+        j.JointType = jtype
+        j.Suppressed = False
+        del j.ObjectToGround
+        return j
+
+    def _ground(self):
+        g = MagicMock()
+        g.Name = "Ground"
+        return g
+
+    def test_violated_joint_turns_success_into_joints_not_satisfied(self):
+        from unittest.mock import patch
+        self._assembly_with([self._ground(), self._joint("J2", "Fixed")])
+        with patch.dict(AssemblyOpsHandler._joints_report.__globals__, joint_violations=MagicMock(
+                return_value=["connectors 11.18 mm apart"])):
+            result = self.handler.solve({})
+        assert_error_contains(self, result, "joints_not_satisfied", "J2", "11.18 mm")
+        self.assertNotIn("success", result)
+
+    def test_satisfied_joints_keep_success(self):
+        from unittest.mock import patch
+        self._assembly_with([self._ground(), self._joint("J1", "Fixed")])
+        with patch.dict(AssemblyOpsHandler._joints_report.__globals__, joint_violations=MagicMock(return_value=[])):
+            result = self.handler.solve({})
+        assert_success_contains(self, result, "success (code=0)")
+        self.assertNotIn("NOT SATISFIED", result)
+
+    def test_unmeasured_joint_types_are_named(self):
+        from unittest.mock import patch
+        self._assembly_with([self._ground(), self._joint("G", "Gears")])
+        with patch.dict(AssemblyOpsHandler._joints_report.__globals__, joint_violations=MagicMock(return_value=None)):
+            result = self.handler.solve({})
+        assert_success_contains(self, result, "success", "Not measured", "G (Gears)")
+
+    def test_no_grounded_part_is_said(self):
+        from unittest.mock import patch
+        self._assembly_with([self._joint("J1", "Fixed")])
+        with patch.dict(AssemblyOpsHandler._joints_report.__globals__, joint_violations=MagicMock(return_value=[])):
+            result = self.handler.solve({})
+        assert_error_contains(self, result, "No part is grounded")
+
+    def test_reverse_refused_on_ball_before_creating_anything(self):
+        result = self.handler.create_joint({
+            "joint_type": "Ball", "ref1_object": "A", "ref2_object": "B", "reverse": True,
+        })
+        assert_error_contains(self, result, "reverse applies only", "Ball")
 
 
 if __name__ == "__main__":

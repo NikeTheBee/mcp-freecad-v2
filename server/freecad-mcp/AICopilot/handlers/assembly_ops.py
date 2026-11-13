@@ -71,6 +71,93 @@ _SOLVE_STATUS = {
     -6: "no_grounded_parts",
 }
 
+# MCP FREECAD v2: FreeCAD's solve() returned 0 ("success") with joints that
+# do not hold -- two Fixed joints of one part to two faces of a box (solved
+# part 11.18 mm and 90 deg away from its connectors), a Revolute turned to
+# 90 deg with AngleMin/Max = -10/10, a Slider 30 mm out with LengthMax = 5
+# (limits are not enforced by a headless solve, measured 2026-11-13). The
+# relation each type must satisfy, read on its two connectors after solve
+# (rel = JCS1^-1 * JCS2, measured on satisfied joints: a connector may end
+# flipped, z = -z, for every type FreeCAD lets the user "reverse").
+# Distance and the coupling joints (RackPinion/Screw/Gears/Belt) are not
+# measured: their relation depends on the geometry pair / on the motion.
+_JOINT_POS_TOL = 1e-3   # mm
+_JOINT_ANG_TOL = 1e-2   # deg
+_COINCIDENT_TYPES = frozenset({"Fixed", "Revolute", "Ball"})
+_ON_AXIS_TYPES = frozenset({"Cylindrical", "Slider"})
+_AXIS_PARALLEL_TYPES = frozenset({"Fixed", "Revolute", "Cylindrical", "Slider", "Parallel"})
+_NO_TWIST_TYPES = frozenset({"Fixed", "Slider"})
+_LENGTH_LIMIT_TYPES = frozenset({"Cylindrical", "Slider"})   # JointObject.JointUsingLimitLength
+_ANGLE_LIMIT_TYPES = frozenset({"Revolute", "Cylindrical"})  # JointObject.JointUsingLimitAngle
+_REVERSIBLE_TYPES = frozenset({"Fixed", "Revolute", "Cylindrical", "Slider", "Distance", "Parallel"})
+
+
+def _qty(value) -> float:
+    """A FreeCAD Quantity (mm / deg) or a plain number, as a float."""
+    return float(getattr(value, 'Value', value))
+
+
+def _joint_frames(joint):
+    """(rel_placement, length_mm, twist_deg, axes_angle_deg) of a joint's
+    connector 2 seen from connector 1, both in the global frame. twist is
+    FreeCAD's own UtilsAssembly.getJointXYAngle measure (the Revolute angle),
+    length the offset along connector 1's Z (the Slider length)."""
+    import math
+
+    import UtilsAssembly
+    g1 = UtilsAssembly.getJcsGlobalPlc(joint.Placement1, joint.Reference1)
+    g2 = UtilsAssembly.getJcsGlobalPlc(joint.Placement2, joint.Reference2)
+    rel = g1.inverse() * g2
+    z = rel.Rotation.multVec(FreeCAD.Vector(0, 0, 1))
+    x = rel.Rotation.multVec(FreeCAD.Vector(1, 0, 0))
+    twist = math.degrees(math.atan2(x.y, x.x))
+    axes = math.degrees(math.acos(max(-1.0, min(1.0, z.z))))
+    return rel, float(rel.Base.z), twist, axes
+
+
+def joint_violations(joint) -> "list[str] | None":
+    """What a solved joint does NOT satisfy (empty list = satisfied), or
+    None when it is not measured (Distance / coupling types, unset or
+    suppressed joint, a GroundedJoint)."""
+    import math
+    jtype = getattr(joint, 'JointType', None)
+    if (jtype is None or getattr(joint, 'Suppressed', False) is True
+            or not getattr(joint, 'Reference1', None) or not getattr(joint, 'Reference2', None)):
+        return None
+    if jtype not in (_COINCIDENT_TYPES | _ON_AXIS_TYPES | _AXIS_PARALLEL_TYPES
+                     | {"Perpendicular", "Angle"}):
+        return None
+    rel, length, twist, axes = _joint_frames(joint)
+    out = []
+    base = rel.Base
+    if jtype in _COINCIDENT_TYPES and base.Length > _JOINT_POS_TOL:
+        out.append(f"connectors {base.Length:.4g} mm apart")
+    if jtype in _ON_AXIS_TYPES and math.hypot(base.x, base.y) > _JOINT_POS_TOL:
+        out.append(f"connector 2 {math.hypot(base.x, base.y):.4g} mm off connector 1's axis")
+    if jtype in _AXIS_PARALLEL_TYPES and min(axes, 180.0 - axes) > _JOINT_ANG_TOL:
+        out.append(f"axes {min(axes, 180.0 - axes):.4g} deg from parallel")
+    # a flipped connector is FreeCAD's flipPlacement (180 deg about X),
+    # which leaves the X axis -- hence the twist -- unchanged
+    if jtype in _NO_TWIST_TYPES and abs(twist) > _JOINT_ANG_TOL:
+        out.append(f"twisted {twist:.4g} deg about the axis")
+    if jtype == "Perpendicular" and abs(axes - 90.0) > _JOINT_ANG_TOL:
+        out.append(f"axes at {axes:.4g} deg, not 90")
+    if jtype == "Angle":
+        want = _qty(getattr(joint, 'Angle', 0.0))
+        if abs(axes - want) > _JOINT_ANG_TOL:
+            out.append(f"axes at {axes:.4g} deg, Angle is {want:.4g}")
+    if jtype in _LENGTH_LIMIT_TYPES:
+        if joint.EnableLengthMin is True and length < _qty(joint.LengthMin) - _JOINT_POS_TOL:
+            out.append(f"length {length:.4g} mm below LengthMin={_qty(joint.LengthMin):.4g}")
+        if joint.EnableLengthMax is True and length > _qty(joint.LengthMax) + _JOINT_POS_TOL:
+            out.append(f"length {length:.4g} mm above LengthMax={_qty(joint.LengthMax):.4g}")
+    if jtype in _ANGLE_LIMIT_TYPES:
+        if joint.EnableAngleMin is True and twist < _qty(joint.AngleMin) - _JOINT_ANG_TOL:
+            out.append(f"angle {twist:.4g} deg below AngleMin={_qty(joint.AngleMin):.4g}")
+        if joint.EnableAngleMax is True and twist > _qty(joint.AngleMax) + _JOINT_ANG_TOL:
+            out.append(f"angle {twist:.4g} deg above AngleMax={_qty(joint.AngleMax):.4g}")
+    return out
+
 
 class AssemblyOpsHandler(BaseHandler):
     """Handler for Assembly workbench operations (container, LCS, linking, joints)."""
@@ -226,7 +313,8 @@ class AssemblyOpsHandler(BaseHandler):
                 the active document to already be saved to disk (FreeCAD's
                 PropertyXLink needs a file path on both ends) — FreeCAD does not
                 auto-reopen documents.
-            x, y, z: Initial placement offset in mm (default: unplaced)
+            x, y, z: Initial position of the component in the assembly, mm
+                (default: where the part already is, rotation included)
         """
         try:
             object_name = args.get('object_name', '')
@@ -288,7 +376,16 @@ class AssemblyOpsHandler(BaseHandler):
                 link = assembly.newObject(link_type, link_name)
                 link.LinkedObject = src_obj
 
-                if x != 0 or y != 0 or z != 0:
+                # MCP FREECAD v2: the link's Placement REPLACES the part's
+                # own (App::Link, LinkTransform off), so a part placed at
+                # x=100 or turned 90 deg showed up at the origin, unturned,
+                # in the assembly (measured). Start the link where the part
+                # is (also inside a moved App::Part / a moved assembly);
+                # x/y/z, when given, set its position.
+                with contextlib.suppress(Exception):
+                    link.Placement = (assembly.getGlobalPlacement().inverse()
+                                      * src_obj.getGlobalPlacement())
+                if 'x' in args or 'y' in args or 'z' in args:
                     link.Placement.Base = FreeCAD.Vector(x, y, z)
             except Exception:
                 # Same orphan-object shape the doc-not-saved precheck above
@@ -408,6 +505,45 @@ class AssemblyOpsHandler(BaseHandler):
             if obj.TypeId == "Assembly::JointGroup":
                 return obj
         return None
+
+    def _joints_report(self, assembly) -> "tuple[list[str], list[str], bool]":
+        """MCP FREECAD v2: (violated, unmeasured, grounded) over the
+        assembly's joints after a solve -- see joint_violations."""
+        bad, unmeasured, grounded = [], [], False
+        joint_group = self._find_joint_group(assembly)
+        for j in (getattr(joint_group, 'Group', []) or []) if joint_group else []:
+            if hasattr(j, 'ObjectToGround'):
+                grounded = True
+                continue
+            jtype = getattr(j, 'JointType', '?')
+            if getattr(j, 'Suppressed', False) is True:
+                continue
+            try:
+                found = joint_violations(j)
+            except Exception as e:
+                unmeasured.append(f"{j.Name} ({jtype}: {e})")
+                continue
+            if found is None:
+                unmeasured.append(f"{j.Name} ({jtype})")
+            elif found:
+                bad.append(f"{j.Name} ({jtype}): {', '.join(found)}")
+        return bad, unmeasured, grounded
+
+    def _joints_note(self, assembly) -> str:
+        """Text appended to a reply after FreeCAD solved: the joints that do
+        not hold, the ones not measured, a missing ground. '' if all hold."""
+        bad, unmeasured, grounded = self._joints_report(assembly)
+        note = ""
+        if bad:
+            note += ("\nNOT SATISFIED after solve (conflicting/over-constrained joints, "
+                     "or limits a headless solve does not enforce): " + "; ".join(bad))
+        if unmeasured:
+            note += ("\nNot measured (Distance / RackPinion / Screw / Gears / Belt "
+                     "relations depend on the geometry or the motion -- measure the parts): "
+                     + ", ".join(unmeasured))
+        if (bad or unmeasured or self._find_joint_group(assembly)) and not grounded:
+            note += "\nNo part is grounded: the solver may move every part (ground_part one)."
+        return note
 
     def _resolve_assembly(self, assembly_name: str, doc):
         """Shared assembly-resolution: explicit name, or first in document.
@@ -532,6 +668,72 @@ class AssemblyOpsHandler(BaseHandler):
             return None
         return None
 
+    @staticmethod
+    def _vertex_off_element(obj, element_name: str, vertex_name: str) -> "str | None":
+        """MCP FREECAD v2: ref1_vertex='Vertex8' with ref1_element='Face6'
+        of a box was accepted although Vertex8 is not on Face6: FreeCAD put
+        the connector at that vertex (z=0, the box's bottom) with Face6's
+        orientation and the part landed 10 mm below the face it was told to
+        mate (measured). FreeCAD's GUI only ever picks a vertex of the
+        element (or a circular edge of a face, for its centre). Error string
+        when vertex_name is not on element_name, None when it is or when it
+        cannot be told (no Shape, element = whole object)."""
+        if not element_name or not vertex_name or vertex_name == element_name:
+            return None
+        if not (element_name.startswith(("Face", "Edge"))
+                and vertex_name.startswith(("Vertex", "Edge"))):
+            return None
+        try:
+            shape = obj.Shape
+            elem = shape.getElement(element_name)
+            sub = shape.getElement(vertex_name)
+            if vertex_name.startswith("Edge") and not element_name.startswith("Face"):
+                return None   # an edge's vertex must be a VertexN
+            members = elem.Edges if vertex_name.startswith("Edge") else elem.Vertexes
+            if not isinstance(members, (list, tuple)):
+                return None   # not a real shape
+            on = any(m.isSame(sub) for m in members)
+        except Exception:
+            return None
+        if on is True:
+            return None
+        if on is False:
+            kind = "an edge" if vertex_name.startswith("Edge") else "a vertex"
+            return (f"{vertex_name} is not {kind} of {obj.Name}.{element_name}: the connector would "
+                    f"sit off the element. Use one of its own vertexes (or, on a face, one of its "
+                    f"circular edges for the centre), or omit the vertex to use the element's centre.")
+        return None
+
+    @staticmethod
+    def _faces_overlap_note(joint_type, obj1, elem1, obj2, elem2, reverse) -> str:
+        """MCP FREECAD v2: a Fixed (also Revolute/Cylindrical/Slider) joint
+        Base.Face6 <-> Top.Face5 put Top INSIDE Base (z 5..10 in a 0..10
+        box) when Top started upside down or tilted 120 deg: the solver
+        keeps whichever of matched/flipped connectors is nearer the start
+        (JointObject.matchJCS). Two mated planar faces whose outward normals
+        point the same way after solve = material on the same side = the
+        parts overlap. Warn, and point at reverse."""
+        if joint_type not in _COINCIDENT_TYPES | _ON_AXIS_TYPES or joint_type == "Ball":
+            return ""
+        try:
+            normals = []
+            for obj, elem in ((obj1, elem1), (obj2, elem2)):
+                if not (elem or "").startswith("Face"):
+                    return ""
+                face = obj.Shape.getElement(elem)
+                if getattr(face.Surface, 'TypeId', '') != "Part::GeomPlane":
+                    return ""
+                u0, u1, v0, v1 = face.ParameterRange
+                normals.append(face.normalAt((u0 + u1) / 2, (v0 + v1) / 2))
+            if normals[0].dot(normals[1]) > 0.5:
+                return (f"\nWARNING: {obj1.Name}.{elem1} and {obj2.Name}.{elem2} face the same way "
+                        f"after solve: the parts overlap instead of touching -- "
+                        + ("create it without reverse." if reverse
+                           else "delete this joint and create it again with reverse=true."))
+        except Exception:
+            return ""
+        return ""
+
     def create_joint(self, args: dict[str, Any]) -> str:
         """Create a joint between two objects' geometry.
 
@@ -566,6 +768,14 @@ class AssemblyOpsHandler(BaseHandler):
                 Screw's pitch, Gears/Belt's first radius)
             distance2: Second radius, Gears/Belt only
             angle: Value for the Angle joint
+            reverse: Flip the free part's connector after solving (FreeCAD's
+                "Reverse" button) -- Fixed/Revolute/Cylindrical/Slider/
+                Distance/Parallel. The solver keeps whichever orientation is
+                nearer the part's start, so a face-to-face mate can land with
+                the parts overlapping; the reply warns when it does.
+
+        The reply also lists every joint of the assembly that does NOT hold
+        after FreeCAD's solve (conflicts, limits) -- see joint_violations.
         """
         try:
             joint_type = args.get('joint_type', '')
@@ -588,6 +798,10 @@ class AssemblyOpsHandler(BaseHandler):
             distance = args.get('distance')
             distance2 = args.get('distance2')
             angle = args.get('angle')
+            reverse = bool(args.get('reverse', False))
+            if reverse and joint_type not in _REVERSIBLE_TYPES:
+                return (f"reverse applies only to {', '.join(sorted(_REVERSIBLE_TYPES))} "
+                        f"joints, not {joint_type}")
 
             doc = self.get_document()
             if not doc:
@@ -626,6 +840,10 @@ class AssemblyOpsHandler(BaseHandler):
                         or self._validate_element(ref2_obj, ref2_vertex))
             if elem_err:
                 return elem_err
+            vtx_err = (self._vertex_off_element(ref1_obj, ref1_element, ref1_vertex)
+                       or self._vertex_off_element(ref2_obj, ref2_element, ref2_vertex))
+            if vtx_err:
+                return vtx_err
 
             import JointObject
             import UtilsAssembly
@@ -649,6 +867,12 @@ class AssemblyOpsHandler(BaseHandler):
                     [ref2_obj, [ref2_element, ref2_vertex]],
                 ]
                 joint.Proxy.setJointConnectors(joint, refs)
+                if reverse:
+                    # FreeCAD's own "Reverse" button (TaskAssemblyCreateJoint
+                    # .onReverseClicked): flip the free part's connector,
+                    # then solve again.
+                    joint.Proxy.flipOnePart(joint)
+                    JointObject.solveIfAllowed(assembly)
             except Exception:
                 # setJointConnectors (or an earlier step) can throw after the
                 # joint object already exists in the document -- same
@@ -663,7 +887,11 @@ class AssemblyOpsHandler(BaseHandler):
 
             return (f"Created {joint_type} joint: {joint.Name} "
                     f"({ref1_object}.{ref1_element or '(whole)'} <-> "
-                    f"{ref2_object}.{ref2_element or '(whole)'})")
+                    f"{ref2_object}.{ref2_element or '(whole)'})"
+                    + (" reversed" if reverse else "")
+                    + self._faces_overlap_note(joint_type, ref1_obj, ref1_element,
+                                               ref2_obj, ref2_element, reverse)
+                    + self._joints_note(assembly))
 
         except Exception as e:
             return f"Error creating joint: {e}"
@@ -776,7 +1004,14 @@ class AssemblyOpsHandler(BaseHandler):
             code = assembly.solve(enable_undo)
             status = _SOLVE_STATUS.get(code, f"unknown_code_{code}")
 
-            return f"Solve result for {assembly.Name}: {status} (code={code})"
+            # MCP FREECAD v2: code 0 came back for joints that do not hold
+            # (conflicting Fixed joints, limits): measure them, see
+            # joint_violations.
+            note = self._joints_note(assembly)
+            if code == 0 and "NOT SATISFIED" in note:
+                status = "joints_not_satisfied"
+
+            return f"Solve result for {assembly.Name}: {status} (code={code}){note}"
 
         except Exception as e:
             return f"Error solving assembly: {e}"
@@ -998,6 +1233,14 @@ class AssemblyOpsHandler(BaseHandler):
             return None, f"'{joint_name}' is not a joint (no JointType property)"
         return joint, None
 
+    def _assembly_of_joint(self, joint, doc):
+        """The assembly a joint belongs to (its JointGroup's parent), or None."""
+        for parent in getattr(joint, 'InList', []) or []:
+            for obj in getattr(parent, 'InList', []) or []:
+                if getattr(obj, 'TypeId', '') == "Assembly::AssemblyObject":
+                    return obj
+        return None
+
     def set_joint_offset(self, args: dict[str, Any]) -> str:
         """Set a joint connector's attachment offset (Offset1 or Offset2).
 
@@ -1040,8 +1283,12 @@ class AssemblyOpsHandler(BaseHandler):
 
             self.recompute(doc)
 
-            return (f"Set {joint_name}.{offset_attr} = ({x},{y},{z})"
-                    + (f", {detach_attr}={bool(detach)}" if detach is not None else ""))
+            # MCP FREECAD v2: the Offset change re-solves the assembly
+            # (JointObject.onChanged); say whether the joints still hold.
+            assembly = self._assembly_of_joint(joint, doc)
+            return (f"Set {joint_name}.{offset_attr} = ({x},{y},{z}) in connector {connector}'s frame"
+                    + (f", {detach_attr}={bool(detach)}" if detach is not None else "")
+                    + (self._joints_note(assembly) if assembly is not None else ""))
 
         except Exception as e:
             return f"Error setting joint offset: {e}"
@@ -1078,6 +1325,18 @@ class AssemblyOpsHandler(BaseHandler):
             joint, err = self._resolve_joint(joint_name, doc)
             if err:
                 return err
+
+            # MCP FREECAD v2: length_min on a Revolute (or any limit on a
+            # Fixed) was stored and reported as set, but FreeCAD only reads
+            # length limits on Cylindrical/Slider and angle limits on
+            # Revolute/Cylindrical (JointObject.JointUsingLimit*).
+            jtype = getattr(joint, 'JointType', '?')
+            if (length_min is not None or length_max is not None) and jtype not in _LENGTH_LIMIT_TYPES:
+                return (f"Error: {joint_name} is a {jtype} joint: length limits apply only to "
+                        f"{', '.join(sorted(_LENGTH_LIMIT_TYPES))} joints")
+            if (angle_min is not None or angle_max is not None) and jtype not in _ANGLE_LIMIT_TYPES:
+                return (f"Error: {joint_name} is a {jtype} joint: angle limits apply only to "
+                        f"{', '.join(sorted(_ANGLE_LIMIT_TYPES))} joints")
 
             # Validate BEFORE applying anything -- an inverted range used to
             # be accepted silently (finding #19). `new if new is not None
@@ -1126,7 +1385,13 @@ class AssemblyOpsHandler(BaseHandler):
 
             self.recompute(doc)
 
-            return f"Set {joint_name}: {', '.join(applied)}"
+            # MCP FREECAD v2: a headless solve does not enforce limits
+            # (Revolute left at 90 deg with AngleMax=10, measured); they are
+            # checked on every solve/create_joint reply instead.
+            assembly = self._assembly_of_joint(joint, doc)
+            return (f"Set {joint_name}: {', '.join(applied)} (stored; FreeCAD's solve does not "
+                    f"enforce limits -- solve reports a joint outside them)"
+                    + (self._joints_note(assembly) if assembly is not None else ""))
 
         except Exception as e:
             return f"Error setting joint limits: {e}"

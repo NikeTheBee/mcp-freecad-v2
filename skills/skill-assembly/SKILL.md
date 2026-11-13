@@ -37,14 +37,36 @@ inst.Placement = Placement(Vector(40, 0, 0), Rotation())
 
 ## Joints (Assembly solver)
 The base's `assembly_operations add_component` puts an `App::Link` to the part in the assembly
-(e.g. `Top` -> `Top001`) and leaves the source where it was, visible. Joints and `solve` move the
-LINK: check interference, measure and render the links (`Top001`), not the sources (still at
-their old place). Hide the sources if the scene should show only the assembly.
-Headless `solve` was verified for a Fixed joint face to face (the link lands exactly). Other joint
-types (Revolute, Slider, Distance...) are not verified headless: after `solve`, measure the links'
-placements (`get_bounding_box`, `check_assembly`) before trusting them, or express the intent as
-`Placement`s computed from the mating geometry. Document joints as design decisions via
-`skill-verify` (`state.add_decision`).
+(e.g. `Top` -> `Top001`), starting where the part is (rotation and moved containers included;
+`x/y/z` set the position) and leaves the source visible. Joints and `solve` move the LINK: check
+interference, measure and render the links (`Top001`), not the sources. Hide the sources if the
+scene should show only the assembly.
+
+Verified headless against known landings (`install/assembly_ops_test.py`, link bbox exact to 1e-6):
+| joint | verified | note |
+|---|---|---|
+| Fixed, Revolute, Cylindrical, Slider | yes | face-to-face / circle-to-circle seat on the element centre; Slider keeps the part on the axis |
+| Ball | yes | vertex onto vertex |
+| Distance | partly | plane-plane gap exact; other pairs (circle-circle...) follow FreeCAD's own meaning -- measure |
+| Parallel, Perpendicular, Angle | yes | orientation only, position left free |
+| RackPinion, Screw, Gears, Belt | no | motion couplings: a static solve moves nothing -- not measured |
+
+- Every `create_joint` / `solve` / `set_joint_offset` / `set_joint_limits` reply measures each joint on
+  its two connectors after FreeCAD's solve. FreeCAD returns 0 even for conflicting joints:
+  `solve` then says `joints_not_satisfied` and lists what does not hold. Never treat that as success.
+- Limits (`set_joint_limits`): length only on Cylindrical/Slider, angle only on Revolute/Cylindrical.
+  A headless solve does NOT enforce them (they bound GUI dragging); a part outside them is reported.
+- `ref*_vertex` must be a vertex of its element (or, on a face, one of its circular edges = centre).
+  Omit it to use the element's centre.
+- The solver keeps the connector orientation (matched or flipped) nearer the part's start: a part
+  starting upside down can land INSIDE the other one. The reply warns ("overlap"); delete the joint
+  and recreate it with `reverse=true` (Fixed/Revolute/Cylindrical/Slider/Distance/Parallel).
+- `set_joint_offset` sets (replaces) the offset in that connector's own frame: connector 1 `z=5`
+  lifts the part 5 mm off a face; connector 2 `z=5` on a box's bottom face sank it 5 mm (that
+  connector's Z pointed up, into the part): the sign follows the connector, measure after.
+- No part grounded: the solver may move every part (the reply says so) -- `ground_part` one first.
+- Joints on parts inside a moved/rotated assembly are relative to the assembly: verified.
+Document joints as design decisions via `skill-verify` (`state.add_decision`).
 
 ## Fits, tolerances & functional clearances (§4.4)
 For mating parts, size the hole from the shaft by fit class (helper `hole_for_shaft` in

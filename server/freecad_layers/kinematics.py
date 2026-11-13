@@ -248,13 +248,92 @@ class FourBar:
 def native_solve(assembly_obj) -> Dict[str, object]:
     """Run FreeCAD's built-in Assembly (OndselSolver) solve() headlessly.
 
-    For assemblies whose joints were authored in the GUI. Returns a compact
-    dict; does not create joints (that path is GUI-coupled — see R8).
+    Returns a compact dict; does not create joints (the base's
+    assembly_operations create_joint does). "ok" means the solver converged
+    AND every measurable joint holds afterwards ("not_satisfied" lists the
+    others; Distance and the coupling joints are "not_measured").
     """
     if not hasattr(assembly_obj, "solve"):
         return {"ok": False, "why": "object has no solve() — not an AssemblyObject"}
     try:
         code = assembly_obj.solve()
-        return {"ok": code == 0, "convergence_code": code}
     except Exception as e:  # noqa: BLE001
         return {"ok": False, "why": f"solver error: {e}"}
+    # MCP FREECAD v2: solve() returned 0 for two conflicting Fixed joints
+    # (part left 11.18 mm / 90 deg off its connectors) and for a Revolute
+    # outside its angle limits -- "ok" now also needs every joint to hold.
+    violated, unmeasured = _joint_check(assembly_obj)
+    res = {"ok": code == 0 and not violated, "convergence_code": code}
+    if violated:
+        res["not_satisfied"] = violated
+    if unmeasured:
+        res["not_measured"] = unmeasured
+    return res
+
+
+# relation each joint type holds on its connectors (rel = JCS1^-1 * JCS2),
+# same table as the base's assembly_ops.joint_violations
+_COINCIDENT = {"Fixed", "Revolute", "Ball"}
+_ON_AXIS = {"Cylindrical", "Slider"}
+_PARALLEL = {"Fixed", "Revolute", "Cylindrical", "Slider", "Parallel"}
+_NO_TWIST = {"Fixed", "Slider"}
+_MEASURED = _COINCIDENT | _ON_AXIS | _PARALLEL | {"Perpendicular", "Angle"}
+
+
+def _joint_check(assembly_obj, pos_tol: float = 1e-3, ang_tol: float = 1e-2):
+    """(["Joint: what does not hold"], ["Joint (type) not measured"])."""
+    violated: List[str] = []
+    unmeasured: List[str] = []
+    try:
+        import FreeCAD as App
+        import UtilsAssembly as UA
+    except ImportError:
+        return violated, unmeasured
+    joints = []
+    for grp in getattr(assembly_obj, "OutList", []) or []:
+        if getattr(grp, "TypeId", "") == "Assembly::JointGroup":
+            joints = list(getattr(grp, "Group", []) or [])
+    for j in joints:
+        jt = getattr(j, "JointType", None)
+        if jt is None or getattr(j, "Suppressed", False) is True:
+            continue                                    # a grounding, or off
+        if jt not in _MEASURED or not j.Reference1 or not j.Reference2:
+            unmeasured.append(f"{j.Name} ({jt})")
+            continue
+        try:
+            rel = (UA.getJcsGlobalPlc(j.Placement1, j.Reference1).inverse()
+                   * UA.getJcsGlobalPlc(j.Placement2, j.Reference2))
+        except Exception as e:  # noqa: BLE001
+            unmeasured.append(f"{j.Name} ({jt}: {e})")
+            continue
+        z = rel.Rotation.multVec(App.Vector(0, 0, 1))
+        x = rel.Rotation.multVec(App.Vector(1, 0, 0))
+        axes = math.degrees(math.acos(max(-1.0, min(1.0, z.z))))
+        twist = math.degrees(math.atan2(x.y, x.x))
+        b = rel.Base
+        bad = []
+        if jt in _COINCIDENT and b.Length > pos_tol:
+            bad.append(f"connectors {b.Length:.4g} mm apart")
+        if jt in _ON_AXIS and math.hypot(b.x, b.y) > pos_tol:
+            bad.append(f"{math.hypot(b.x, b.y):.4g} mm off axis")
+        if jt in _PARALLEL and min(axes, 180 - axes) > ang_tol:
+            bad.append(f"axes {min(axes, 180 - axes):.4g} deg from parallel")
+        if jt in _NO_TWIST and abs(twist) > ang_tol:
+            bad.append(f"twisted {twist:.4g} deg")
+        if jt == "Perpendicular" and abs(axes - 90) > ang_tol:
+            bad.append(f"axes at {axes:.4g} deg")
+        if jt == "Angle" and abs(axes - float(getattr(j.Angle, "Value", j.Angle))) > ang_tol:
+            bad.append(f"axes at {axes:.4g} deg")
+        for types, value, tol, lo_hi in (
+                (_ON_AXIS, b.z, pos_tol, ("LengthMin", "LengthMax")),
+                ({"Revolute", "Cylindrical"}, twist, ang_tol, ("AngleMin", "AngleMax"))):
+            if jt not in types:
+                continue
+            for k, attr in enumerate(lo_hi):
+                if getattr(j, "Enable" + attr, False) is True:
+                    lim = float(getattr(getattr(j, attr), "Value", getattr(j, attr)))
+                    if (value < lim - tol) if k == 0 else (value > lim + tol):
+                        bad.append(f"{value:.4g} outside {attr}={lim:.4g}")
+        if bad:
+            violated.append(f"{j.Name} ({jt}): " + ", ".join(bad))
+    return violated, unmeasured
