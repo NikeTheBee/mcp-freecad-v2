@@ -78,6 +78,21 @@ def main() -> int:
         udp.close()
         print("2d. a fresh listener (no client yet) owns its port; bound-only and UDP do not: OK")
 
+        # a local program flooding the port with silent connections: one thread each,
+        # held 30 s, no limit (audit 2026-11-12). Now at most MAX_CLIENTS, freed after 5 s.
+        fc = psutil.Process(pid)
+        threads0 = fc.num_threads()
+        silent = [socket.create_connection(("127.0.0.1", inst.port), timeout=5) for _ in range(60)]
+        time.sleep(1.0)
+        grown = fc.num_threads() - threads0
+        assert grown <= 34, f"{grown} threads for 60 silent connections"
+        time.sleep(6.0)
+        r = inst.call("execute_python_sync", {"code": "3+3"})
+        assert r and r.get("result") == "6", r
+        for sk in silent:
+            sk.close()
+        print(f"2e. 60 silent connections: +{grown} threads (bounded), answering again after 5 s: OK")
+
         sup = subprocess.Popen([str(VENV_PY), str(LAUNCHER), "--supervise", "60"],
                                env=inst.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                text=True)

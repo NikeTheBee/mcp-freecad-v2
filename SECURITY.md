@@ -124,9 +124,10 @@ The launcher deletes operation logs older than 14 days at start-up
   the listener proof and the launcher's check protect against *other* accounts and against a foreign
   program holding the port — not against yourself.
 - **Local denial of service.** Any local account can connect to `127.0.0.1:23456`. Without the token
-  it gets nothing, but each connection holds a thread in FreeCAD for up to 30 s while its first
-  message is awaited, with no limit on their number: a program that floods the port can slow FreeCAD
-  down or keep clients out. Work is protected by the autosaves, not by the socket.
+  it gets nothing. FreeCAD serves at most 32 connections at once (beyond: closed at once) and frees a
+  connection that sends nothing after 5 s, so a flood no longer piles up threads; but a program that
+  keeps reconnecting can still keep real clients out while it runs. Work is protected by the
+  autosaves, not by the socket.
 - **The token file if `icacls` fails.** FreeCAD then only prints a warning and the file keeps the ACL
   inherited from `~/.freecad-mcp` (private in a standard profile). The file is restricted while still
   empty, then written (it used to be written first).

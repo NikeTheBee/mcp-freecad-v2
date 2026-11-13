@@ -183,6 +183,7 @@ It runs `git subtree pull --squash` on a clean tree. Then run the base's unit te
 | `AICopilot/handlers/document_ops.py` (`insert_shape`) | x/y/z offset the source placement. | Documented as an offset but replaced the position: (100,50,0) + x=5 landed at (5,0,0). |
 | `AICopilot/handlers/macro_ops.py` (read/run) | A macro name with a drive prefix (`D:name`) or a stream (`x.FCMacro:s`) is refused. | `D:name` opened the file of that name in drive D:'s working folder, outside the macro folder; `:stream` read a hidden NTFS stream. |
 | `AICopilot/freecad_mcp_handler.py` (`_init_windows_auth_token`) | The token file is restricted (icacls) before the token is written into it. | It was written first, then restricted: for a moment it was readable with the folder's default ACL. |
+| `AICopilot/freecad_mcp_handler.py` (`_server_loop`, `_serve_in_slot`, `_handle_client`) | At most `MAX_CLIENTS` (32) connections served at once, beyond closed at once; a connection's first message is awaited 5 s (was 30 s). | One thread per connection, each waiting 30 s, no limit: 60 silent local connections made 60 threads and kept real clients out. |
 
 ## Test status
 

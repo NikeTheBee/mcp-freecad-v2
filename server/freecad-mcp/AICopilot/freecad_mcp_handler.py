@@ -309,6 +309,11 @@ WINDOWS_AUTH_TOKEN_DIR = os.path.expanduser("~/.freecad-mcp")
 # receive_message duplication pattern noted above).
 WINDOWS_AUTH_TOKEN_PATH = os.path.join(WINDOWS_AUTH_TOKEN_DIR, "windows_auth_token")
 
+# MCP FREECAD v2: connections served at once (beyond: closed at once) and the
+# wait for a connection's first message (the bridge sends it immediately)
+MAX_CLIENTS = 32
+FIRST_MESSAGE_TIMEOUT_S = 5.0
+
 
 def _restrict_token_file_to_current_user_windows(path: str) -> bool:
     """Best-effort: strip inherited ACEs from `path` and grant Full Control
@@ -848,6 +853,7 @@ class FreeCADSocketServer:
         # presenting as an unexplained delay.
         self._active_connections = 0
         self._active_connections_lock = threading.Lock()
+        self._client_slots = threading.BoundedSemaphore(MAX_CLIENTS)
 
         # Async job tracking: job_id -> {status, started, result, error, elapsed}
         self._async_jobs: dict[str, dict] = {}
@@ -1695,8 +1701,17 @@ class FreeCADSocketServer:
                 self.server_socket.settimeout(1.0)
                 try:
                     client_socket, _ = self.server_socket.accept()
+                    # MCP FREECAD v2 (security audit 2026-11-12): one thread per
+                    # connection, each waiting up to 30 s for a first message,
+                    # with no limit: any local program flooding the port piled
+                    # up threads and kept the real clients out. Connections
+                    # beyond MAX_CLIENTS are closed at once.
+                    if not self._client_slots.acquire(blocking=False):
+                        with contextlib.suppress(Exception):
+                            client_socket.close()
+                        continue
                     threading.Thread(
-                        target=self._handle_client,
+                        target=self._serve_in_slot,
                         args=(client_socket,),
                         daemon=True,
                     ).start()
@@ -1705,6 +1720,13 @@ class FreeCADSocketServer:
             except Exception as e:
                 if self.running:
                     FreeCAD.Console.PrintError(f"Server loop error: {e}\n")
+
+    def _serve_in_slot(self, client_socket):
+        """_handle_client, then give back the slot _server_loop took for it."""
+        try:
+            self._handle_client(client_socket)
+        finally:
+            self._client_slots.release()
 
     def _handle_client(self, client_socket):
         """Handle a single client connection.
@@ -1720,7 +1742,9 @@ class FreeCADSocketServer:
         with self._active_connections_lock:
             self._active_connections += 1
         try:
-            message_str = receive_message(client_socket)
+            # the first message (the bridge's listener challenge) comes at once:
+            # a connection that says nothing gives its slot back after a few s
+            message_str = receive_message(client_socket, timeout=FIRST_MESSAGE_TIMEOUT_S)
             if message_str and IS_WINDOWS:
                 # Listener proof first (one per connection), then the command.
                 proof = auth_challenge_reply(message_str, self._windows_auth_token)
