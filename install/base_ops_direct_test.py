@@ -242,8 +242,24 @@ def step_import():
         shutil.rmtree(out, ignore_errors=True)
 
 
+def mesh_info():
+    # a mesh in an App::Part moved +100 mm: centre given where the document shows it
+    import MeshPart
+    import Part
+    from handlers.mesh_ops import MeshOpsHandler
+    doc = fresh("MeshInfo")
+    g = doc.addObject("App::Part", "G")
+    g.Placement.Base = V(100, 0, 0)
+    m = doc.addObject("Mesh::Feature", "M")
+    m.Mesh = MeshPart.meshFromShape(Shape=Part.makeBox(10, 10, 10), LinearDeflection=0.1)
+    g.addObject(m)
+    doc.recompute()
+    r = MeshOpsHandler().get_mesh_info({"object_name": "M"})
+    check("get_mesh_info gives the centre in the document frame", "Center: (105.00, 5.00, 5.00)" in r, r)
+
+
 def main():
-    for part in (booleans, part_ops, transforms, draft, material, step_import):
+    for part in (booleans, part_ops, transforms, draft, material, step_import, mesh_info):
         try:
             part()
         except Exception:

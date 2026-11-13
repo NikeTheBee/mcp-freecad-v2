@@ -195,6 +195,7 @@ It runs `git subtree pull --squash` on a clean tree. Then run the base's unit te
 | `assembly_ops.py` (`create_joint` `reverse`, `_faces_overlap_note`), `freecad_mcp_server.py` (schema) | New `reverse` option (FreeCAD's flip) and an "overlap" warning. | A part starting upside down landed INSIDE the other part, with no way to flip it. |
 | `assembly_ops.py` (`add_component`) | The link starts at the part's global placement (rotation, moved containers); x/y/z set the position and keep the rotation. | The link's placement replaced the part's: a part at x=100 turned 90 deg appeared at the origin, unturned. |
 | `AICopilot/handlers/mesh_ops.py` (`import_file`) | STEP goes through `Import.insert` (IGES and BREP stay on `Part.insert`); `name` labels a single top-level import; the reply gives labels and document-frame positions. | `Part.insert` flattened a STEP assembly and dropped its names ("Left bracket"/"Right pin" became "asm", "asm001"); the documented `name` was ignored. |
+| `AICopilot/handlers/mesh_ops.py` (`get_mesh_info`) | Bounding box and centre in the document frame. | A mesh in an App::Part moved +100 mm was reported centred at x 5 instead of 105. |
 
 ## Test status
 

@@ -423,6 +423,13 @@ class MeshOpsHandler(BaseHandler):
 
             mesh = obj.Mesh
             bb = mesh.BoundBox
+            # MCP FREECAD v2: box and centre where the document shows the mesh -- in an
+            # App::Part moved +100 mm they were given 100 mm off (the container's frame)
+            pg = _container_placement(obj)
+            if pg is not None:
+                placed = mesh.copy()
+                placed.Placement = pg.multiply(placed.Placement)
+                bb = placed.BoundBox
 
             result = f"Mesh info for '{object_name}':\n"
             result += f"  Points: {mesh.CountPoints}\n"
