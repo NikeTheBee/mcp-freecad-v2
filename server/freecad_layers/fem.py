@@ -152,6 +152,12 @@ def _solve_once(doc, target, fixed_specs, loads, mat, mesh_size: float, prefix: 
     from femmesh.gmshtools import GmshTools
     from femtools import ccxtools
 
+    # COMPATIBILITY R7: this factory was renamed before and may be again. Its
+    # successor (makeSolverCalculiX) is driven differently: no blind fallback, a
+    # clear refusal before anything is created
+    if not hasattr(ObjectsFem, "makeSolverCalculiXCcxTools"):
+        raise RuntimeError("this FreeCAD has no ObjectsFem.makeSolverCalculiXCcxTools (FEM API "
+                           "changed, see docs/COMPATIBILITY.md R7): fem_static needs updating")
     _remove_previous(doc, prefix)
     shape = target.Shape
     analysis = ObjectsFem.makeAnalysis(doc, prefix + "Analysis")
