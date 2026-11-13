@@ -395,11 +395,15 @@ class SpatialOpsHandler(BaseHandler):
             # Angle between normals
             dot = n1_vec.x * n2_vec.x + n1_vec.y * n2_vec.y + n1_vec.z * n2_vec.z
             dot = max(-1.0, min(1.0, dot))  # clamp for acos safety
-            angle_rad = math.acos(abs(dot))
-            angle_deg = math.degrees(angle_rad)
+            # MCP FREECAD v2: acos(|dot|) folded the angle into 0..90°: two faces of
+            # a hexagonal prism whose normals are 120° apart read "60.00°", the two
+            # opposite faces of a box (180°) read "0.00°". The angle between the
+            # normals is acos(dot); parallel still means 0° or 180°.
+            angle_deg = math.degrees(math.acos(dot))
+            fold_deg = math.degrees(math.acos(abs(dot)))
 
             # Check relationships
-            parallel = angle_deg < 0.1  # < 0.1° = parallel
+            parallel = fold_deg < 0.1  # < 0.1° from 0° or 180° = parallel
             facing = dot < -0.999  # normals opposing = faces face each other
             same_dir = dot > 0.999  # normals same direction
 
@@ -408,7 +412,8 @@ class SpatialOpsHandler(BaseHandler):
                          f"center={self._fmt_vec(c1)} area={f1.Area:.2f}mm²")
             lines.append(f"  {n2}.{face2_id}: normal={self._fmt_vec(n2_vec, 4)} "
                          f"center={self._fmt_vec(c2)} area={f2.Area:.2f}mm²")
-            lines.append(f"  Angle between normals: {angle_deg:.2f}°")
+            lines.append(f"  Angle between normals: {angle_deg:.2f}° "
+                         f"(between the planes: {fold_deg:.2f}°)")
             if not planar:
                 lines.append("  Parallel: n/a (curved face: its normal varies; "
                              "normals above are at the face's centre)")
@@ -565,8 +570,19 @@ class SpatialOpsHandler(BaseHandler):
             if axis not in ('X', 'Y', 'Z'):
                 return "axis must be 'X', 'Y', or 'Z'"
 
-            c1 = s1.CenterOfMass
-            c2 = s2.CenterOfMass
+            # MCP FREECAD v2: a compound (Draft array, App::Part, several solids)
+            # has no CenterOfMass: "Error in alignment_check: 'Part.Compound'
+            # object has no attribute 'CenterOfMass'". Its solids' centre is used.
+            def _center(s, name):
+                com = getattr(s, 'CenterOfMass', None)
+                if com is None:
+                    com = self._material(s)["com"]
+                if com is None:
+                    raise ValueError(f"{name} holds no solid: it has no center of mass")
+                return com
+
+            c1 = _center(s1, n1)
+            c2 = _center(s2, n2)
 
             # Offset perpendicular to the specified axis
             if axis == 'X':

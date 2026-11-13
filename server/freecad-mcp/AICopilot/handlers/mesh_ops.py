@@ -48,6 +48,56 @@ def _orientation_issue(mesh) -> str:
     return ""
 
 
+def _container_placement(obj):
+    """Global placement of the App::Part / Body holding obj; None when there is
+    none, it is the identity, or obj is not a real document object."""
+    try:
+        if not isinstance(obj, FreeCAD.DocumentObject):
+            return None
+        parent = obj.getParentGeoFeatureGroup()
+        if parent is None:
+            return None
+        pg = parent.getGlobalPlacement()
+        return None if pg.isIdentity() else pg
+    except Exception:
+        return None
+
+
+def _place_beside(new_obj, src) -> None:
+    """Show new_obj (made from src's Mesh, in src's container frame) where src is:
+    in the same App::Part, else with the container's placement applied."""
+    try:
+        if not isinstance(src, FreeCAD.DocumentObject):
+            return
+        parent = src.getParentGeoFeatureGroup()
+        if parent is None:
+            return
+        if parent.isDerivedFrom("App::Part"):
+            parent.addObject(new_obj)
+            return
+        new_obj.Placement = parent.getGlobalPlacement().multiply(new_obj.Placement)
+    except Exception:
+        pass
+
+
+def _is_part_feature(obj) -> bool:
+    try:
+        return bool(obj.isDerivedFrom("Part::Feature"))
+    except Exception:
+        return True
+
+
+def _empty_shape(shape) -> bool:
+    """True for a null shape or one with no vertex at all (mock-tolerant)."""
+    try:
+        if shape.isNull() is True:
+            return True
+        verts = shape.Vertexes
+        return isinstance(verts, (list, tuple)) and not verts
+    except Exception:
+        return False
+
+
 class MeshOpsHandler(BaseHandler):
     """Handler for mesh and generic file I/O operations.
 
@@ -187,16 +237,25 @@ class MeshOpsHandler(BaseHandler):
             if out_dir and not os.path.exists(out_dir):
                 os.makedirs(out_dir, exist_ok=True)
 
+            # MCP FREECAD v2: obj.Shape / obj.Mesh are in the frame of the App::Part
+            # or Body holding the object: a 10 mm box in an App::Part moved by
+            # 100 mm was written at X 0..10 instead of 100..110 (STL, and STEP/IGES/
+            # BREP below). The file now holds the part where the document shows it.
+            container = _container_placement(obj)
             if hasattr(obj, 'Mesh'):
-                # Direct mesh export
-                Mesh.export([obj], file_path)
+                if container is None:
+                    Mesh.export([obj], file_path)
+                else:
+                    placed = obj.Mesh.copy()
+                    placed.Placement = container.multiply(placed.Placement)
+                    placed.write(file_path)
             elif hasattr(obj, 'Shape'):
                 # Part object — tessellate first
                 import MeshPart
                 linear = args.get('linear_deflection', 0.1)
                 angular = args.get('angular_deflection')
 
-                mesh_params = {"Shape": obj.Shape, "LinearDeflection": linear}
+                mesh_params = {"Shape": self._world_shape(obj), "LinearDeflection": linear}
                 if angular is not None:
                     mesh_params["AngularDeflection"] = angular
 
@@ -313,6 +372,9 @@ class MeshOpsHandler(BaseHandler):
 
             solid_obj = doc.addObject("Part::Feature", name)
             solid_obj.Shape = solid
+            # MCP FREECAD v2: the solid of a mesh in an App::Part moved by 100 mm
+            # was added at the document root: shown 100 mm away from its mesh.
+            _place_beside(solid_obj, obj)
             doc.recompute()
 
             bb = solid.BoundBox
@@ -380,8 +442,13 @@ class MeshOpsHandler(BaseHandler):
             result += f"  Is manifold: {not has_non_manifold}\n"
             result += f"  Is watertight: {is_solid}\n"
             result += f"  Has self-intersections: {has_self_intersect}\n"
+            # MCP FREECAD v2: an inside-out cube (signed volume -1000 mm3) or one
+            # with a flipped facet read "Health: OK" -- validate_mesh flags both.
+            orientation = _orientation_issue(mesh)
+            if orientation:
+                result += f"  Orientation: {orientation}\n"
 
-            if has_non_manifold or has_self_intersect or not is_solid:
+            if has_non_manifold or has_self_intersect or not is_solid or orientation:
                 result += "  Health: ISSUES DETECTED — consider running validate_mesh with auto_repair=true"
             else:
                 result += "  Health: OK"
@@ -531,7 +598,27 @@ class MeshOpsHandler(BaseHandler):
                 if out_dir and not os.path.exists(out_dir):
                     os.makedirs(out_dir, exist_ok=True)
 
-                Part.export([obj], file_path)
+                # MCP FREECAD v2: Part.export writes the object's local Shape and
+                # nothing at all for an App::Part or an App::Link: a STEP of an
+                # assembly or of a link (1.6 KB, no solid) was "Exported". Such
+                # objects, and parts inside a moved container, are written through
+                # a temporary feature holding their shape in the document frame.
+                shape = self._world_shape(obj)
+                if _empty_shape(shape):
+                    return self.log_and_return("export_file", args,
+                        error=Exception(f"Object '{object_name}' has an empty shape: "
+                                        "nothing to export"),
+                        duration=time.time() - start_time)
+                if _container_placement(obj) is None and _is_part_feature(obj):
+                    Part.export([obj], file_path)
+                else:
+                    temp_obj = doc.addObject("Part::Feature", "_export_temp")
+                    try:
+                        temp_obj.Shape = shape
+                        temp_obj.Label = getattr(obj, 'Label', object_name)
+                        Part.export([temp_obj], file_path)
+                    finally:
+                        doc.removeObject(temp_obj.Name)
 
                 file_size = os.path.getsize(file_path)
                 size_str = f"{file_size / 1024:.1f} KB" if file_size < 1024 * 1024 else f"{file_size / (1024 * 1024):.1f} MB"
@@ -796,6 +883,7 @@ class MeshOpsHandler(BaseHandler):
 
             simplified_obj = doc.addObject("Mesh::Feature", name)
             simplified_obj.Mesh = mesh_copy
+            _place_beside(simplified_obj, obj)   # beside its source (MCP FREECAD v2)
             doc.recompute()
 
             actual_count = mesh_copy.CountFacets
