@@ -84,6 +84,11 @@ def workflow_problems(rel: str, text: str) -> list:
         out.append(f"{rel}: no top-level 'permissions:' (GITHUB_TOKEN keeps the repository default)")
     if re.search(r"(?m)^\s*pull_request_target\s*:", text):
         out.append(f"{rel}: pull_request_target runs fork code with repository secrets")
+    # a tag can be moved to other code by whoever controls the action's repository:
+    # a third-party action is pinned to a full commit SHA (the tag stays as a comment)
+    for ref in re.findall(r"(?m)^\s*-?\s*uses:\s*([^\s#]+)", text):
+        if not ref.startswith("./") and not re.fullmatch(r"[^@]+@[0-9a-f]{40}", ref):
+            out.append(f"{rel}: action {ref} is not pinned to a commit SHA")
     return out
 
 
@@ -123,6 +128,8 @@ def main() -> int:
         if not bind_problems(doctored):
             problems.append(f"bind check is blind to: {doctored!r}")
 
+    if not workflow_problems("doctored.yml", "permissions:\n  - uses: actions/checkout@v4\n"):
+        problems.append("workflow check is blind to an action pinned by tag")
     for wf in files:
         if wf.startswith(".github/workflows/") and wf.endswith((".yml", ".yaml")):
             problems += workflow_problems(wf, (REPO / wf).read_text(encoding="utf-8", errors="ignore"))

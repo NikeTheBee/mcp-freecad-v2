@@ -141,7 +141,7 @@ The launcher deletes operation logs older than 14 days at start-up
 - **Supply chain.** The venv's dependencies are bounded by version ranges, not locked by hash: an
   install takes the newest release inside the range (the versions installed on 2026-11-12, among them
   mcp 2.3.0 and psutil 7.2.2, had no known vulnerability per `pip-audit`). The CI's actions are pinned
-  by tag (`@v4`), not by commit; the workflow token is read-only.
+  to a commit SHA (`security_scan` refuses a tag); the workflow token is read-only.
 
 ## Reporting
 This is a personal/educational project. If you find a security issue, open a GitHub issue on

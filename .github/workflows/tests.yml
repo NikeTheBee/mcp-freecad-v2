@@ -30,8 +30,8 @@ jobs:
       run:
         working-directory: server/freecad-mcp
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86  # v5
         with:
           python-version: "3.12"
       - name: Install base + dev deps (from its lockfile)
@@ -46,20 +46,20 @@ jobs:
       contents: read
       pull-requests: read       # gitleaks lists a pull request's commits
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
         with:
           fetch-depth: 0          # scan every commit, not just the tip
-      - uses: gitleaks/gitleaks-action@v2
+      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7  # v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   freecad-core:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
 
       - name: Set up FreeCAD (conda-forge)
-        uses: mamba-org/setup-micromamba@v1
+        uses: mamba-org/setup-micromamba@4b9113af4fba0e9e1124b252dd6497a419e7396d  # v1
         with:
           environment-name: fc
           create-args: >-
@@ -96,11 +96,11 @@ jobs:
       FC_SHA256: aef51acb6725d5667bbae73494d04794a1e1725e17c6589650b044c15808144f
       PYTHONUTF8: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
 
       - name: Cache FreeCAD
         id: fccache
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4
         with:
           path: ${{ runner.temp }}\freecad
           key: freecad-win-${{ env.FC_SHA256 }}
@@ -127,11 +127,11 @@ jobs:
           "FREECAD_MCP_FREECAD_BIN=$($bin.FullName)" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
           Write-Host "freecadcmd: $($bin.FullName)"
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
         with:
           python-version: "3.13"
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86  # v5
 
       - name: Install (venv, addon, grafts) and run every test
         shell: pwsh
