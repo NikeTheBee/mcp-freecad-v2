@@ -49,6 +49,45 @@ def tracked_files():
     return [l for l in out.stdout.splitlines() if l.strip()]
 
 
+_LOOPBACK = {"localhost", "127.0.0.1", "::1"}
+
+
+def bind_problems(source: str) -> list:
+    """The TCP listener must be bound to the loopback interface only (NF5).
+
+    Security audit 2026-11-12: the former check looked for the literal
+    bind(("0.0.0.0", but the handler binds (WINDOWS_HOST, WINDOWS_PORT):
+    setting WINDOWS_HOST to "0.0.0.0", "" (every interface) or an environment
+    variable passed the scan. Now: WINDOWS_HOST is a loopback literal, and every
+    TCP bind uses it or a loopback literal.
+    """
+    out = []
+    hosts = re.findall(r"(?m)^WINDOWS_HOST\s*=\s*(.+?)\s*(?:#.*)?$", source)
+    for h in hosts:
+        m = re.fullmatch(r"(['\"])(.*)\1", h)
+        if not m or m.group(2) not in _LOOPBACK:
+            out.append(f"WINDOWS_HOST = {h} (must be a loopback literal) — NF5")
+    if not hosts:
+        out.append("WINDOWS_HOST not found in the handler: bind address not verifiable — NF5")
+    for arg in re.findall(r"\.bind\(\(\s*([^,()]+?)\s*,", source):   # (host, port) tuples = TCP
+        m = re.fullmatch(r"(['\"])(.*)\1", arg)
+        if arg != "WINDOWS_HOST" and not (m and m.group(2) in _LOOPBACK):
+            out.append(f"socket bound to {arg} (must be loopback) — NF5")
+    return out
+
+
+def workflow_problems(rel: str, text: str) -> list:
+    """CI hygiene: a workflow states its token permissions (the default can be
+    read-write on the whole repository) and never runs on pull_request_target
+    (untrusted fork code with the repository's secrets)."""
+    out = []
+    if not re.search(r"(?m)^permissions:", text):
+        out.append(f"{rel}: no top-level 'permissions:' (GITHUB_TOKEN keeps the repository default)")
+    if re.search(r"(?m)^\s*pull_request_target\s*:", text):
+        out.append(f"{rel}: pull_request_target runs fork code with repository secrets")
+    return out
+
+
 def main() -> int:
     problems = []
     files = tracked_files()
@@ -75,9 +114,19 @@ def main() -> int:
     # Bind must be local only (best-effort: check the base handler if cloned)
     handler = REPO / "server" / "freecad-mcp" / "AICopilot" / "freecad_mcp_handler.py"
     if handler.exists():
-        h = handler.read_text(encoding="utf-8", errors="ignore")
-        if re.search(r"bind\(\(\s*['\"]0\.0\.0\.0['\"]", h):
-            problems.append("socket bound to 0.0.0.0 (must be localhost) — NF5")
+        problems += bind_problems(handler.read_text(encoding="utf-8", errors="ignore"))
+    # the detector itself must see the regressions it is there for
+    for doctored in ('WINDOWS_HOST = "0.0.0.0"\ns.bind((WINDOWS_HOST, WINDOWS_PORT))',
+                     'WINDOWS_HOST = ""\ns.bind((WINDOWS_HOST, WINDOWS_PORT))',
+                     'WINDOWS_HOST = os.environ.get("H", "localhost")\ns.bind((WINDOWS_HOST, 1))',
+                     'WINDOWS_HOST = "localhost"\ns.bind(("0.0.0.0", 1))',
+                     'WINDOWS_HOST = "localhost"\ns.bind((host, 1))'):
+        if not bind_problems(doctored):
+            problems.append(f"bind check is blind to: {doctored!r}")
+
+    for wf in files:
+        if wf.startswith(".github/workflows/") and wf.endswith((".yml", ".yaml")):
+            problems += workflow_problems(wf, (REPO / wf).read_text(encoding="utf-8", errors="ignore"))
 
     if problems:
         print("SECURITY_SCAN_FAILED:")

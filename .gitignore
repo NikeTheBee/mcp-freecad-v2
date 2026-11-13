@@ -24,6 +24,9 @@ secrets.*
 
 # Per-project runtime artifacts from the home-grown layers (keep the dirs, not the data)
 /project_state/*.json
+# the state's backup, lock and temp files hold the same project memory
+/project_state/*.json.*
+/exports/
 /checkpoints/*.FCStd
 /checkpoints/*.FCStd[0-9]*
 /recovery/

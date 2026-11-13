@@ -15,6 +15,12 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Least privilege (security audit 2026-11-12): nothing was declared, so every
+# job ran with the repository's default token rights (read-write on older
+# repositories), third-party actions included. No job writes to the repository.
+permissions:
+  contents: read
+
 jobs:
   # Unit tests of the vendored base (server/freecad-mcp, modified in v2). They
   # are written for Linux/macOS (AF_UNIX, /tmp), so they run here, not on Windows.
@@ -36,6 +42,9 @@ jobs:
 
   secrets:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: read       # gitleaks lists a pull request's commits
     steps:
       - uses: actions/checkout@v4
         with:
