@@ -3,6 +3,10 @@
 > Projet : système permettant de concevoir en **langage naturel** (zéro code manuel) des projets mécaniques et robotiques (train, fusée, drone, robots) dans **FreeCAD 1.1.1**, via une IA (Claude Code / Claude Desktop et tout client MCP), avec **coût de tokens minimal** et **publication publique GitHub**.
 > Version 1.0 · Statut : spécification initiale validée.
 >
+> **Suite (2026-11-14)** : la simulation multiphysique, les tests virtuels et la fabrication
+> (au-delà des §3.2 et §12) sont planifiés dans [`FEUILLE_DE_ROUTE_ATELIER.md`](FEUILLE_DE_ROUTE_ATELIER.md)
+> (proposition, en attente des décisions du §12 de ce document-là).
+>
 > **Écarts avec le projet actuel** (ce document reste la spécification d'origine ; l'état réel est
 > dans `README.md`) : la CAM/G-code est retirée (§4.5, §9 `skill-cam`, §12, §14.1 : `skill-cam` dit
 > maintenant de ne pas en produire) ; il n'y a pas de `skill-cfd` (la CFD reste externe, voir

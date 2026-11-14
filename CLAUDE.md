@@ -81,3 +81,4 @@ reliability tools — prefer them over `execute_python`).
 - Project memory data: `/project_state/state.json` · Checkpoints: `/checkpoints/` · Autosaves: `/recovery/`
   for the default project; named projects under `/projects/<name>/`; recipes in `/recipes/` (all gitignored)
 - Audit & repair plan: `@docs/AUDIT_2026-10-11.md` (§8 final verdict, §9 feature list).
+- Simulation / virtual-test / fabrication roadmap (proposal, owner decisions in §12): `docs/FEUILLE_DE_ROUTE_ATELIER.md`.
