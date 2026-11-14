@@ -39,3 +39,6 @@ secrets.*
 
 # Machine-local Claude Code launcher config (absolute user paths)
 /.claude/launch.json
+
+# Workshop environments (detached to MCPFC_HOME by install/atelier_install.py)
+/.pixi/

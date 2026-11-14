@@ -92,6 +92,7 @@ LIVE_TESTS = [
     ("base_fixes_test.py", "BASE_FIXES_OK"),
     ("base_exactness_test.py", "BASE_EXACT_OK"),
     ("scenario_test.py", "SCENARIO_OK"),
+    ("atelier_test.py", "ATELIER_OK"),        # workshop loop; ATELIER_SKIP if not installed
 ]
 VENV_PY = (Path.home() / ".freecad-mcp" / "venv"
            / ("Scripts/python.exe" if os.name == "nt" else "bin/python"))

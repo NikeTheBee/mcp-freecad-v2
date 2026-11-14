@@ -537,5 +537,177 @@ else:
 """, body=body, diameter=diameter, x=x, y=y, through=through, depth=depth, name=name)
 
 
+# ------------------------------------------------------------------ workshop (simulations, studies)
+# The tools run OUTSIDE FreeCAD in their own pixi environments (server/atelier, server/adapters):
+# FreeCAD only hands over the checked geometry of `target`.
+sys.path.insert(0, str(SERVER_DIR))
+from atelier import runner as _runner, study as _study  # noqa: E402
+import freecad_layers as _fl  # noqa: E402  (package root only: no FreeCAD import)
+
+_GEOMETRY = """
+_o = FreeCAD.ActiveDocument.getObject(_a['target']) if FreeCAD.ActiveDocument else None
+if _o is None and FreeCAD.ActiveDocument:
+    _m = FreeCAD.ActiveDocument.getObjectsByLabel(_a['target'])
+    _o = _m[0] if len(_m) == 1 else None
+if _o is None:
+    raise ValueError(f"no object {_a['target']!r} in the active document")
+_c = verify.check(_o)
+if _c['status'] == verify.FAIL:
+    raise ValueError("not simulated, the part is broken: " + verify.verdict(_o)[:300])
+_s = _o.Shape
+if not _s.Solids:
+    raise ValueError(f"{_o.Name} has no solid")
+_p = _fl.safe_out_path(os.path.join('studies', '_geometry', _o.Name + '.step'), ['.step'], overwrite=True)
+_s.exportStep(str(_p))
+_fi = {}
+for _n in _a['faces']:
+    _i = int(_n[4:])
+    if _i < 1 or _i > len(_s.Faces):
+        raise ValueError(f"{_n} does not exist on {_o.Name} ({len(_s.Faces)} faces)")
+    _f = _s.Faces[_i - 1]
+    _fi[_n] = {'com': list(_f.CenterOfMass), 'area': _f.Area}
+_out = {'path': str(_p), 'face_info': _fi, 'name': _o.Name}
+"""
+
+
+def _face_names(x: Any, acc: set) -> set:
+    if isinstance(x, str) and len(x) < 12 and x.startswith("Face") and x[4:].isdigit():
+        acc.add(x)
+    elif isinstance(x, dict):
+        for v in x.values():
+            _face_names(v, acc)
+    elif isinstance(x, list):
+        for v in x:
+            _face_names(v, acc)
+    return acc
+
+
+def _brief(res: dict) -> str:
+    """3 to 10 lines for the AI: verdict, summary, the key numbers, where the files are."""
+    if res.get("job") and res.get("verdict") == "RUNNING":
+        return f"RUNNING job {res['job']}: {res.get('summary', '')}"
+    lines = [f"{res.get('verdict', 'UNKNOWN')} {res.get('summary', '')}"]
+    vals = {k: v for k, v in (res.get("values") or {}).items() if isinstance(v, (int, float))}
+    if vals:
+        lines.append("values: " + ", ".join(f"{k}={v:.5g}" for k, v in list(vals.items())[:14]))
+    if res.get("files"):
+        lines.append("files: " + ", ".join(res["files"][:5]))
+    tail = [x for x in (("cached" if res.get("cached") else ""),
+                        (f"reference: {res['reference']}" if res.get("reference") else "")) if x]
+    if tail:
+        lines.append(" | ".join(tail))
+    return "\n".join(lines)
+
+
+@mcp.tool()
+@_safe
+def simulate(kind: str, target: str = "", params: dict | None = None, study: str = "default",
+             label: str = "", background: bool | None = None) -> str:
+    """Validated simulation outside FreeCAD: verdict OK/FAIL/UNKNOWN + key numbers.
+    kind: see tools_status(); params per kind in the pack's skill. target: the FreeCAD solid
+    (checked, exported) for geometry kinds. params.limits {value: {min|max}} = criteria (else the
+    study's; none -> UNKNOWN). >110 s -> job id. Same inputs -> cached."""
+    params = dict(params or {})
+    pdir = _fl.project_dir()
+    if "limits" not in params:
+        lim = _study.limits_for(pdir, study, kind)
+        if lim:
+            params["limits"] = lim
+    geometry = None
+    reg = _runner.registry()
+    if kind in reg and reg[kind]["geometry"]:
+        if not target:
+            raise FreeCADError(f"{kind} needs target=<FreeCAD solid>")
+        g = _run(_GEOMETRY, _timeout=120.0, target=target, faces=sorted(_face_names(params, set())))
+        if g["face_info"]:
+            params["face_info"] = g["face_info"]
+        geometry = Path(g["path"])
+    try:
+        res = _runner.run(kind, params, pdir, study=study, geometry=geometry, background=background)
+    except (ValueError, RuntimeError) as e:
+        raise FreeCADError(str(e)) from None
+    if res.get("verdict") in ("OK", "FAIL", "UNKNOWN") and not res.get("job"):
+        _study.record_result(pdir, study, kind, res, label)
+    return _brief(res)
+
+
+@mcp.tool()
+@_safe
+def job(id: str, action: str = "status", study: str = "default", label: str = "") -> str:
+    """A long simulation: action status (result when done) | cancel."""
+    pdir = _fl.project_dir()
+    try:
+        res = _runner.job(pdir, id, action)
+    except ValueError as e:
+        raise FreeCADError(str(e)) from None
+    if res.get("verdict") in ("OK", "FAIL") and res.get("kind"):
+        _study.record_result(pdir, study, res["kind"], res, label)
+    if "verdict" not in res or res.get("state") in ("running", "cancelled"):
+        return json.dumps(res)
+    return _brief(res)
+
+
+@mcp.tool()
+@_safe
+def study(action: str, name: str = "default", args: dict | None = None) -> str:
+    """Design loop until the real object matches the model. Each answer gives the next action.
+    start {goal, criteria {kind: {value: {min|max}}}, hypotheses [text|{text,source}], params,
+    acceptance {quantity: {min|max}} (real test), agreement (max model/test gap, 0.1)} | status
+    | hypothesis {text, source} | iterate {change, params} | built {note}
+    | measure {data {quantity: value}, source, predicted {quantity: "kind.value"}}
+    | calibrate {factors, note} | report. simulate(..., study=name) feeds it."""
+    a = dict(args or {})
+    pdir = _fl.project_dir()
+    try:
+        if action == "start":
+            _study.start(pdir, name, a.get("goal", ""), a.get("criteria"), a.get("hypotheses"),
+                         a.get("params"), a.get("acceptance"), float(a.get("agreement", 0.10)))
+        elif action == "hypothesis":
+            _study.add_hypothesis(pdir, name, {"text": a.get("text", ""),
+                                               "source": a.get("source") or "UNSOURCED"})
+        elif action == "iterate":
+            _study.new_iteration(pdir, name, a.get("change", ""), a.get("params"))
+        elif action == "built":
+            _study.mark_built(pdir, name, a.get("note", ""))
+        elif action == "measure":
+            r = _study.measure(pdir, name, a.get("data") or {}, a.get("source", ""), a.get("predicted"))
+            rows = "; ".join(f"{x['quantity']}: measured {x['measured']:.5g} vs model "
+                             + (f"{x['predicted']:.5g} ({x['gap']:+.1%})" if x["gap"] is not None
+                                else "none") + ("" if x["inside"] is None else
+                                                (" in limits" if x["inside"] else " OUT of limits"))
+                             for x in r["rows"])
+            return f"{r['state'].upper()} {rows}\nnext: {r['next']}"
+        elif action == "calibrate":
+            _study.calibrate(pdir, name, a.get("factors") or {}, a.get("note", ""))
+        elif action == "report":
+            return f"report written: {_study.report(pdir, name)}"
+        elif action != "status":
+            raise ValueError("action: start|status|hypothesis|iterate|built|measure|calibrate|report")
+        return json.dumps(_study.status(pdir, name), ensure_ascii=False)
+    except ValueError as e:
+        raise FreeCADError(str(e)) from None
+
+
+@mcp.tool()
+@_safe
+def tools_status(refresh: bool = False) -> str:
+    """Installed environments/tools and each simulation kind's reference-case state.
+    refresh=True re-runs every reference case (minutes)."""
+    try:
+        st = _runner.status(refresh)
+    except RuntimeError as e:
+        raise FreeCADError(str(e)) from None
+    if not st["home"]:
+        return "workshop not installed: powershell -ExecutionPolicy Bypass -File install\\install.ps1"
+    lines = [f"home {st['home']}",
+             "envs: " + ", ".join(f"{k}{'' if v else ' (missing)'}" for k, v in st["envs"].items())]
+    if st["tools"]:
+        lines.append("tools: " + ", ".join(f"{k}{'' if v else ' (missing)'}" for k, v in st["tools"].items()))
+    for name, a in sorted(st["adapters"].items()):
+        lines.append(f"{name} [{a['env']}] {a.get('state')}: {', '.join(a['kinds'])}"
+                     + (f" — {a['reference']}" if a.get("reference") else ""))
+    return "\n".join(lines)
+
+
 if __name__ == "__main__":
     mcp.run("stdio")

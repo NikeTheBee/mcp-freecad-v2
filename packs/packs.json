@@ -1,0 +1,14 @@
+{
+  "_doc": "Packs of the workshop (FEUILLE_DE_ROUTE_ATELIER.md §5, §8.3): which pixi environments and which tools of install/tools.lock.json each one installs. 'socle' is always installed.",
+  "socle":    {"envs": ["sim", "pde", "post"], "tools": ["pixi", "freecad"], "skills": ["skill-sim"]},
+  "opt":      {"envs": ["opt"], "tools": []},
+  "air":      {"envs": ["aero"], "tools": []},
+  "fusee":    {"envs": ["aero"], "tools": []},
+  "espace":   {"envs": ["space"], "tools": []},
+  "terre":    {"envs": ["robot"], "tools": []},
+  "soussol":  {"envs": ["geo"], "tools": []},
+  "marin":    {"envs": ["sim"], "tools": []},
+  "elec":     {"envs": ["elec"], "tools": []},
+  "embarque": {"envs": ["elec"], "tools": []},
+  "fab":      {"envs": [], "tools": []}
+}

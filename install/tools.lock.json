@@ -1,0 +1,16 @@
+{
+  "_doc": "Tools outside conda (FEUILLE_DE_ROUTE_ATELIER.md §8.2): official URL, SHA256 checked before use, licence. 'archive': zip | 7z | file. 'bin': path of the main executable inside the extracted folder. Never redistributed: downloaded from the publisher.",
+  "pixi": {
+    "version": "0.84.2", "license": "BSD-3-Clause", "packs": ["*"],
+    "url": "https://github.com/prefix-dev/pixi/releases/download/v0.84.2/pixi-x86_64-pc-windows-msvc.zip",
+    "sha256": "aa4f02efac31566176d639007e65a36740aa7b56c22673c44ecfd2611e7a6b2c",
+    "archive": "zip", "dest": "pixi/bin", "bin": "pixi.exe"
+  },
+  "freecad": {
+    "version": "1.1.4", "license": "LGPL-2.1-or-later", "packs": ["socle"],
+    "url": "https://github.com/FreeCAD/FreeCAD/releases/download/1.1.4/FreeCAD_1.1.4-Windows-x86_64-py311.7z",
+    "sha256": "4828741fc91ee37fafcdb97a1abacb18b04ba451ac4372d9ff7a7349b36f4d6d",
+    "archive": "7z", "dest": "tools/FreeCAD-1.1.4", "strip": 1, "bin": "bin/freecadcmd.exe",
+    "note": "fixes the 1.1.1 advisories (code execution / file write when opening a crafted FCStd)"
+  }
+}

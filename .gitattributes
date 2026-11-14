@@ -3,3 +3,4 @@
 *.py text
 *.md text
 *.json text
+pixi.lock text eol=lf merge=binary linguist-generated

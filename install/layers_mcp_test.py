@@ -36,7 +36,9 @@ async def run(inst: Instance, project: str, out: str) -> None:
             tools = (await s.list_tools()).tools
             size = len(json.dumps([t.model_dump(exclude_none=True) for t in tools]))
             print(f"{len(tools)} tools, schema {size} chars (~{size // 4} tokens)")
-            assert size < 16000, size
+            # 18 tools fit in 16000; the 4 workshop tools (simulate, job, study, tools_status)
+            # replace dozens of per-tool servers for ~800 tokens
+            assert size < 17000, size
 
             async def call(_tool, **kw):
                 txt = _t(await s.call_tool(_tool, kw))
