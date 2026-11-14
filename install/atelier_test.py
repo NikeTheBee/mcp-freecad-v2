@@ -169,6 +169,37 @@ async def run(inst: Instance, project: str, home: str) -> None:
                 await asyncio.sleep(1)
             assert txt.startswith("OK modal") and abs(_val(txt, "f1_Hz") - 417.8) / 417.8 < 0.03, txt
 
+            # automatic correction: the lightest beam height (spreadsheet-driven) with SF >= 2
+            r = inst.call("execute_python_sync", {"code": (
+                "import FreeCAD\n"
+                "d = FreeCAD.newDocument('Opt')\n"
+                "sh = d.addObject('Spreadsheet::Sheet', 'Params')\n"
+                "sh.set('A1', '12 mm')\nsh.setAlias('A1', 'thick')\n"
+                "b = d.addObject('PartDesign::Body', 'Body')\n"
+                "p = b.newObject('PartDesign::AdditiveBox', 'Box')\n"
+                "p.Length, p.Width = 200, 20\n"
+                "p.setExpression('Height', 'Params.thick')\n"
+                "d.recompute()\nFreeCAD.setActiveDocument('Opt')\n'ok'")})
+            assert r.get("result") == "'ok'", r
+            txt = await call("study", action="start", name="lightest", args={
+                "goal": "lightest 200 mm cantilever holding 1 kN, SF >= 2",
+                "criteria": {"fem_static": {"safety_factor": {"min": 2}}}})
+            txt = await call("study", action="optimize", name="lightest", args={
+                "kind": "fem_static", "target": "Body", "objective": "mass_kg", "sense": "min",
+                "vars": [{"cell": "Params.thick", "lo": 12, "hi": 36}], "max_runs": 8,
+                "params": {"fixed": ["xmin"], "material": "steel", "mesh_size": 5,
+                           "loads": [{"type": "force", "faces": ["xmax"], "N": [0, 0, -1000]}]}})
+            assert txt.startswith("OK best of 8 runs") and "Params.thick 12 mm -> " in txt, txt
+            t_best = float(txt.split("Params.thick 12 mm -> ")[1].split(")")[0])
+            # beam theory gives 22.6 mm with the peak at the clamp; the FEM judges the peak away
+            # from the supports (a little lower), so slightly less: 20..23.5 mm
+            assert 20 <= t_best <= 23.5 and _val(txt, "safety_factor") >= 2, (t_best, txt)
+            r = inst.call("execute_python_sync", {"code": (
+                "import FreeCAD\nFreeCAD.getDocument('Opt').getObject('Body').Shape.BoundBox.ZLength")})
+            assert abs(float(r["result"]) - t_best) < 1e-6, r          # applied to the part
+            st = json.loads(await call("study", action="status", name="lightest"))
+            assert st["iteration"] == 2 and st["state"] == "ready_to_build", st
+
             # project files handed to an adapter: copied into the study, their BYTES in the cache key
             logs = Path(project) / "projects" / "Beam" / "logs"
             logs.mkdir(parents=True, exist_ok=True)

@@ -58,6 +58,12 @@ study measure {data {quantity: value}, source, predicted {quantity: "kind.value"
    → CALIBRATE: study calibrate {factors {param: value}, note: how fitted} → next iteration
 study report                       → report.md (hypotheses, iterations, tests, gaps) + journal.jsonl
 ```
+
+**Automatic correction:** when a criterion FAILs because of a dimension, put that dimension in a
+spreadsheet cell and run `study optimize {kind, target, params, vars [{cell: "Params.thick",
+lo, hi}], objective: "mass_kg", sense: "min"}`: it changes the cell, re-checks the part,
+re-simulates, brackets the feasibility boundary, applies the best design and opens the next
+iteration. Each run is listed (the proof). No feasible design in the ranges -> cells restored, FAIL.
 - Every hypothesis carries its source; `status` lists the unsourced ones: get them sourced or
   tested before building.
 - Calibration changes the MODEL (effective modulus, friction, drag coefficient...), the design

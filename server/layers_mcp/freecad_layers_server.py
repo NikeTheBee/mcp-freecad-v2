@@ -582,6 +582,96 @@ def _face_names(x: Any, acc: set) -> set:
     return acc
 
 
+def _geometry_for(kind: str, target: str, params: dict) -> Path | None:
+    """The checked solid of `target` exported for a geometry kind (face_info added to params)."""
+    reg = _runner.registry()
+    if kind not in reg or not reg[kind]["geometry"]:
+        return None
+    if not target:
+        raise FreeCADError(f"{kind} needs target=<FreeCAD solid>")
+    g = _run(_GEOMETRY, _timeout=120.0, target=target, faces=sorted(_face_names(params, set())))
+    if g["face_info"]:
+        params["face_info"] = g["face_info"]
+    return Path(g["path"])
+
+
+# set spreadsheet cells (by alias or address), keep each cell's unit, recompute, check the target
+_SET_CELLS = r"""
+import re
+_doc = FreeCAD.ActiveDocument
+if _doc is None:
+    raise ValueError('no active document')
+_old = {}
+for _c in _a['cells']:
+    _sn, _, _ref = _c['cell'].partition('.')
+    _sh = _doc.getObject(_sn) or next(iter(_doc.getObjectsByLabel(_sn)), None)
+    if _sh is None or _sh.TypeId != 'Spreadsheet::Sheet' or not _ref:
+        raise ValueError(f"{_c['cell']!r}: give Sheet.alias or Sheet.A1 of a spreadsheet")
+    _addr = _sh.getCellFromAlias(_ref) or _ref
+    _cur = _sh.getContents(_addr)
+    _old[_c['cell']] = _cur
+    _m = re.fullmatch(r"\s*=?\s*[-+0-9.eE]+\s*([A-Za-z/^0-9*]*)\s*", _cur or "")
+    _unit = _m.group(1) if _m else ""
+    if _c.get('value') is not None:
+        _sh.set(_addr, f"{float(_c['value']):.10g} {_unit}".strip())
+    elif _c.get('restore') is not None:
+        _sh.set(_addr, _c['restore'])
+_doc.recompute()
+_o = _doc.getObject(_a['target']) or next(iter(_doc.getObjectsByLabel(_a['target'])), None)
+_ok = _o is not None and verify.check(_o)['status'] != verify.FAIL
+_out = {'old': _old, 'ok': _ok, 'verdict': verify.verdict(_o)[:200] if _o is not None else 'no target'}
+"""
+
+
+def _optimize(pdir: Path, study_name: str, a: dict) -> str:
+    """study optimize: vary spreadsheet cells, re-check, re-simulate, keep the best design."""
+    from atelier import optimize as _opt
+    kind, target = a.get("kind", ""), a.get("target", "")
+    vars_ = a.get("vars") or []
+    if not kind or not vars_:
+        raise ValueError("optimize needs kind, target and vars [{cell: 'Sheet.alias', lo, hi}]")
+    base = dict(a.get("params") or {})
+    base, _cal = _study.apply_calibration(pdir, study_name, base)
+    cons = a.get("constraints") or _study.limits_for(pdir, study_name, kind)
+    names = [v["cell"] for v in vars_]
+    first = _run(_SET_CELLS, target=target, cells=[{"cell": c} for c in names])
+    original = first["old"]
+
+    def evaluate(x):
+        st = _run(_SET_CELLS, target=target, cells=[{"cell": c, "value": x[c]} for c in names])
+        if not st["ok"]:
+            return None                                 # a broken part is never feasible
+        params = dict(base, limits=cons)
+        geom = _geometry_for(kind, target, params)
+        res = _runner.run(kind, params, pdir, study=study_name, geometry=geom, background=False)
+        if res.get("verdict") not in ("OK", "FAIL"):
+            return None
+        return {k: v for k, v in (res.get("values") or {}).items() if isinstance(v, (int, float))}
+
+    r = _opt.search(evaluate, [{"name": v["cell"], "lo": v["lo"], "hi": v["hi"]} for v in vars_],
+                    objective=a.get("objective"), sense=a.get("sense", "min"), constraints=cons,
+                    max_runs=int(a.get("max_runs", 12)))
+    best = r["best"]
+    keys = list(cons) + ([a["objective"]] if a.get("objective") else [])
+    rows = [", ".join(f"{c.split('.')[-1]}={run['x'][c]:.4g}" for c in names) + " -> "
+            + (", ".join(f"{k}={run['values'][k]:.4g}" for k in keys if k in run["values"]) or "broken part")
+            + (" OK" if run["feasible"] else " no") for run in r["runs"]]
+    if not r["feasible"]:
+        _run(_SET_CELLS, target=target, cells=[{"cell": c, "restore": original[c]} for c in names])
+        return ("FAIL no design in the ranges meets " + json.dumps(cons) + f" in {len(r['runs'])} runs; "
+                "cells restored. Widen the ranges, change the concept or relax a criterion.\n" + "\n".join(rows))
+    _run(_SET_CELLS, target=target, cells=[{"cell": c, "value": best["x"][c]} for c in names])
+    change = "optimize: " + ", ".join(f"{c} {str(original[c]).lstrip('=')} -> {best['x'][c]:.6g}" for c in names)
+    if _study.exists(pdir, study_name):
+        _study.new_iteration(pdir, study_name, change, {c: best["x"][c] for c in names})
+    params = dict(base, limits=cons)
+    geom = _geometry_for(kind, target, params)
+    res = _runner.run(kind, params, pdir, study=study_name, geometry=geom, background=False)
+    _study.record_result(pdir, study_name, kind, res, "", params)
+    return (f"OK best of {len(r['runs'])} runs applied to the document ({change})\n"
+            + _brief(res) + "\nruns:\n" + "\n".join(rows))
+
+
 def _brief(res: dict) -> str:
     """3 to 10 lines for the AI: verdict, summary, the key numbers, where the files are."""
     if res.get("job") and res.get("verdict") == "RUNNING":
@@ -614,15 +704,7 @@ def simulate(kind: str, target: str = "", params: dict | None = None, study: str
         lim = _study.limits_for(pdir, study, kind)
         if lim:
             params["limits"] = lim
-    geometry = None
-    reg = _runner.registry()
-    if kind in reg and reg[kind]["geometry"]:
-        if not target:
-            raise FreeCADError(f"{kind} needs target=<FreeCAD solid>")
-        g = _run(_GEOMETRY, _timeout=120.0, target=target, faces=sorted(_face_names(params, set())))
-        if g["face_info"]:
-            params["face_info"] = g["face_info"]
-        geometry = Path(g["path"])
+    geometry = _geometry_for(kind, target, params)
     try:
         res = _runner.run(kind, params, pdir, study=study, geometry=geometry, background=background)
     except (ValueError, RuntimeError) as e:
@@ -658,14 +740,14 @@ def job(id: str, action: str = "status", study: str = "default", label: str = ""
 @mcp.tool()
 @_safe
 def study(action: str, name: str = "default", args: dict | None = None) -> str:
-    """Design loop until the real object matches the model. Each answer gives the next action.
+    """Design loop until the real object matches the model; each answer gives the next action.
     start {goal, criteria {kind: {value: {min|max}}}, hypotheses [text|{text,source}], params,
-    acceptance {quantity: {min|max}} (real test), agreement (max model/test gap, 0.1)} | status
-    | hypothesis {text, source} | iterate {change, params} | built {note}
-    | test_plan {predicted {quantity: "kind.value"}, instruments} (procedure + CSV sheet)
-    | measure {data {quantity: value}, source, predicted} or {csv: "measurements.csv"}
-    | calibrate {auto {quantity, param e.g. "material.E"}} (re-simulates to fit the test) or
-    {factors, note} | report. simulate(..., study=name) feeds it and applies the calibration."""
+    acceptance {quantity: {min|max}} (real test), agreement (0.1)} | status | hypothesis {text,
+    source} | iterate {change, params} | built {note} | test_plan {predicted {quantity:
+    "kind.value"}, instruments} | measure {data, source, predicted} or {csv} | calibrate {auto
+    {quantity, param e.g. "material.E"}} or {factors, note} | optimize {kind, target, params,
+    vars [{cell: "Sheet.alias", lo, hi}], objective, sense, constraints, max_runs} (best design
+    applied) | report. simulate(..., study=name) feeds it, calibration applied."""
     a = dict(args or {})
     pdir = _fl.project_dir()
     try:
@@ -702,10 +784,12 @@ def study(action: str, name: str = "default", args: dict | None = None) -> str:
                     + json.dumps(_study.status(pdir, name), ensure_ascii=False))
         elif action == "calibrate":
             _study.calibrate(pdir, name, a.get("factors") or {}, a.get("note", ""))
+        elif action == "optimize":
+            return _optimize(pdir, name, a)
         elif action == "report":
             return f"report written: {_study.report(pdir, name)}"
         elif action != "status":
-            raise ValueError("action: start|status|hypothesis|iterate|built|test_plan|measure|calibrate|report")
+            raise ValueError("action: start|status|hypothesis|iterate|built|test_plan|measure|calibrate|optimize|report")
         return json.dumps(_study.status(pdir, name), ensure_ascii=False)
     except ValueError as e:
         raise FreeCADError(str(e)) from None
