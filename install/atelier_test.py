@@ -169,6 +169,20 @@ async def run(inst: Instance, project: str, home: str) -> None:
                 await asyncio.sleep(1)
             assert txt.startswith("OK modal") and abs(_val(txt, "f1_Hz") - 417.8) / 417.8 < 0.03, txt
 
+            # project files handed to an adapter: copied into the study, their BYTES in the cache key
+            logs = Path(project) / "projects" / "Beam" / "logs"
+            logs.mkdir(parents=True, exist_ok=True)
+            (logs / "strain.csv").write_text("s\n-2\n1\n-3\n5\n-1\n3\n-4\n4\n-2\n", encoding="utf-8")
+            fat = {"files": ["logs/strain.csv"], "csv": "logs/strain.csv",
+                   "sn": {"power": {"C": 1.0, "m": 1.0}}, "limits": {"damage": {"max": 30}}}
+            txt = await call("simulate", kind="fatigue", params=fat)
+            assert txt.startswith("OK fatigue: 4 cycles") and _val(txt, "damage") == 23, txt
+            (logs / "strain.csv").write_text("s\n-2\n1\n-3\n5\n-1\n3\n-4\n4\n-9\n", encoding="utf-8")
+            txt = await call("simulate", kind="fatigue", params=fat)
+            assert "cached" not in txt and _val(txt, "max_range") == 14, txt   # 5 - (-9)
+            txt = await call("simulate", kind="fatigue", params=dict(fat, files=["../outside.csv"]))
+            assert txt.startswith("ERROR") and "relative to the project" in txt, txt
+
             txt = await call("simulate", kind="fem_static", params=load)
             assert txt.startswith("ERROR") and "needs target" in txt, txt
             txt = await call("simulate", kind="nope", params={})

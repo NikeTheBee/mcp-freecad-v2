@@ -618,6 +618,63 @@ qu'un exemple réel a fait tout le tour de la boucle.
 | **7. Voies B et C** | WSL2, puis ROS 2, si choisis. | M |
 | **8. Plug and play** | Plugin et marketplace Claude Code, `-Packs tout`, documentation, CI. | S |
 
+### État au 2026-11-14
+
+Choix du propriétaire : atelier complet, tout ce qui est lourd sur un disque de données choisi
+(`-Home`), « on le fabrique, on l'essaie, on compare l'essai à la simulation » en boucle jusqu'à
+l'accord.
+
+**Fait (vérifié par les tests) :**
+- **Phase 0 :**
+  - FreeCAD 1.1.4 portable : 41/42 tests de la suite, le dernier repasse seul (charge machine) ;
+  - `install.ps1` en une commande : pixi figé, 10 environnements verrouillés (`sim`, `pde`, `opt`,
+    `aero`, `robot`, `elec`, `geo`, `space`, `post`, `ros`) et 21 outils hors conda vérifiés par
+    SHA256 ;
+  - lanceur d'adaptateurs : `python -I`, sans shell, délai, plafond mémoire, cache, tâches longues,
+    fichiers d'entrée du projet ;
+  - un type de calcul ne tourne que si ses cas de référence passent ;
+  - outils `simulate`, `job`, `study`, `tools_status` ;
+  - correction des deux bugs de la base : repère des opérations dans un conteneur déplacé, copies
+    PartDesign hors pièce.
+- **Phase 1, partielle :** CalculiX hors FreeCAD (force, pression, gravité, rotation, dilatation,
+  modes propres, flambage, thermique, thermomécanique), fatigue (rainflow + Miner), EDP sur mesure
+  (NGSolve), MuJoCo / Pinocchio / commande.
+- **Phase 2, partielle :** ngspice en bac à sable, PyBaMM, Magpylib, sections de câbles (IEC),
+  bilan de puissance, règles de sécurité électrique actives.
+- **Phase 3, partielle :**
+  - `tolstack` ;
+  - plan d'essai réel et feuille de mesures (`study test_plan`) ;
+  - recalage automatique d'un paramètre du modèle sur la mesure (`study calibrate auto`) ;
+  - le paramètre recalé est appliqué de lui-même aux simulations suivantes.
+- **Packs de domaine :**
+  - **marin :** hydrostatique, masse d'eau ajoutée (Capytaine), propulseurs (Wageningen B),
+    coques sous pression, joints toriques ;
+  - **air et fusée :** profils, aile, tuyère, combustion (Cantera), vol RocketPy, propriétés des
+    fluides ;
+  - **robotique et terre :** multicorps, dynamique inverse, commande, équilibre ZMP,
+    terramécanique.
+- **Voie C :** ROS 2 Lyrical (Nav2, MoveIt, ros2_control, ros_gz, slam_toolbox) et Gazebo Jetty
+  (gz-sim 10), natifs.
+- **62 cas de référence**, tous au vert, relancés à chaque installation.
+
+**Reste :**
+- **Adaptateurs à brancher sur les outils déjà installés :**
+  - Elmer, SU2 et OpenFOAM (fluides) ;
+  - ArduPilot SITL (vol et plongée simulés) ;
+  - Gazebo (véhicule sous-marin) ;
+  - GMAT / Orekit et Basilisk (espace) ;
+  - OpenGeoSys (sous-sol) ;
+  - Renode (microprogramme) ;
+  - PrusaSlicer (projet 3MF, sans G-code).
+- **Outils sans version portable :** KiCad et CAMotics. Leurs installeurs écrivent hors du dossier
+  choisi : installation manuelle à valider.
+- **Phase 3 :** `dfm`, `stdparts`, `builddoc`, `convert_check`.
+- **Phase 6 :** optimisation multi-paramètres dans `study`, Doorstop.
+- **Voie B :** WSL2.
+- **Phase 8 :** plugin.
+- **Binaires SITL :** ArduPilot ne publie que des versions reconstruites chaque nuit. Ils sont
+  marqués optionnels et leur empreinte est à refixer quand elle ne correspond plus.
+
 ---
 
 ## 13. Décisions à prendre (propriétaire)

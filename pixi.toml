@@ -111,6 +111,27 @@ ngsolve = "*"
 [feature.post.dependencies]
 paraview = "6.*"
 
+# ---------------------------------------------------------------- ROS 2 Lyrical + Gazebo Jetty (scenario C)
+# RoboStack binaries: no Visual Studio needed to RUN; building your own C++ packages needs the
+# VS 2022 Build Tools. Gazebo Jetty (gz-sim 10) brings the buoyancy / hydrodynamics / thruster
+# systems used for underwater vehicles.
+[feature.ros]
+channels = ["robostack-lyrical", "conda-forge"]
+[feature.ros.dependencies]
+python = "3.12.*"
+ros-lyrical-desktop = "*"
+ros-lyrical-navigation2 = "*"
+ros-lyrical-moveit = "*"
+ros-lyrical-ros2-control = "*"
+ros-lyrical-ros2-controllers = "*"
+ros-lyrical-ros-gz = "*"
+ros-lyrical-gz-ros2-control = "*"
+ros-lyrical-slam-toolbox = "*"
+ros-lyrical-xacro = "*"
+ros-lyrical-robot-state-publisher = "*"
+gz-sim = "10.*"
+colcon-common-extensions = "*"
+
 [environments]
 sim = { features = ["py312", "socle", "marine"] }
 aero = { features = ["py312", "flow"], no-default-feature = true }
@@ -121,3 +142,4 @@ geo = { features = ["py312", "geo"], no-default-feature = true }
 space = { features = ["py312", "space"], no-default-feature = true }
 pde = { features = ["py312", "pde"], no-default-feature = true }
 post = { features = ["post"], no-default-feature = true }
+ros = { features = ["ros"], no-default-feature = true }

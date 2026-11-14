@@ -106,9 +106,16 @@ def _clean_env(env: str) -> Dict[str, str]:
     tmp.mkdir(parents=True, exist_ok=True)
     keep.update(TEMP=str(tmp), TMP=str(tmp), MCPFC_NO_NET="1", PYTHONUTF8="1",
                 MPLBACKEND="Agg", OMP_NUM_THREADS=os.environ.get("OMP_NUM_THREADS", "8"),
+                # OpenBLAS 0.3.34's auto-selected kernels crash (access violation) on some small
+                # matrix products on Zen 4 CPUs; the Sandybridge kernels are correct everywhere
+                OPENBLAS_CORETYPE=os.environ.get("OPENBLAS_CORETYPE", "Sandybridge"),
                 NO_PROXY="*", HTTP_PROXY="http://127.0.0.1:9", HTTPS_PROXY="http://127.0.0.1:9")
     if prefix:
         keep["CONDA_PREFIX"] = str(prefix)
+    # tools installed outside conda (tools.lock.json) and the other envs' prefixes: an adapter
+    # finds SU2, Elmer, SITL, GMAT... or another environment's java through _common.tool()
+    keep["MCPFC_TOOLS"] = json.dumps(config().get("tools") or {})
+    keep["MCPFC_ENVS"] = json.dumps(config().get("envs") or {})
     return keep
 
 
@@ -216,8 +223,29 @@ def ensure_validated(adapter: str, env: str) -> Tuple[bool, str]:
 
 
 # ------------------------------------------------------------------ runs and jobs
-def inputs_hash(kind: str, params: Dict[str, Any], geometry: Optional[Path], adapter: str) -> str:
+def input_files(params: Dict[str, Any], project_dir: Path) -> List[Tuple[str, Path]]:
+    """params["files"]: project-relative paths (a URDF and its meshes, a CSV log, a netlist
+    include...) handed to the adapter: (name inside the study folder, source). A path outside
+    the project, absolute, or with a drive / stream is refused."""
+    out: List[Tuple[str, Path]] = []
+    root = project_dir.resolve()
+    for f in params.get("files") or []:
+        rel = str(f).replace("\\", "/")
+        if not rel or rel.startswith("/") or ":" in rel or ".." in rel.split("/"):
+            raise ValueError(f"files: {f!r} must be a path relative to the project folder")
+        src = (root / rel).resolve()
+        if not src.is_relative_to(root) or not src.is_file():
+            raise ValueError(f"files: {f!r} is not a file of the project folder")
+        out.append((rel, src))
+    return out
+
+
+def inputs_hash(kind: str, params: Dict[str, Any], geometry: Optional[Path], adapter: str,
+                files: Optional[List[Tuple[str, Path]]] = None) -> str:
     h = hashlib.sha256()
+    for rel, src in files or []:            # the bytes, not only the names
+        h.update(rel.encode())
+        h.update(hashlib.sha256(src.read_bytes()).digest())
     h.update(kind.encode())
     h.update(json.dumps(params, sort_keys=True, default=str).encode())
     if geometry is not None:
@@ -259,7 +287,8 @@ def run(kind: str, params: Dict[str, Any], project_dir: Path, study: str = "defa
     ok, why = ensure_validated(meta["adapter"], meta["env"])
     if not ok:
         return {"verdict": "UNKNOWN", "summary": why}
-    ih = inputs_hash(kind, params, geometry, meta["adapter"])
+    files = input_files(params, project_dir)
+    ih = inputs_hash(kind, params, geometry, meta["adapter"], files)
     work = project_dir / "studies" / study / f"{kind}-{ih[:10]}"
     out = work / "output.json"
     if out.is_file():
@@ -271,6 +300,10 @@ def run(kind: str, params: Dict[str, Any], project_dir: Path, study: str = "defa
         except ValueError:
             pass
     work.mkdir(parents=True, exist_ok=True)
+    for rel, src in files:
+        dst = work / rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        dst.write_bytes(src.read_bytes())
     inp = dict(params, kind=kind)
     if geometry is not None:
         target = work / ("geometry" + geometry.suffix.lower())

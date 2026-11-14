@@ -63,6 +63,11 @@ reliability tools — prefer them over `execute_python`).
   CAM tools are hidden and refused unless the user sets `FREECAD_MCP_ENABLE_CAM=1` — never set it yourself).
 - "Will it hold?": `fem_static` (CalculiX) with the user's supports, loads and material — never guess
   a strength; report the safety factor and its limits (linear elastic only, see `skill-fem`).
+- Any other physics or virtual test (pressure, gravity, rotation, modes, buckling, heat, dilatation,
+  fatigue, fields, marine, electrical, aero/rocket, robot dynamics): `simulate(kind, target, params, study)`
+  in the workshop (`tools_status()` lists the kinds; each runs only once its reference cases pass; `skill-sim`).
+  Design work that ends in a real object goes through `study`: criteria -> simulate -> iterate until OK ->
+  test_plan -> the human builds and tests -> measure -> calibrate (auto) -> until VALIDATED.
 - Text-only feedback by default. Pictures only on request or for a complex part/assembly at a milestone
   when measurements alone can't settle it: `render_views` (front/top/right/iso in one image, headless).
 
@@ -76,9 +81,12 @@ reliability tools — prefer them over `execute_python`).
 
 ## Pointers
 - Full spec: `@docs/CAHIER_DES_CHARGES.md` · Compatibility audit: `@docs/COMPATIBILITY.md` · Security: `@SECURITY.md`
-- Domain knowledge: `/skills/<domain>/SKILL.md` — load on demand. Available: `skill-verify` (reliability layers & tools), `skill-partdesign` (sketch/Pad/Pocket/holes + spreadsheet variants), `skill-assembly` (multi-part assemblies, fits), `skill-print3d` (STL/3MF export), `skill-exchange` (STEP/IGES), `skill-techdraw` (2D plans -> DXF), `skill-bom` (nomenclature), `skill-fem` (CalculiX setup), `skill-gear` (involute spur gears), `skill-kinematics` (linkage motion laws), `skill-rocket` (Rocketry WB), `skill-drone` (AirPlaneDesign WB + analytical aero + external CFD), `skill-robotics-ros` (CROSS URDF export + ros2_control/Gazebo), `skill-cam` (DISABLED — never emit machine G-code; read it if CNC is requested).
+- Domain knowledge: `/skills/<domain>/SKILL.md` — load on demand. Available: `skill-verify` (reliability layers & tools), `skill-partdesign` (sketch/Pad/Pocket/holes + spreadsheet variants), `skill-assembly` (multi-part assemblies, fits), `skill-print3d` (STL/3MF export), `skill-exchange` (STEP/IGES), `skill-techdraw` (2D plans -> DXF), `skill-bom` (nomenclature), `skill-fem` (CalculiX setup), `skill-gear` (involute spur gears), `skill-kinematics` (linkage motion laws), `skill-rocket` (Rocketry WB), `skill-drone` (AirPlaneDesign WB + analytical aero + external CFD), `skill-robotics-ros` (CROSS URDF export + ros2_control/Gazebo), `skill-cam` (DISABLED — never emit machine G-code; read it if CNC is requested). Workshop (simulations outside FreeCAD): `skill-sim` (the 4 tools, core FEM/thermal/fatigue/fields kinds, the build-test-calibrate loop), `skill-marine`, `skill-elec`, `skill-aero-sim`, `skill-dynamics`.
 - Home-grown layers (§7): `server/freecad_layers/` — `state` (project memory), `spec` (design contract), `verify` (geometry checks), `analysis` (holes, walls, printability), `gate` (what `check` runs), `export` (verified files), `fem` (CalculiX static stress), `checkpoint` (rollback), `recovery` (autosave), `projects` (several designs), `recipes` (verified, reusable), `render` (views), `bom`, `drawing`, `kinematics`, `aero`, `urdf_aug`; exposed as MCP tools by `server/layers_mcp/`. Any NEW file-writing code MUST use the shared gates `safe_out_path`/`safe_under` (SECURITY.md).
 - Project memory data: `/project_state/state.json` · Checkpoints: `/checkpoints/` · Autosaves: `/recovery/`
   for the default project; named projects under `/projects/<name>/`; recipes in `/recipes/` (all gitignored)
 - Audit & repair plan: `@docs/AUDIT_2026-10-11.md` (§8 final verdict, §9 feature list).
-- Workshop roadmap: any robotics/electronics/mechatronics project, every environment, model→sim→build→test (proposal, owner decisions in §13): `docs/FEUILLE_DE_ROUTE_ATELIER.md`.
+- Workshop: `server/atelier/` (runner: subprocess, cache, jobs, validation gate; `study` loop), `server/adapters/<tool>.py`
+  (one per tool family, ENV + literal KINDS + REFERENCES), pixi envs in `pixi.toml`/`pixi.lock`, tools outside conda in
+  `install/tools.lock.json`, packs in `packs/packs.json`. Install: `install\install.ps1 -Home <dir> -Packs tout`
+  (heavy files under that dir, never the repo). Roadmap: `docs/FEUILLE_DE_ROUTE_ATELIER.md`.

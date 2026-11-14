@@ -17,6 +17,10 @@ skill-dynamics...).
 - `job(id, action="status"|"cancel")`.
 - `study(action, name, args)` — the loop below.
 
+**Files:** `params.files = ["robot/arm.urdf", "logs/run1.csv"]` (paths relative to the
+project folder) are copied into the study folder for the adapter, and their bytes are part of the
+cache key (a changed log is recomputed). Paths outside the project are refused.
+
 **Verdict rule:** criteria live in `params.limits = {value: {"min"|"max": x}}` or in the study's
 `criteria` for that kind. No criteria → `UNKNOWN` (computed, nothing judged). Never read UNKNOWN as OK.
 

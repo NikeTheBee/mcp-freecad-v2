@@ -12,6 +12,14 @@ from .base import (
 )
 
 
+def _real(obj) -> bool:
+    """A real FreeCAD document object (not a test mock, and FreeCAD not a mock itself)."""
+    try:
+        return isinstance(obj, FreeCAD.DocumentObject)
+    except Exception:
+        return False
+
+
 class PartOpsHandler(BaseHandler):
     """Handler for Part workbench operations (extrude, revolve, mirror, section, scale)."""
 
@@ -32,7 +40,7 @@ class PartOpsHandler(BaseHandler):
         """Unit normal of the profile's plane in the document frame: the sketch's own (its
         GLOBAL placement: a sketch in a turned container), else its face's."""
         try:
-            pl = obj.getGlobalPlacement() if hasattr(obj, "getGlobalPlacement") else obj.Placement
+            pl = obj.getGlobalPlacement() if _real(obj) else obj.Placement
             return pl.Rotation.multVec(FreeCAD.Vector(0, 0, 1))
         except Exception:
             faces = list(getattr(profile, "Faces", []) or [])
@@ -135,7 +143,7 @@ class PartOpsHandler(BaseHandler):
             import Part
 
             pos = FreeCAD.Vector(0, 0, 0)
-            if hasattr(sketch, 'getGlobalPlacement'):
+            if _real(sketch):
                 pos = sketch.getGlobalPlacement().Base
             elif hasattr(sketch, 'Placement'):
                 pos = sketch.Placement.Base

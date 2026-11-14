@@ -13,7 +13,8 @@
    stays unusable (simulate refuses it).
 6. --register: re-registers the MCP servers on the workshop's FreeCAD (install/bootstrap.py).
 
-Idempotent: what is installed and matches its hash is skipped. Stops at the first error.
+Idempotent: what is installed and matches its hash is skipped. Stops at the first error, except for a
+tool marked "optional" in tools.lock.json (a rolling upstream build): it is reported and left out.
 """
 from __future__ import annotations
 
@@ -85,6 +86,8 @@ def download(name: str, home: Path, dry: bool) -> Path:
 
 def _safe_members(names, root: Path) -> None:
     for n in names:
+        if n in ("/", "./"):  # a bare root-folder entry (XFOIL's zip): creates nothing
+            continue
         p = (root / n).resolve()
         if not p.is_relative_to(root.resolve()):
             raise SystemExit(f"archive member escapes the folder: {n!r}")
@@ -94,13 +97,20 @@ def install_tool(name: str, home: Path, dry: bool) -> Path:
     t = LOCK[name]
     dest = home / t["dest"]
     exe = dest / t["bin"]
-    mark = dest / MARK
+    single = t["archive"] == "file"  # one file copied to dest/bin; several such entries may share a dest
+    mark = dest / (f"{MARK}.{name}" if single else MARK)
     if exe.exists() and mark.is_file() and mark.read_text().strip() == t["sha256"]:
         return exe
     f = download(name, home, dry)
     if dry:
         return exe
     say(f"installing {name} into {dest}")
+    if single:
+        _safe_members([t["bin"]], dest)
+        exe.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(f, exe)
+        mark.write_text(t["sha256"])
+        return exe
     with tempfile.TemporaryDirectory(dir=home / "downloads") as tmpd:
         tmp = Path(tmpd)
         if t["archive"] == "zip":
@@ -111,8 +121,6 @@ def install_tool(name: str, home: Path, dry: bool) -> Path:
             listing = subprocess.run([_bsdtar(), "-tf", str(f)], capture_output=True, text=True, check=True)
             _safe_members(listing.stdout.splitlines(), tmp)
             subprocess.run([_bsdtar(), "-xf", str(f), "-C", str(tmp)], check=True)
-        elif t["archive"] == "file":
-            shutil.copy2(f, tmp / f.name)
         else:
             raise SystemExit(f"{name}: unknown archive type {t['archive']}")
         src = tmp
@@ -184,7 +192,16 @@ def main() -> int:
     if free < 40:
         say(f"WARNING only {free:.0f} GB free on {home.anchor}: the full workshop needs ~40 GB")
     pixi = install_tool("pixi", home, a.dry_run)
-    tool_paths = {t: str(install_tool(t, home, a.dry_run)) for t in tools if t != "pixi"}
+    tool_paths = {}
+    for t in tools:
+        if t == "pixi":
+            continue
+        try:
+            tool_paths[t] = str(install_tool(t, home, a.dry_run))
+        except (SystemExit, OSError) as e:  # 'optional': a rolling upstream build whose pin no longer matches
+            if not LOCK[t].get("optional"):
+                raise
+            say(f"WARNING optional tool {t} NOT installed ({e}); re-pin it in tools.lock.json")
     env_paths = install_envs(pixi, home, envs, a.dry_run)
     if a.dry_run:
         say("dry run: nothing changed")
@@ -223,7 +240,7 @@ def main() -> int:
                             cfg["tools"]["freecadcmd"], "--skip-tests"])
         if r.returncode:
             raise SystemExit("bootstrap.py failed")
-    say("done. In Claude Code: tools_status()")
+    say("done. In your MCP client: tools_status()")
     return 0
 
 

@@ -40,6 +40,12 @@ grafts). That is powerful **by design** (it's how natural-language CAD works) an
   install, run by the current user; otherwise it refuses to start or stops the bridge (fail closed).
   Regression test: `install/launcher_test.py` (no/wrong token rejected, squatter refused with
   nothing sent, crash restart).
+  One exception, for upgrades: when `install/bootstrap.py` registers a FreeCAD in another folder,
+  it records the one it replaces (`~/.freecad-mcp/previous_freecad.json`). If EVERY listener is
+  that recorded FreeCAD, run by the current user, the launcher asks it to save its documents and
+  exit, then starts the configured one. The request goes through the mutual authentication below,
+  so the listener must prove it holds the token first; anything else is still refused. Regression
+  test: `install/handover_test.py`.
 - **Mutual authentication (v2, in the vendored base): the listener proves itself first.** On every
   connection the client sends a random nonce (`{"auth_challenge": ...}`); FreeCAD answers with
   HMAC-SHA256(token, nonce). Only if that proof matches does the client send the token and the

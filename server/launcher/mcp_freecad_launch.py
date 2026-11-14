@@ -159,6 +159,60 @@ def trust_problem(pid: int, freecadcmd: Path) -> str | None:
     return None
 
 
+PREVIOUS = Path.home() / ".freecad-mcp" / "previous_freecad.json"
+TOKEN = Path.home() / ".freecad-mcp" / "windows_auth_token"
+RETIRE_WAIT_S = 60.0
+
+
+def previous_freecadcmd() -> Path | None:
+    """The FreeCAD this install replaced, recorded by install/bootstrap.py when it registered a
+    new one (FreeCAD 1.1.1 -> 1.1.4 in another folder). None when there is no such record."""
+    try:
+        p = Path(json.loads(PREVIOUS.read_text(encoding="utf-8"))["freecadcmd"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    return p if p.is_absolute() else None
+
+
+def retire_previous(freecadcmd: Path) -> bool:
+    """Hand the port over from the previous install's FreeCAD to the configured one.
+
+    After an upgrade the old headless FreeCAD (outside the configured folder) still serves the
+    port: the anti-squatting check refused it and every session failed. When EVERY listener is
+    that recorded previous install, run by this user, it is asked through the authenticated
+    protocol (it proves it holds the token before the token is sent) to save its documents and
+    exit (its own restart_freecad); the caller then starts the configured FreeCAD. False when it
+    is not that case (a real squatter stays refused)."""
+    prev = previous_freecadcmd()
+    if prev is None or os.path.normcase(str(prev.parent)) == os.path.normcase(str(freecadcmd.parent)):
+        return False
+    owners = port_owners(PORT)
+    if not owners or any(trust_problem(pid, prev) for pid in owners):
+        return False
+    sys.path.insert(0, str(BASE))
+    from mcp_bridge_framing import receive_message, send_message, verify_listener
+    log(f"port {PORT} is held by the previous FreeCAD ({prev}): asking it to save and exit")
+    try:
+        token = TOKEN.read_text(encoding="ascii").strip()
+        with socket.create_connection((HOST, PORT), timeout=30) as sk:
+            refusal = verify_listener(sk, token)
+            if refusal:
+                raise Untrusted(f"the previous FreeCAD did not prove itself ({refusal})")
+            send_message(sk, json.dumps({"tool": "restart_freecad",
+                                         "args": {"save_documents": True}, "token": token}))
+            receive_message(sk, timeout=30)
+    except OSError as e:
+        log(f"previous FreeCAD: {e}")
+    deadline = time.monotonic() + RETIRE_WAIT_S
+    while time.monotonic() < deadline:
+        if not port_owners(PORT):
+            log("previous FreeCAD exited (documents saved, unsaved ones copied to the temp folder)")
+            return True
+        time.sleep(0.25)
+    raise Untrusted(f"the previous FreeCAD ({prev}) still holds port {PORT}: close it "
+                    "(another Claude session may be restarting it), then retry")
+
+
 def spawn(freecadcmd: Path) -> subprocess.Popen:
     flags = 0
     if sys.platform == "win32":   # survive the launcher; no console window
@@ -187,7 +241,12 @@ def spawn(freecadcmd: Path) -> subprocess.Popen:
 def ensure(freecadcmd: Path) -> int:
     """Return the PID of a trusted FreeCAD listening on PORT (start one if
     needed). Raises Untrusted / RuntimeError."""
-    owner = port_owner(PORT, freecadcmd)
+    try:
+        owner = port_owner(PORT, freecadcmd)
+    except Untrusted:
+        if not retire_previous(freecadcmd):    # an upgrade: the old install hands over
+            raise
+        owner = None
     if owner is not None:
         return owner
     if not HEADLESS.is_file():

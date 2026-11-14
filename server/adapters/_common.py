@@ -40,6 +40,34 @@ def exe(name: str) -> str:
     raise FileNotFoundError(f"{name} is not installed in the environment {ENV_PREFIX.name}")
 
 
+def tool(name: str, rel: str = "") -> str:
+    """A tool installed outside conda (install/tools.lock.json), e.g. tool("su2") -> SU2_CFD.exe,
+    tool("su2", "SU2_DEF.exe") -> another file beside it."""
+    tools = json.loads(os.environ.get("MCPFC_TOOLS") or "{}")
+    p = tools.get(name)
+    if not p or not Path(p).exists():
+        raise FileNotFoundError(f"tool {name!r} is not installed: run install.ps1 -Packs <its pack>")
+    p = Path(p)
+    if rel:
+        p = p.parent / rel
+        if not p.exists():
+            raise FileNotFoundError(f"{rel} not found beside {name}")
+    return str(p)
+
+
+def env_exe(env: str, name: str) -> str:
+    """An executable of ANOTHER pixi environment (e.g. java of `space` for OpenRocket)."""
+    envs = json.loads(os.environ.get("MCPFC_ENVS") or "{}")
+    if env not in envs:
+        raise FileNotFoundError(f"environment {env!r} is not installed")
+    for sub in ("Library/bin", "Scripts", "bin", ""):
+        for ext in (".exe", ".bat", ".cmd", ""):
+            p = Path(envs[env]) / sub / (name + ext)
+            if p.is_file():
+                return str(p)
+    raise FileNotFoundError(f"{name} not found in environment {env}")
+
+
 def run_exe(args: Sequence[str], cwd: Path, timeout: float, stdin: Optional[str] = None,
             env_extra: Optional[Dict[str, str]] = None) -> subprocess.CompletedProcess:
     """Run a known executable with an argument list (no shell), a timeout, output captured."""

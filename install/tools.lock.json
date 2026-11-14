@@ -1,5 +1,5 @@
 {
-  "_doc": "Tools outside conda (FEUILLE_DE_ROUTE_ATELIER.md §8.2): official URL, SHA256 checked before use, licence. 'archive': zip | 7z | file. 'bin': path of the main executable inside the extracted folder. Never redistributed: downloaded from the publisher.",
+  "_doc": "Tools outside conda (FEUILLE_DE_ROUTE_ATELIER.md §8.2): official URL, SHA256 checked before use, licence. 'archive': zip | 7z | file ('file': the download itself is copied to dest/bin; several 'file' entries may share one dest, archive entries own theirs). 'bin': path of the main executable inside the extracted folder. 'sha_source': where the SHA256 comes from. 'optional': a rolling upstream build; if its pin no longer matches, the installer reports it and goes on. Never redistributed: downloaded from the publisher.",
   "pixi": {
     "version": "0.84.2", "license": "BSD-3-Clause", "packs": ["*"],
     "url": "https://github.com/prefix-dev/pixi/releases/download/v0.84.2/pixi-x86_64-pc-windows-msvc.zip",
@@ -12,5 +12,149 @@
     "sha256": "4828741fc91ee37fafcdb97a1abacb18b04ba451ac4372d9ff7a7349b36f4d6d",
     "archive": "7z", "dest": "tools/FreeCAD-1.1.4", "strip": 1, "bin": "bin/freecadcmd.exe",
     "note": "fixes the 1.1.1 advisories (code execution / file write when opening a crafted FCStd)"
+  },
+  "elmer": {
+    "version": "26.1", "license": "GPL-2.0-or-later (ElmerSolver library LGPL-2.1)", "packs": ["socle"],
+    "url": "https://www.nic.funet.fi/pub/sci/physics/elmer/bin/windows/rel26.1/ElmerFEM-nogui-nompi-Windows-AMD64-rel26.1.zip",
+    "sha256": "8ce866cc6ff16a842f01edc1dc56c9a801cdd758210ec02cf1353398e6839455",
+    "sha_source": "recorded 2026-11-14 from official URL (CSC publishes no checksum)",
+    "archive": "zip", "dest": "tools/Elmer-26.1", "strip": 1, "bin": "bin/ElmerSolver.exe", "size": 129530276,
+    "note": "CSC's Windows build linked from the ElmerCSC README; no-MPI, no-GUI (no MS-MPI runtime needed). 26.2.1 has no versioned Windows build yet"
+  },
+  "su2": {
+    "version": "8.6.0", "license": "LGPL-2.1", "packs": ["fluides"],
+    "url": "https://github.com/su2code/SU2/releases/download/v8.6.0/SU2_v8.6.0_win64-omp.zip",
+    "sha256": "4bc28b656def415b4d22c8274af2473dd719aa5ebfa6bc1c95c08b1bac26508c",
+    "sha_source": "GitHub release asset digest (gh api repos/su2code/SU2/releases/tags/v8.6.0)",
+    "archive": "zip", "dest": "tools/SU2-8.6.0", "bin": "bin/SU2_CFD.exe", "size": 29350764,
+    "note": "OpenMP build: the MPI build needs the MS-MPI runtime (admin install)"
+  },
+  "prusaslicer": {
+    "version": "2.9.7", "license": "AGPL-3.0", "packs": ["fab"],
+    "url": "https://github.com/prusa3d/PrusaSlicer/releases/download/version_2.9.7/PrusaSlicer-2.9.7.zip",
+    "sha256": "5d4f395aeb6c344b300e0e1be37a0e1931622b642c3c3085eb19cdae211bc008",
+    "sha_source": "GitHub release asset digest (gh api repos/prusa3d/PrusaSlicer/releases/tags/version_2.9.7)",
+    "archive": "zip", "dest": "tools/PrusaSlicer-2.9.7", "strip": 1, "bin": "prusa-slicer-console.exe", "size": 106602381,
+    "note": "AGPL-3.0: run only as a separate program, never linked or redistributed (§10.1.6). 2.9.7 fixes 3MF/G-code parsing vulnerabilities"
+  },
+  "xfoil": {
+    "version": "6.99", "license": "GPL-2.0", "packs": ["air"],
+    "url": "https://web.mit.edu/drela/Public/web/xfoil/XFOIL6.99.zip",
+    "sha256": "e13e8fe5cc38d8ac2626e9d3b17643bdcfaa63791619f042afdaa7cd103bcb08",
+    "sha_source": "recorded 2026-11-14 from official URL (size 3813300 matches the publisher's page)",
+    "archive": "zip", "dest": "tools/XFOIL-6.99", "bin": "xfoil.exe", "size": 3813300
+  },
+  "avl": {
+    "version": "3.52", "license": "GPL-2.0", "packs": ["air"],
+    "url": "https://web.mit.edu/drela/Public/web/avl/avl352.exe",
+    "sha256": "443520d255408491222a8df9060bd000f78da95a68845a2f6efdbc67e203f07a",
+    "sha_source": "recorded 2026-11-14 from official URL",
+    "archive": "file", "dest": "tools/AVL-3.52", "bin": "avl.exe", "size": 1793164
+  },
+  "qprop": {
+    "version": "1.22", "license": "GPL-2.0", "packs": ["air"],
+    "url": "https://web.mit.edu/drela/Public/web/qprop/qprop1.22.zip",
+    "sha256": "b71f7c0602630edbd81ab34707f302eab2ba3543df3711e04c557d439b663afb",
+    "sha_source": "recorded 2026-11-14 from official URL (size 528618 matches the publisher's page)",
+    "archive": "zip", "dest": "tools/QPROP-1.22", "bin": "qprop.exe", "size": 528618,
+    "note": "also qmil.exe"
+  },
+  "sitl_copter": {
+    "version": "ArduPilot-4.7 branch @ d9c5097 (Mission Planner 'Stable' SITL build 2026-11-14)", "license": "GPL-3.0", "packs": ["air"],
+    "url": "https://firmware.ardupilot.org/Tools/MissionPlanner/sitl/Stable/ArduCopter.elf",
+    "sha256": "916f59a820bd9ac3b19bc937a12661942c46350acaddb71e61c3e45c86b703fa",
+    "sha_source": "recorded 2026-11-14 from official URL (ArduPilot publishes no checksum)",
+    "archive": "file", "dest": "tools/ardupilot-sitl", "bin": "ArduCopter.elf", "size": 10997765, "optional": true,
+    "note": "Cygwin PE executable despite the .elf name; needs the five sitl_cyg_* DLLs beside it. Rolling build: re-pin when ArduPilot rebuilds it"
+  },
+  "sitl_plane": {
+    "version": "ArduPilot-4.7 branch @ d9c5097 (Mission Planner 'Stable' SITL build 2026-11-14)", "license": "GPL-3.0", "packs": ["air"],
+    "url": "https://firmware.ardupilot.org/Tools/MissionPlanner/sitl/Stable/ArduPlane.elf",
+    "sha256": "879ef821fc2340d76222045397d3c8f6082259ac6710b98960c36a6208a29a40",
+    "sha_source": "recorded 2026-11-14 from official URL (ArduPilot publishes no checksum)",
+    "archive": "file", "dest": "tools/ardupilot-sitl", "bin": "ArduPlane.elf", "size": 10978634, "optional": true,
+    "note": "rolling build: re-pin when ArduPilot rebuilds it"
+  },
+  "sitl_rover": {
+    "version": "ArduPilot-4.7 branch @ d9c5097 (Mission Planner 'Stable' SITL build 2026-11-14)", "license": "GPL-3.0", "packs": ["terre"],
+    "url": "https://firmware.ardupilot.org/Tools/MissionPlanner/sitl/Stable/ArduRover.elf",
+    "sha256": "e8d87fbc4880735dce7cde06d2341085b3fe63c30ddbf018bcaa412cac8b7413",
+    "sha_source": "recorded 2026-11-14 from official URL (ArduPilot publishes no checksum)",
+    "archive": "file", "dest": "tools/ardupilot-sitl", "bin": "ArduRover.elf", "size": 10269291, "optional": true,
+    "note": "rolling build: re-pin when ArduPilot rebuilds it"
+  },
+  "sitl_sub": {
+    "version": "ArduPilot-4.7 branch @ d9c5097 (Mission Planner 'Stable' SITL build 2026-11-14)", "license": "GPL-3.0", "packs": ["marin"],
+    "url": "https://firmware.ardupilot.org/Tools/MissionPlanner/sitl/Stable/ArduSub.elf",
+    "sha256": "78e951f5177fbb9b5e80d8184e616a398eb7eb3a675434d51132e488da7ddc4f",
+    "sha_source": "recorded 2026-11-14 from official URL (ArduPilot publishes no checksum)",
+    "archive": "file", "dest": "tools/ardupilot-sitl", "bin": "ArduSub.elf", "size": 10280646, "optional": true,
+    "note": "rolling build: re-pin when ArduPilot rebuilds it"
+  },
+  "sitl_cyg_cygwin1": {
+    "version": "Cygwin runtime shipped with the SITL build of 2026-11-14", "license": "LGPL-3.0-or-later", "packs": ["air", "terre", "marin"],
+    "url": "https://firmware.ardupilot.org/Tools/MissionPlanner/sitl/Stable/cygwin1.dll",
+    "sha256": "ed9d5379061e5de79c3375cc62246c2142ea1c97d94f4d16bfbea6fb1b7fc889",
+    "sha_source": "recorded 2026-11-14 from official URL (ArduPilot publishes no checksum)",
+    "archive": "file", "dest": "tools/ardupilot-sitl", "bin": "cygwin1.dll", "size": 3246645, "optional": true
+  },
+  "sitl_cyg_gcc_s": {
+    "version": "GCC 13 runtime shipped with the SITL build of 2026-11-14", "license": "GPL-3.0-or-later WITH GCC-exception-3.1", "packs": ["air", "terre", "marin"],
+    "url": "https://firmware.ardupilot.org/Tools/MissionPlanner/sitl/Stable/cyggcc_s-seh-1.dll",
+    "sha256": "f9a352fa9215ceb9a35b67ef8c7f178906a9dcc40b3819182b63f93fecb4faea",
+    "sha_source": "recorded 2026-11-14 from official URL (ArduPilot publishes no checksum)",
+    "archive": "file", "dest": "tools/ardupilot-sitl", "bin": "cyggcc_s-seh-1.dll", "size": 142867, "optional": true
+  },
+  "sitl_cyg_stdcxx": {
+    "version": "GCC 13 runtime shipped with the SITL build of 2026-11-14", "license": "GPL-3.0-or-later WITH GCC-exception-3.1", "packs": ["air", "terre", "marin"],
+    "url": "https://firmware.ardupilot.org/Tools/MissionPlanner/sitl/Stable/cygstdc++-6.dll",
+    "sha256": "7953c47c65f2c584e7add785662f507b2da5511e02f12deed7c260925b23131f",
+    "sha_source": "recorded 2026-11-14 from official URL (ArduPilot publishes no checksum)",
+    "archive": "file", "dest": "tools/ardupilot-sitl", "bin": "cygstdc++-6.dll", "size": 2316819, "optional": true
+  },
+  "sitl_cyg_iconv": {
+    "version": "GNU libiconv runtime shipped with the SITL build of 2026-11-14", "license": "LGPL-2.1-or-later", "packs": ["air", "terre", "marin"],
+    "url": "https://firmware.ardupilot.org/Tools/MissionPlanner/sitl/Stable/cygiconv-2.dll",
+    "sha256": "aea0d69478b5b07647fd83e77d586673f9eba5e63420c6fdfd350d013806bba8",
+    "sha_source": "recorded 2026-11-14 from official URL (ArduPilot publishes no checksum)",
+    "archive": "file", "dest": "tools/ardupilot-sitl", "bin": "cygiconv-2.dll", "size": 1104915, "optional": true
+  },
+  "sitl_cyg_intl": {
+    "version": "GNU gettext libintl runtime shipped with the SITL build of 2026-11-14", "license": "LGPL-2.1-or-later", "packs": ["air", "terre", "marin"],
+    "url": "https://firmware.ardupilot.org/Tools/MissionPlanner/sitl/Stable/cygintl-8.dll",
+    "sha256": "393b6a5b3058e19e0c4b024866fa124b4a0e85f5b1aaf62e984f840e17722de8",
+    "sha_source": "recorded 2026-11-14 from official URL (ArduPilot publishes no checksum)",
+    "archive": "file", "dest": "tools/ardupilot-sitl", "bin": "cygintl-8.dll", "size": 108051, "optional": true
+  },
+  "openrocket": {
+    "version": "24.12", "license": "GPL-3.0-or-later", "packs": ["fusee"],
+    "url": "https://github.com/openrocket/openrocket/releases/download/release-24.12/OpenRocket-24.12.jar",
+    "sha256": "4959b72f52f5f607941e9722abbb7b7f0c4a38ebbbf84204a329db9f31c4f897",
+    "sha_source": "GitHub release asset digest (gh api repos/openrocket/openrocket/releases/tags/release-24.12)",
+    "archive": "file", "dest": "tools/OpenRocket-24.12", "bin": "OpenRocket-24.12.jar", "size": 83149098,
+    "note": "needs Java 17+: use the java of the 'space' pixi env (openjdk, <env space>/Library/bin/java.exe), which the 'fusee' pack installs"
+  },
+  "gmat": {
+    "version": "R2026a", "license": "Apache-2.0", "packs": ["espace"],
+    "url": "https://downloads.sourceforge.net/project/gmat/GMAT/GMAT-R2026a/gmat-win-R2026a.zip",
+    "sha256": "f7b00bdeb51e75f5f0a93380a97109f0505e75396f69a43cd5583c21f5fed9fc",
+    "sha_source": "recorded 2026-11-14 from official URL; matches the SHA-1 44f2245d0785517bc1a4b6b8fa191447a1ccef95 published by the GMAT project on SourceForge (no SHA256 published)",
+    "archive": "zip", "dest": "tools/GMAT-R2026a", "bin": "bin/GmatConsole.exe", "size": 403517137,
+    "note": "SourceForge is NASA's distribution point for GMAT; it redirects to SourceForge's own download servers, the pinned SHA256 is what is trusted"
+  },
+  "renode": {
+    "version": "1.17.0", "license": "MIT", "packs": ["embarque"],
+    "url": "https://github.com/renode/renode/releases/download/v1.17.0/renode-1.17.0.windows-portable.zip",
+    "sha256": "18bcf145422039e8702c3e5f9864c7787561bfd5deb7a3ee6e168ecf19e2b9db",
+    "sha_source": "GitHub release asset digest (gh api repos/renode/renode/releases/tags/v1.17.0)",
+    "archive": "zip", "dest": "tools/Renode-1.17.0", "strip": 1, "bin": "renode.exe", "size": 106735414
+  },
+  "git_lfs": {
+    "version": "3.8.1", "license": "MIT", "packs": ["outillage"],
+    "url": "https://github.com/git-lfs/git-lfs/releases/download/v3.8.1/git-lfs-windows-amd64-v3.8.1.zip",
+    "sha256": "5bb771c12b3dacc535e912d0270a010c209d4da2e63819c5918e3547c2defed9",
+    "sha_source": "GitHub release asset digest (gh api repos/git-lfs/git-lfs/releases/tags/v3.8.1)",
+    "archive": "zip", "dest": "tools/git-lfs-3.8.1", "strip": 1, "bin": "git-lfs.exe", "size": 5870805,
+    "note": "not added to PATH: call it by its path, or run 'git lfs install' yourself"
   }
 }

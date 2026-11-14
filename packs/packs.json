@@ -1,14 +1,130 @@
 {
-  "_doc": "Packs of the workshop (FEUILLE_DE_ROUTE_ATELIER.md §5, §8.3): which pixi environments and which tools of install/tools.lock.json each one installs. 'socle' is always installed.",
-  "socle":    {"envs": ["sim", "pde", "post"], "tools": ["pixi", "freecad"], "skills": ["skill-sim"]},
-  "opt":      {"envs": ["opt"], "tools": []},
-  "air":      {"envs": ["aero"], "tools": []},
-  "fusee":    {"envs": ["aero"], "tools": []},
-  "espace":   {"envs": ["space"], "tools": []},
-  "terre":    {"envs": ["robot"], "tools": []},
-  "soussol":  {"envs": ["geo"], "tools": []},
-  "marin":    {"envs": ["sim"], "tools": []},
-  "elec":     {"envs": ["elec"], "tools": []},
-  "embarque": {"envs": ["elec"], "tools": []},
-  "fab":      {"envs": [], "tools": []}
+ "_doc": "Packs of the workshop (FEUILLE_DE_ROUTE_ATELIER.md §5, §8.3): which pixi environments and which tools of install/tools.lock.json each one installs. 'socle' is always installed.",
+ "socle": {
+  "envs": [
+   "sim",
+   "pde",
+   "post"
+  ],
+  "tools": [
+   "pixi",
+   "freecad",
+   "elmer"
+  ],
+  "skills": [
+   "skill-sim"
+  ]
+ },
+ "fluides": {
+  "envs": [
+   "post"
+  ],
+  "tools": [
+   "su2"
+  ]
+ },
+ "opt": {
+  "envs": [
+   "opt"
+  ],
+  "tools": []
+ },
+ "air": {
+  "envs": [
+   "aero"
+  ],
+  "tools": [
+   "xfoil",
+   "avl",
+   "qprop",
+   "sitl_copter",
+   "sitl_plane",
+   "sitl_cyg_cygwin1",
+   "sitl_cyg_gcc_s",
+   "sitl_cyg_stdcxx",
+   "sitl_cyg_iconv",
+   "sitl_cyg_intl"
+  ]
+ },
+ "fusee": {
+  "envs": [
+   "aero",
+   "space"
+  ],
+  "tools": [
+   "openrocket"
+  ]
+ },
+ "espace": {
+  "envs": [
+   "space"
+  ],
+  "tools": [
+   "gmat"
+  ]
+ },
+ "terre": {
+  "envs": [
+   "robot"
+  ],
+  "tools": [
+   "sitl_rover",
+   "sitl_cyg_cygwin1",
+   "sitl_cyg_gcc_s",
+   "sitl_cyg_stdcxx",
+   "sitl_cyg_iconv",
+   "sitl_cyg_intl"
+  ]
+ },
+ "soussol": {
+  "envs": [
+   "geo"
+  ],
+  "tools": []
+ },
+ "marin": {
+  "envs": [
+   "sim"
+  ],
+  "tools": [
+   "sitl_sub",
+   "sitl_cyg_cygwin1",
+   "sitl_cyg_gcc_s",
+   "sitl_cyg_stdcxx",
+   "sitl_cyg_iconv",
+   "sitl_cyg_intl"
+  ]
+ },
+ "elec": {
+  "envs": [
+   "elec"
+  ],
+  "tools": []
+ },
+ "embarque": {
+  "envs": [
+   "elec"
+  ],
+  "tools": [
+   "renode"
+  ]
+ },
+ "fab": {
+  "envs": [],
+  "tools": [
+   "prusaslicer"
+  ]
+ },
+ "outillage": {
+  "envs": [],
+  "tools": [
+   "git_lfs"
+  ]
+ },
+ "ros": {
+  "envs": [
+   "ros"
+  ],
+  "tools": []
+ }
 }

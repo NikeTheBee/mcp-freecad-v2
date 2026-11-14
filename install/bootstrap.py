@@ -259,10 +259,30 @@ def stop_stale_headless(dry: bool) -> None:
 # --------------------------------------------------------------------------
 # Client registration
 # --------------------------------------------------------------------------
+def record_previous(claude: str, freecadcmd: Path, dry: bool) -> None:
+    """Registering another FreeCAD (an upgrade in a new folder): note the one it replaces, so the
+    launcher can ask that FreeCAD, if it still serves the port, to save and exit
+    (mcp_freecad_launch.retire_previous) instead of refusing it as a squatter."""
+    r = subprocess.run([claude, "mcp", "get", "freecad"], capture_output=True, text=True)
+    old = next((ln.split("=", 1)[1].strip() for ln in r.stdout.splitlines()
+                if ln.strip().startswith("FREECAD_MCP_FREECAD_BIN=")), "")
+    if not old or os.path.normcase(str(Path(old).parent)) == os.path.normcase(str(freecadcmd.parent)):
+        return
+    if dry:
+        log(f"DRY: would record the previous FreeCAD {old}")
+        return
+    rec = HOME / ".freecad-mcp" / "previous_freecad.json"
+    rec.parent.mkdir(parents=True, exist_ok=True)
+    rec.write_text(json.dumps({"freecadcmd": old, "replaced_by": str(freecadcmd),
+                               "when": time.strftime("%Y-%m-%d %H:%M:%S")}), encoding="utf-8")
+    log(f"previous FreeCAD recorded ({old}): it hands the port over at the next session")
+
+
 def register_claude_code(freecadcmd: Path, dry: bool) -> bool:
     claude = shutil.which("claude")
     if not claude:
         return False
+    record_previous(claude, freecadcmd, dry)
     for name, script in SERVERS.items():
         if dry:
             log(f"DRY: would register `{name}` with Claude Code")
