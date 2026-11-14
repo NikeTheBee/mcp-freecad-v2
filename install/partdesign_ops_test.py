@@ -85,11 +85,30 @@ b = d.addObject("PartDesign::Body", "Body001")
 plate(b, 20, 10, 5, hole=(5, 5))
 r = H.linear_pattern({"feature_name": "Pocket", "direction": "x", "count": 2, "spacing": 8})
 close(b.Shape.Volume, 1000 - 40 * math.pi, f"2nd Body linear pattern ({r[:24]}...)")
+# the pocket at (5, 5) turned 180 deg about Z lands at (-5, -5), off the plate: refused, not
+# kept (it was replied "Created polar pattern" with the part unchanged)
+v = b.Shape.Volume
 r = H.polar_pattern({"feature_name": "Pocket", "axis": "z", "count": 2, "angle": 360})
-assert "Created polar pattern" in r, r
+assert "changes no material" in r and "not kept" in r and b.Tip.TypeId == "PartDesign::LinearPattern", r
+close(b.Shape.Volume, v, "polar copy off the part refused, Body unchanged")
 r = H.mirror_feature({"feature_name": "Pad", "plane": "YZ"})
 assert "Created mirror" in r and b.Shape.BoundBox.XMin < -19.999, r
-print("2nd Body polar pattern and mirror: made OK")
+print("2nd Body mirror: made OK")
+
+# linear pattern past the edge: every copy off the plate -> refused; half off -> a note
+d = newdoc()
+b = d.addObject("PartDesign::Body", "Body")
+plate(b, 20, 20, 5, hole=(5, 5))
+v = b.Shape.Volume
+r = H.linear_pattern({"feature_name": "Pocket", "direction": "x", "count": 3, "spacing": 20})
+assert "changes no material" in r and "2 copies" in r, r
+close(b.Shape.Volume, v, "linear copies all off the part refused, Body unchanged")
+r = H.linear_pattern({"feature_name": "Pocket", "direction": "x", "count": 3, "spacing": 10})
+assert r.startswith("Created linear pattern") and "NOTE" in r and "partly leave" in r, r
+close(b.Shape.Volume, v - 20 * math.pi, "one copy in, one off: one more hole only")
+r = H.linear_pattern({"feature_name": "Pocket", "direction": "y", "count": 2, "spacing": 10})
+assert "volume -62.83" in r and "NOTE" not in r, r
+print("pattern copies off the part: refused / noted OK")
 
 # standalone polar pattern: copies turn around the axis (they stayed where the
 # original is), steps as PartDesign's (360: shared; else first to last)

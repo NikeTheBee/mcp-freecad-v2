@@ -880,6 +880,47 @@ class PartDesignOpsHandler(BaseHandler):
         except Exception as e:
             return f"Error creating hole: {e}"
 
+    @staticmethod
+    def _copies_change(pattern, originals, copies: int, label: str):
+        """(error, note) for a PartDesign pattern/mirror in a Body (MCP FREECAD v2).
+
+        A pattern whose copies fall off the part (a pocket repeated past the edge, a mirror
+        of a hole across a plane outside the plate) computed fine and was replied "Created"
+        while the part was unchanged. Compared with the feature it builds on: no change ->
+        error, the pattern removed and the Body's Tip put back; a change that is not
+        `copies` x the originals' own -> a note (copies overlap or partly leave the part).
+        (None, "") when it cannot be measured (test mocks)."""
+        try:
+            base = pattern.BaseFeature
+            v0, v1 = base.Shape.Volume, pattern.Shape.Volume
+            each = 0.0
+            for f in originals:
+                fb = getattr(f, "BaseFeature", None)
+                each += f.Shape.Volume - (fb.Shape.Volume if fb is not None else 0.0)
+        except Exception:
+            return None, ""
+        if not all(isinstance(v, (int, float)) for v in (v0, v1, each)):
+            return None, ""
+        got, want = v1 - v0, each * copies
+        scale = max(abs(v0), abs(want), 1.0)
+        if abs(got) <= 1e-9 * scale and abs(want) > 1e-9 * scale:
+            try:
+                body = next(o for o in pattern.InList if o.TypeId == "PartDesign::Body")
+                body.Tip = base
+                body.removeObject(pattern)
+                pattern.Document.removeObject(pattern.Name)
+                body.Document.recompute()
+                kept = "; not kept, the Body is unchanged"
+            except Exception:
+                kept = ""
+            return (f"{label} changes no material: its {copies} cop{'y' if copies == 1 else 'ies'} "
+                    "fall outside the part (or on the original)" + kept), ""
+        if abs(got - want) > 1e-6 * scale:
+            return None, (f"; NOTE the copies changed the volume by {got:+.6g} mm3, {copies} full "
+                          f"cop{'y' if copies == 1 else 'ies'} would give {want:+.6g}: some overlap "
+                          "each other or partly leave the part")
+        return None, f"; volume {got:+.6g} mm3 ({copies} x {each:+.6g})"
+
     def linear_pattern(self, args: dict[str, Any]) -> str:
         """Create linear pattern of features.
 
@@ -949,11 +990,14 @@ class PartDesignOpsHandler(BaseHandler):
                 err = self._check_feature_state(linpat, "Linear pattern")
                 if err:
                     return err
+                err, note = self._copies_change(linpat, [feature], count - 1, "Linear pattern")
+                if err:
+                    return err
 
                 return (
                     f"Created linear pattern: {count} instances of {feature_name} "
                     f"in {direction} direction with {spacing}mm spacing "
-                    f"(PartDesign::LinearPattern in {body.Name})"
+                    f"(PartDesign::LinearPattern in {body.Name}){note}"
                 )
 
             # No Body — standalone doc.copyObject approach (unchanged).
@@ -1052,11 +1096,14 @@ class PartDesignOpsHandler(BaseHandler):
                 err = self._check_feature_state(polpat, "Polar pattern")
                 if err:
                     return err
+                err, note = self._copies_change(polpat, [feature], count - 1, "Polar pattern")
+                if err:
+                    return err
 
                 return (
                     f"Created polar pattern: {count} instances of {feature_name} "
                     f"around {axis.upper()}-axis, {angle}° total "
-                    f"(PartDesign::PolarPattern in {body.Name})"
+                    f"(PartDesign::PolarPattern in {body.Name}){note}"
                 )
 
             # No Body — standalone doc.copyObject approach.
@@ -1158,10 +1205,13 @@ class PartDesignOpsHandler(BaseHandler):
                 err = self._check_feature_state(mirror, "Mirror")
                 if err:
                     return err
+                err, note = self._copies_change(mirror, [feature], 1, "Mirror")
+                if err:
+                    return err
 
                 return (
                     f"Created mirror: {mirror.Name} of {feature_name} across "
-                    f"{plane} plane (PartDesign::Mirrored in {body.Name})"
+                    f"{plane} plane (PartDesign::Mirrored in {body.Name}){note}"
                 )
 
             # No Body — standalone Part::Mirroring (unchanged).

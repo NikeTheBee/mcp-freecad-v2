@@ -32,10 +32,23 @@ class DraftOpsHandler(BaseHandler):
             clone = Draft.make_clone(obj)
             if x != 0 or y != 0 or z != 0:
                 clone.Placement.Base = FreeCAD.Vector(x, y, z)
+            # MCP FREECAD v2: the clone copies the shape in its source's container frame; made
+            # at the root it showed 100 mm off for a source in an App::Part moved +100 mm. It
+            # goes into the same App::Part, else gets the container's placement.
+            where = ""
+            try:
+                parent = obj.getParentGeoFeatureGroup()
+                if parent is not None and parent.isDerivedFrom("App::Part"):
+                    parent.addObject(clone)
+                    where = f" in {parent.Name} (x/y/z in its frame)"
+                elif parent is not None:
+                    clone.Placement = parent.getGlobalPlacement().multiply(clone.Placement)
+            except Exception:
+                pass
 
             self.recompute(doc)
 
-            return f"Created clone: {clone.Name} of {object_name}"
+            return f"Created clone: {clone.Name} of {object_name}{where}"
 
         except ImportError:
             return "Error: Draft module not available"

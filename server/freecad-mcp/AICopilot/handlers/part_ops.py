@@ -29,9 +29,11 @@ class PartOpsHandler(BaseHandler):
 
     @staticmethod
     def _plane_normal(obj, profile):
-        """Unit normal of the profile's plane: the sketch's own, else its face's."""
+        """Unit normal of the profile's plane in the document frame: the sketch's own (its
+        GLOBAL placement: a sketch in a turned container), else its face's."""
         try:
-            return obj.Placement.Rotation.multVec(FreeCAD.Vector(0, 0, 1))
+            pl = obj.getGlobalPlacement() if hasattr(obj, "getGlobalPlacement") else obj.Placement
+            return pl.Rotation.multVec(FreeCAD.Vector(0, 0, 1))
         except Exception:
             faces = list(getattr(profile, "Faces", []) or [])
             return faces[0].normalAt(0, 0) if faces else FreeCAD.Vector(0, 0, 1)
@@ -71,7 +73,10 @@ class PartOpsHandler(BaseHandler):
             if err:
                 return err
 
-            shape = sketch.Shape
+            # MCP FREECAD v2: the profile in the DOCUMENT frame; the result is made at the
+            # document root. sketch.Shape is in its container's frame: a sketch in an
+            # App::Part moved +100 mm was extruded at x 0..10.
+            shape = self._world_shape(sketch)
             profile = self._profile(shape)
             if profile is None:
                 return (f"Sketch {profile_sketch} has no valid wires or faces to extrude"
@@ -125,11 +130,14 @@ class PartOpsHandler(BaseHandler):
             if not 0 < abs(float(angle)) <= 360:
                 return f"Invalid angle {angle}: must be non-zero and at most 360 degrees"
 
-            shape = sketch.Shape
+            # MCP FREECAD v2: profile and axis point in the DOCUMENT frame (see extrude)
+            shape = self._world_shape(sketch)
             import Part
 
             pos = FreeCAD.Vector(0, 0, 0)
-            if hasattr(sketch, 'Placement'):
+            if hasattr(sketch, 'getGlobalPlacement'):
+                pos = sketch.getGlobalPlacement().Base
+            elif hasattr(sketch, 'Placement'):
                 pos = sketch.Placement.Base
 
             profile = self._profile(shape)
@@ -178,7 +186,10 @@ class PartOpsHandler(BaseHandler):
             else:
                 return f"Invalid plane '{plane}'. Valid options: XY, XZ, YZ"
 
-            mirrored_shape = obj.Shape.mirror(mirror_point, normal)
+            # MCP FREECAD v2: mirrored across the DOCUMENT's plane, result at the root. In
+            # its container's frame, a box at x 110..120 (App::Part moved +100) came out at
+            # x -20..-10 instead of -120..-110.
+            mirrored_shape = self._world_shape(obj).mirror(mirror_point, normal)
 
             if name:
                 mirrored_obj = doc.addObject("Part::Feature", name)
@@ -187,7 +198,8 @@ class PartOpsHandler(BaseHandler):
             mirrored_obj.Shape = mirrored_shape
 
             self.recompute(doc)
-            return f"Mirrored {object_name} across {plane} plane at (0,0,0)"
+            return (f"Mirrored {object_name} across the document's {plane} plane at (0,0,0): "
+                    f"{mirrored_obj.Name}")
 
         except Exception as e:
             return f"Error mirroring object: {e}"
@@ -414,7 +426,7 @@ class PartOpsHandler(BaseHandler):
                 _, obj, err = self.resolve_object(obj_name, doc, attr='Shape')
                 if err:
                     return err
-                shapes.append(obj.Shape)
+                shapes.append(self._world_shape(obj))     # MCP FREECAD v2: document frame
 
             compound_shape = Part.makeCompound(shapes)
             compound_obj = doc.addObject("Part::Feature", name)

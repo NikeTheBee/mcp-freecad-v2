@@ -258,8 +258,102 @@ def mesh_info():
     check("get_mesh_info gives the centre in the document frame", "Center: (105.00, 5.00, 5.00)" in r, r)
 
 
+def _world_bb(o):
+    """Bounding box of o where the document shows it (container placements applied)."""
+    s = o.Shape.copy()
+    p = o.getParentGeoFeatureGroup()
+    if p is not None:
+        s.Placement = p.getGlobalPlacement().multiply(s.Placement)
+    return s.BoundBox
+
+
+def moved_containers():
+    """Results of Part / Draft operations on parts inside an App::Part moved +100 mm in x land
+    where the document shows their sources (they landed 100 mm off, at the root)."""
+    from handlers.part_ops import PartOpsHandler
+    from handlers.draft_ops import DraftOpsHandler
+    h, d = PartOpsHandler(), DraftOpsHandler()
+
+    def cell(doc):
+        c = doc.addObject("App::Part", "Cell")
+        c.Placement.Base = V(100, 0, 0)
+        return c
+
+    doc = fresh("MovedExtrude")
+    c = cell(doc)
+    s = sketch(doc, "S", rect(0, 0, 10, 10))
+    c.addObject(s)
+    doc.recompute()
+    r = h.extrude({"profile_sketch": "S", "height": 5})
+    o = doc.getObject("S_extruded")
+    bb = _world_bb(o) if o else None
+    check("extrude of a sketch in a moved App::Part lands at x 100..110",
+          bb is not None and close(bb.XMin, 100) and close(bb.XMax, 110) and close(o.Shape.Volume, 500), f"{r} {bb}")
+
+    doc = fresh("MovedBodyExtrude")
+    c = cell(doc)
+    body = doc.addObject("PartDesign::Body", "Body")
+    c.addObject(body)
+    sk = body.newObject("Sketcher::SketchObject", "S")
+    for a, b in rect(0, 0, 10, 10):
+        sk.addGeometry(Part.LineSegment(V(*a), V(*b)))
+    doc.recompute()
+    r = h.extrude({"profile_sketch": "S", "height": 5})
+    o = doc.getObject("S_extruded")
+    bb = _world_bb(o) if o else None
+    check("extrude of a sketch in a Body inside a moved App::Part lands at x 100..110",
+          bb is not None and close(bb.XMin, 100) and close(bb.XMax, 110), f"{r} {bb}")
+
+    doc = fresh("MovedRevolve")
+    c = cell(doc)
+    s = sketch(doc, "S", rect(5, 0, 10, 4))
+    c.addObject(s)
+    doc.recompute()
+    r = h.revolve({"profile_sketch": "S", "axis": "y", "angle": 360})
+    o = doc.getObject("S_revolved")
+    bb = _world_bb(o) if o else None
+    check("revolve in a moved App::Part: ring centred on x = 100, 300 pi mm3",
+          bb is not None and close((bb.XMin + bb.XMax) / 2, 100) and close(o.Shape.Volume, 300 * math.pi),
+          f"{r} {bb}")
+
+    doc = fresh("MovedMirror")
+    c = cell(doc)
+    b = box(doc, "B", 10, 10, 10, 10, 0, 0)          # local x 10..20 -> document x 110..120
+    c.addObject(b)
+    doc.recompute()
+    r = h.mirror_object({"object_name": "B", "plane": "YZ"})
+    o = doc.getObject("B_mirrored")
+    bb = _world_bb(o) if o else None
+    check("mirror across the document's YZ plane of a box at x 110..120 gives x -120..-110",
+          bb is not None and close(bb.XMin, -120) and close(bb.XMax, -110), f"{r} {bb}")
+
+    doc = fresh("MovedCompound")
+    c = cell(doc)
+    b = box(doc, "B", 10, 10, 10)
+    c.addObject(b)
+    box(doc, "F", 10, 10, 10, 0, 50, 0)
+    doc.recompute()
+    r = h.compound({"objects": ["B", "F"], "name": "Comp"})
+    o = doc.getObject("Comp")
+    bb = _world_bb(o) if o else None
+    check("compound of a box in a moved App::Part and a free box spans x 0..110",
+          bb is not None and close(bb.XMin, 0) and close(bb.XMax, 110), f"{r} {bb}")
+
+    doc = fresh("MovedClone")
+    c = cell(doc)
+    b = box(doc, "B", 10, 10, 10)
+    c.addObject(b)
+    doc.recompute()
+    r = d.clone({"object_name": "B"})
+    o = doc.Objects[-1]
+    bb = _world_bb(o)
+    check("Draft clone of a box in a moved App::Part shows at x 100..110",
+          o.Name != "B" and close(bb.XMin, 100) and close(bb.XMax, 110), f"{r} {bb}")
+
+
 def main():
-    for part in (booleans, part_ops, transforms, draft, material, step_import, mesh_info):
+    for part in (booleans, part_ops, transforms, draft, material, step_import, mesh_info,
+                 moved_containers):
         try:
             part()
         except Exception:
