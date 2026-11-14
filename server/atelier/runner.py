@@ -282,7 +282,7 @@ def run(kind: str, params: Dict[str, Any], project_dir: Path, study: str = "defa
 
     def finish(proc) -> Dict[str, Any]:
         res = _read_output(out, _watch(proc, limit), work)
-        res.update(inputs_hash=ih, kind=kind, tool_env=meta["env"],
+        res.update(inputs_hash=ih, kind=kind, tool_env=meta["env"], work=str(work),
                    reference=validation(meta["adapter"]).get("summary", ""))
         res["files"] = [str(Path(f)) if Path(f).is_absolute() else str(work / f)
                         for f in res.get("files", [])]

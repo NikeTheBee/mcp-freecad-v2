@@ -609,6 +609,7 @@ def simulate(kind: str, target: str = "", params: dict | None = None, study: str
     study's; none -> UNKNOWN). >110 s -> job id. Same inputs -> cached."""
     params = dict(params or {})
     pdir = _fl.project_dir()
+    params, calibrated = _study.apply_calibration(pdir, study, params)
     if "limits" not in params:
         lim = _study.limits_for(pdir, study, kind)
         if lim:
@@ -627,7 +628,9 @@ def simulate(kind: str, target: str = "", params: dict | None = None, study: str
     except (ValueError, RuntimeError) as e:
         raise FreeCADError(str(e)) from None
     if res.get("verdict") in ("OK", "FAIL", "UNKNOWN") and not res.get("job"):
-        _study.record_result(pdir, study, kind, res, label)
+        _study.record_result(pdir, study, kind, res, label, params)
+    if calibrated:
+        res["summary"] = f"[calibrated {', '.join(calibrated)}] " + res.get("summary", "")
     return _brief(res)
 
 
@@ -641,7 +644,12 @@ def job(id: str, action: str = "status", study: str = "default", label: str = ""
     except ValueError as e:
         raise FreeCADError(str(e)) from None
     if res.get("verdict") in ("OK", "FAIL") and res.get("kind"):
-        _study.record_result(pdir, study, res["kind"], res, label)
+        try:
+            inp = json.loads((Path(res["work"]) / "input.json").read_text(encoding="utf-8"))
+        except (KeyError, OSError, ValueError):
+            inp = {}
+        _study.record_result(pdir, study, res["kind"], res, label,
+                             {k: v for k, v in inp.items() if k not in ("kind", "geometry")})
     if "verdict" not in res or res.get("state") in ("running", "cancelled"):
         return json.dumps(res)
     return _brief(res)
@@ -655,7 +663,8 @@ def study(action: str, name: str = "default", args: dict | None = None) -> str:
     acceptance {quantity: {min|max}} (real test), agreement (max model/test gap, 0.1)} | status
     | hypothesis {text, source} | iterate {change, params} | built {note}
     | measure {data {quantity: value}, source, predicted {quantity: "kind.value"}}
-    | calibrate {factors, note} | report. simulate(..., study=name) feeds it."""
+    | calibrate {auto {quantity, param e.g. "material.E"}} (re-simulates to fit the test) or
+    {factors, note} | report. simulate(..., study=name) feeds it and applies the calibration."""
     a = dict(args or {})
     pdir = _fl.project_dir()
     try:
@@ -677,6 +686,13 @@ def study(action: str, name: str = "default", args: dict | None = None) -> str:
                                                 (" in limits" if x["inside"] else " OUT of limits"))
                              for x in r["rows"])
             return f"{r['state'].upper()} {rows}\nnext: {r['next']}"
+        elif action == "calibrate" and a.get("auto"):
+            au = a["auto"]
+            r = _study.auto_calibrate(pdir, name, au.get("quantity", ""), au.get("param", ""),
+                                      a.get("note", ""))
+            return (f"CALIBRATED {r['param']} {r['from']:.6g} -> {r['to']:.6g} in {r['runs']} runs "
+                    f"(residual {r['residual']:+.2%}); next iteration opened: simulate again\n"
+                    + json.dumps(_study.status(pdir, name), ensure_ascii=False))
         elif action == "calibrate":
             _study.calibrate(pdir, name, a.get("factors") or {}, a.get("note", ""))
         elif action == "report":

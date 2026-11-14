@@ -20,6 +20,7 @@ the project folder: versioned with the project, readable by a human.
 from __future__ import annotations
 
 import json
+import math
 import re
 import time
 from pathlib import Path
@@ -99,16 +100,20 @@ def limits_for(project_dir: Path, name: str, kind: str) -> Dict[str, Any]:
 
 
 def record_result(project_dir: Path, name: str, kind: str, res: Dict[str, Any],
-                  label: str = "") -> None:
-    """Called by simulate: the latest result of each kind (or label) in this iteration."""
+                  label: str = "", params: Optional[Dict[str, Any]] = None) -> None:
+    """Called by simulate: the latest result of each kind (or label) in this iteration. The inputs
+    are kept so that `calibrate` can re-run the same case with one model parameter changed."""
     if not exists(project_dir, name):
         return
     s = load(project_dir, name)
     key = label or kind
+    geom = Path(res["work"]) / "geometry.step" if res.get("work") else None
     s["results"][key] = {"kind": kind, "verdict": res.get("verdict"), "summary": res.get("summary", "")[:400],
                          "values": {k: v for k, v in (res.get("values") or {}).items()
                                     if isinstance(v, (int, float, str))},
-                         "inputs_hash": res.get("inputs_hash"), "iteration": s["iteration"]}
+                         "inputs_hash": res.get("inputs_hash"), "iteration": s["iteration"],
+                         "params": params or {},
+                         "geometry": str(geom) if geom is not None and geom.is_file() else None}
     _advance(s)
     _save(project_dir, s, {"event": "simulate", "key": key, "verdict": res.get("verdict"),
                            "summary": res.get("summary", "")[:300]})
@@ -173,7 +178,8 @@ def measure(project_dir: Path, name: str, data: Dict[str, Any], source: str,
         all_agree &= agree
         rows.append({"quantity": q, "measured": v, "predicted": pred, "gap": gap,
                      "acceptance": acc, "inside": inside if acc else None, "agree": agree})
-        s["measurements"][q] = {"value": v, "source": source, "iteration": s["iteration"]}
+        s["measurements"][q] = {"value": v, "source": source, "iteration": s["iteration"],
+                                "link": (predicted or {}).get(q)}
     missing_acc = [q for q in s["acceptance"] if q not in data]
     if all_in and all_agree and not missing_acc:
         s["state"] = "validated"
@@ -218,6 +224,129 @@ def calibrate(project_dir: Path, name: str, factors: Dict[str, float], note: str
     return new_iteration(project_dir, name, f"calibration: {note}", params=factors)
 
 
+def _set_path(params: Dict[str, Any], path: str, value: float) -> Dict[str, Any]:
+    """Copy of params with params[a][b] = value for path "a.b" (a material given by its name
+    becomes {"base": name, b: value})."""
+    out = json.loads(json.dumps(params))
+    keys = path.split(".")
+    cur = out
+    for k in keys[:-1]:
+        nxt = cur.get(k)
+        if isinstance(nxt, str):
+            nxt = {"base": nxt}
+        elif not isinstance(nxt, dict):
+            nxt = {}
+        cur[k] = nxt
+        cur = nxt
+    cur[keys[-1]] = value
+    return out
+
+
+def _get_path(params: Dict[str, Any], path: str):
+    cur: Any = params
+    for k in path.split("."):
+        if not isinstance(cur, dict) or k not in cur:
+            return None
+        cur = cur[k]
+    return cur
+
+
+def _material_default(params: Dict[str, Any], path: str):
+    """material.E when the inputs name a material ("steel"): its tabulated value in fem_ccx."""
+    import ast
+    from . import ADAPTERS
+    keys = path.split(".")
+    if len(keys) != 2 or keys[0] != "material":
+        return None
+    mat = params.get("material")
+    name = mat if isinstance(mat, str) else (mat.get("base") if isinstance(mat, dict) else None)
+    if not name:
+        return None
+    tree = ast.parse((ADAPTERS / "fem_ccx.py").read_text(encoding="utf-8"))
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and getattr(node.targets[0], "id", "") == "MATERIALS":
+            for k, v in zip(node.value.keys, node.value.values):
+                if ast.literal_eval(k) == name and isinstance(v, ast.Call):
+                    for kw in v.keywords:
+                        if kw.arg == keys[1]:
+                            return ast.literal_eval(kw.value)
+    return None
+
+
+def apply_calibration(project_dir: Path, name: str, params: Dict[str, Any]) -> tuple:
+    """simulate(..., study=name) runs with the study's calibrated model parameters: (params, notes).
+    A dot path applies when its first key is among the params (e.g. material.E)."""
+    try:
+        cal = load(project_dir, name).get("calibration", {})
+    except ValueError:
+        return params, []
+    notes = []
+    for path, val in cal.items():
+        if isinstance(val, (int, float)) and path.split(".")[0] in params:
+            params = _set_path(params, path, float(val))
+            notes.append(f"{path}={val:.6g}")
+    return params, notes
+
+
+def auto_calibrate(project_dir: Path, name: str, quantity: str, param: str, note: str = "",
+                   max_runs: int = 8) -> Dict[str, Any]:
+    """Fit ONE model parameter so that the model reproduces a measured quantity: re-runs the linked
+    simulation (same geometry and inputs) with `param` varied (secant on a log scale) until the gap
+    is under a fifth of the agreement tolerance; then calibrate() opens the next iteration with it."""
+    from . import runner
+    s = load(project_dir, name)
+    if s["state"] != "calibrate":
+        raise ValueError(f"state is {s['state']}: calibrate follows a measurement that disagreed")
+    m = s["measurements"].get(quantity)
+    if not m:
+        raise ValueError(f"{quantity} was not measured")
+    key, _, val_key = (m.get("link") or "").partition(".")
+    r = s["results"].get(key) or next((x for x in s["results"].values() if x["kind"] == key), None)
+    if not r or not val_key:
+        raise ValueError(f"{quantity}: measure it with predicted {{{quantity!r}: 'kind.value'}} first")
+    if not r.get("params"):
+        raise ValueError("the linked result kept no inputs: simulate it again in this study")
+    base = r["params"]
+    p0 = _get_path(base, param)
+    if p0 is None:
+        p0 = _material_default(base, param)
+    if not isinstance(p0, (int, float)) or p0 <= 0:
+        raise ValueError(f"{param}: no positive current value in the linked inputs")
+    target = float(m["value"])
+    geom = Path(r["geometry"]) if r.get("geometry") else None
+    tol = s["agreement"] / 5
+
+    def model(p: float) -> float:
+        res = runner.run(r["kind"], _set_path(base, param, p), project_dir, study=name,
+                         geometry=geom, background=False)
+        v = (res.get("values") or {}).get(val_key)
+        if res.get("verdict") not in ("OK", "FAIL", "UNKNOWN") or not isinstance(v, (int, float)) or v <= 0:
+            raise ValueError(f"calibration run failed: {res.get('summary', '')[:200]}")
+        return float(v)
+
+    xs = [math.log(p0), math.log(p0) + 0.1]
+    fs = [math.log(float(r["values"][val_key]) / target)]
+    fs.append(math.log(model(math.exp(xs[1])) / target))
+    runs = 1
+    while abs(fs[-1]) > tol and runs < max_runs:
+        if fs[-1] == fs[-2]:
+            raise ValueError(f"{val_key} does not depend on {param}: wrong parameter")
+        x = xs[-1] - fs[-1] * (xs[-1] - xs[-2]) / (fs[-1] - fs[-2])
+        x = min(max(x, xs[-1] - 1.6), xs[-1] + 1.6)          # at most x5 per step
+        xs.append(x)
+        fs.append(math.log(model(math.exp(x)) / target))
+        runs += 1
+    p = math.exp(xs[-1])
+    gap = math.exp(fs[-1]) - 1
+    if abs(fs[-1]) > tol:
+        raise ValueError(f"no fit in {runs} runs ({param}={p:.6g} leaves {gap:+.1%}): the model "
+                         "form is probably wrong, not just this parameter")
+    calibrate(project_dir, name, {param: p},
+              (f"{param} {p0:.6g} -> {p:.6g} fitted in {runs} runs to {quantity}={target:.6g} "
+               f"(residual {gap:+.2%}). {note}").strip())
+    return {"param": param, "from": p0, "to": p, "runs": runs, "residual": gap}
+
+
 def next_action(s: Dict[str, Any]) -> str:
     st = s["state"]
     cur = {k: r for k, r in s["results"].items() if r.get("iteration") == s["iteration"]}
@@ -233,8 +362,8 @@ def next_action(s: Dict[str, Any]) -> str:
     return {"ready_to_build": "every criterion OK: make the fabrication files (export, drawing), "
                               "the human builds it, then action='built'",
             "built": "run the real test, then action='measure' with the values and their source",
-            "calibrate": "action='calibrate' with the corrected model parameters (or new_iteration "
-                         "to change the design), then simulate again",
+            "calibrate": "calibrate {auto: {quantity, param}} fits a model parameter to the test "
+                         "(or {factors, note}); or iterate {change} to change the design",
             "validated": "done: action='report' writes the justification file"}[st]
 
 

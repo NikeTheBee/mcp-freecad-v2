@@ -121,13 +121,20 @@ async def run(inst: Instance, project: str, home: str) -> None:
                 "data": {"tip_deflection_mm": uz * 1.15}, "source": "dial gauge, 1 kN dead weight",
                 "predicted": {"tip_deflection_mm": "fem_static.max_abs_uz_mm"}})
             assert txt.startswith("CALIBRATE") and "+15.0%" in txt and "calibrate" in txt, txt
+            # the loop fits the model itself: E re-simulated until the model gives the measurement
             txt = await call("study", action="calibrate", name="beam", args={
-                "factors": {"E_MPa": 210000 / 1.15}, "note": "E fitted to the measured deflection"})
-            st = json.loads(txt)
+                "auto": {"quantity": "tip_deflection_mm", "param": "material.E"},
+                "note": "printed/annealed part softer than handbook steel?"})
+            assert txt.startswith("CALIBRATED material.E 210000 -> "), txt
+            e_fit = float(txt.split(" -> ")[1].split()[0])
+            assert abs(e_fit - 210000 / 1.15) / (210000 / 1.15) < 0.02, e_fit   # deflection ~ 1/E
+            st = json.loads(txt.split("\n", 1)[1])
             assert st["iteration"] == 3 and st["state"] == "design", st
-            calibrated = dict(load, material={"base": "steel", "E": 210000 / 1.15})
-            txt = await call("simulate", kind="fem_static", target="Body", params=calibrated, study="beam")
+            # the same inputs as before: the study applies the calibrated E by itself
+            txt = await call("simulate", kind="fem_static", target="Body", params=load, study="beam")
+            assert "[calibrated material.E=" in txt, txt
             uz2 = _val(txt, "max_abs_uz_mm")
+            assert abs(uz2 - uz * 1.15) / (uz * 1.15) < 0.02, (uz2, uz)
             await call("study", action="built", name="beam", args={"note": "same part"})
             txt = await call("study", action="measure", name="beam", args={
                 "data": {"tip_deflection_mm": uz * 1.15}, "source": "dial gauge, 1 kN dead weight",
