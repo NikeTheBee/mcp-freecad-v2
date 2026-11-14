@@ -116,10 +116,20 @@ async def run(inst: Instance, project: str, home: str) -> None:
             assert json.loads(await call("study", action="status", name="beam"))["state"] == "ready_to_build"
             await call("study", action="built", name="beam", args={"note": "machined, S235"})
 
-            # real test 15 % softer than the model -> calibrate
-            txt = await call("study", action="measure", name="beam", args={
-                "data": {"tip_deflection_mm": uz * 1.15}, "source": "dial gauge, 1 kN dead weight",
-                "predicted": {"tip_deflection_mm": "fem_static.max_abs_uz_mm"}})
+            # the real test: procedure + sheet from the study (prediction, limits, safety)
+            txt = await call("study", action="test_plan", name="beam", args={
+                "predicted": {"tip_deflection_mm": "fem_static.max_abs_uz_mm"},
+                "instruments": {"tip_deflection_mm": "dial gauge 0.01 mm"}})
+            plan = Path(txt.split("test plan written: ")[1].split(" (+")[0])
+            body = plan.read_text(encoding="utf-8")
+            assert "dead weights" in body and "never runs the test" in body and "1.5" in body, body
+            sheet = plan.parent / "measurements.csv"
+            rows = sheet.read_text(encoding="utf-8").splitlines()
+            assert rows[1].startswith("tip_deflection_mm,0.95"), rows
+            # the human fills it in: 15 % softer than the model
+            rows[1] = rows[1].replace(",,dial gauge", f",{uz * 1.15:.6g},dial gauge")
+            sheet.write_text("\n".join(rows) + "\n", encoding="utf-8")
+            txt = await call("study", action="measure", name="beam", args={"csv": "measurements.csv"})
             assert txt.startswith("CALIBRATE") and "+15.0%" in txt and "calibrate" in txt, txt
             # the loop fits the model itself: E re-simulated until the model gives the measurement
             txt = await call("study", action="calibrate", name="beam", args={

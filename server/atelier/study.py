@@ -166,6 +166,7 @@ def measure(project_dir: Path, name: str, data: Dict[str, Any], source: str,
     s = load(project_dir, name)
     if s["state"] not in ("built", "calibrate", "validated"):
         raise ValueError(f"state is {s['state']}: build the part (mark_built) before measuring")
+    predicted = {**s.get("links", {}), **(predicted or {})}   # links set by test_plan
     rows, all_in, all_agree = [], True, True
     for q, v in data.items():
         v = float(v)
@@ -345,6 +346,95 @@ def auto_calibrate(project_dir: Path, name: str, quantity: str, param: str, note
               (f"{param} {p0:.6g} -> {p:.6g} fitted in {runs} runs to {quantity}={target:.6g} "
                f"(residual {gap:+.2%}). {note}").strip())
     return {"param": param, "from": p0, "to": p, "runs": runs, "residual": gap}
+
+
+_SAFETY = {   # kinds or input keys → precautions for the REAL test (FEUILLE_DE_ROUTE §10.2)
+    "pressure": "Pressure test: hydrostatic (water), never pneumatic; shield and distance; "
+                "relief valve set below the test pressure; nobody in line with closures.",
+    "rotation": "Rotating parts: guard in place, hands off, stop at the rated speed first.",
+    "marine": "Underwater: SELV only, IP68 connectors, insulation monitor or RCD on any shore "
+              "cable; pressure test beyond the maximum depth BEFORE going in the water.",
+    "elec": "Electrical: SELV (<= 60 V DC) unless a qualified person is present; fuse near the "
+            "battery; Li-ion with a BMS; check polarity before the first power-up.",
+    "flight": "Flight/launch: in a permitted area, with the local rules (club, authority), range "
+              "clear, the pilot or range officer in charge — never driven by the AI.",
+    "load": "Mechanical loading: dead weights or a calibrated actuator, catch the part if it "
+            "fails, eye protection, increase the load in steps.",
+}
+
+
+def test_plan(project_dir: Path, name: str, predicted: Optional[Dict[str, str]] = None,
+              instruments: Optional[Dict[str, str]] = None) -> Path:
+    """The real test as a procedure (test_plan.md) and a sheet to fill in (measurements.csv):
+    one row per acceptance quantity, with the model's prediction and the limits; safety notes
+    from what the study simulated. `measure {csv: "measurements.csv"}` reads it back."""
+    s = load(project_dir, name)
+    if s["state"] not in ("ready_to_build", "built", "calibrate", "validated"):
+        raise ValueError(f"state is {s['state']}: plan the real test once every criterion is OK")
+    if not s["acceptance"]:
+        raise ValueError("no real-test acceptance in this study: start it with acceptance {...}")
+    links = dict(s.get("links", {}))
+    links.update(predicted or {})
+    s["links"] = links
+    rows = []
+    for q, acc in s["acceptance"].items():
+        pred = _prediction(s, q, links.get(q))
+        rows.append((q, pred, acc.get("min", ""), acc.get("max", ""), (instruments or {}).get(q, "")))
+    keys = {r["kind"] for r in s["results"].values()}
+    text = json.dumps([r.get("params", {}) for r in s["results"].values()])
+    hazards = ["load"]
+    if '"pressure"' in text or "pressure_hull" in keys:
+        hazards.append("pressure")
+    if '"rotation"' in text or "thruster" in keys:
+        hazards.append("rotation")
+    if keys & {"hydrostatics", "added_mass", "thruster", "pressure_hull", "tether_static"}:
+        hazards.append("marine")
+    if keys & {"spice", "battery", "wire_sizing", "power_budget", "magnet"}:
+        hazards.append("elec")
+    if keys & {"rocket_flight", "flight_sim"}:
+        hazards.append("flight")
+    d = _dir(project_dir, name)
+    md = [f"# Real test — study {name} (iteration {s['iteration']})", "", f"Goal: {s['goal']}", "",
+          "Performed by a person. The AI prepared this sheet; it never runs the test or drives the rig.",
+          "", "## Safety", *[f"- {_SAFETY[h]}" for h in hazards], "",
+          "## Hypotheses to check on the real part",
+          *[f"- {h['text']} (source: {h['source']})" for h in s["hypotheses"]], "",
+          "## Measurements", "", "| quantity | model predicts | accept min | accept max | instrument |",
+          "|---|---|---|---|---|"]
+    md += [f"| {q} | {'' if p is None else f'{p:.5g}'} | {lo} | {hi} | {ins or 'to fill'} |"
+           for q, p, lo, hi, ins in rows]
+    md += ["", f"Model/test agreement required: within {s['agreement']:.0%}.",
+           "Fill measurements.csv (column `measured`, and `instrument`), then "
+           "study measure {csv: \"measurements.csv\"}."]
+    (d / "test_plan.md").write_text("\n".join(md) + "\n", encoding="utf-8")
+    import csv as _csv
+    with open(d / "measurements.csv", "w", newline="", encoding="utf-8") as f:
+        w = _csv.writer(f)
+        w.writerow(["quantity", "predicted", "accept_min", "accept_max", "measured", "instrument", "notes"])
+        for q, p, lo, hi, ins in rows:
+            w.writerow([q, "" if p is None else f"{p:.6g}", lo, hi, "", ins, ""])
+    _save(project_dir, s, {"event": "test_plan", "quantities": [r[0] for r in rows], "hazards": hazards})
+    return d / "test_plan.md"
+
+
+def read_sheet(project_dir: Path, name: str, csv_name: str) -> tuple:
+    """(data, source) from a filled measurements.csv of the study folder."""
+    import csv as _csv
+    d = _dir(project_dir, name)
+    p = (d / csv_name).resolve()
+    if not p.is_relative_to(d.resolve()) or not p.is_file():
+        raise ValueError("csv: a file of this study's folder (e.g. measurements.csv)")
+    data, src = {}, []
+    with open(p, newline="", encoding="utf-8") as f:
+        for row in _csv.DictReader(f):
+            v = (row.get("measured") or "").strip()
+            if v:
+                data[row["quantity"]] = float(v)
+                if (row.get("instrument") or "").strip():
+                    src.append(f"{row['quantity']}: {row['instrument'].strip()}")
+    if not data:
+        raise ValueError(f"{csv_name}: no value in the `measured` column yet")
+    return data, "; ".join(src) or f"sheet {csv_name}"
 
 
 def next_action(s: Dict[str, Any]) -> str:

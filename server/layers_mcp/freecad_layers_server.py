@@ -662,7 +662,8 @@ def study(action: str, name: str = "default", args: dict | None = None) -> str:
     start {goal, criteria {kind: {value: {min|max}}}, hypotheses [text|{text,source}], params,
     acceptance {quantity: {min|max}} (real test), agreement (max model/test gap, 0.1)} | status
     | hypothesis {text, source} | iterate {change, params} | built {note}
-    | measure {data {quantity: value}, source, predicted {quantity: "kind.value"}}
+    | test_plan {predicted {quantity: "kind.value"}, instruments} (procedure + CSV sheet)
+    | measure {data {quantity: value}, source, predicted} or {csv: "measurements.csv"}
     | calibrate {auto {quantity, param e.g. "material.E"}} (re-simulates to fit the test) or
     {factors, note} | report. simulate(..., study=name) feeds it and applies the calibration."""
     a = dict(args or {})
@@ -678,8 +679,14 @@ def study(action: str, name: str = "default", args: dict | None = None) -> str:
             _study.new_iteration(pdir, name, a.get("change", ""), a.get("params"))
         elif action == "built":
             _study.mark_built(pdir, name, a.get("note", ""))
+        elif action == "test_plan":
+            p = _study.test_plan(pdir, name, a.get("predicted"), a.get("instruments"))
+            return f"test plan written: {p} (+ measurements.csv to fill)"
         elif action == "measure":
-            r = _study.measure(pdir, name, a.get("data") or {}, a.get("source", ""), a.get("predicted"))
+            data, source = a.get("data") or {}, a.get("source", "")
+            if a.get("csv"):
+                data, source = _study.read_sheet(pdir, name, a["csv"])
+            r = _study.measure(pdir, name, data, source, a.get("predicted"))
             rows = "; ".join(f"{x['quantity']}: measured {x['measured']:.5g} vs model "
                              + (f"{x['predicted']:.5g} ({x['gap']:+.1%})" if x["gap"] is not None
                                 else "none") + ("" if x["inside"] is None else
@@ -698,7 +705,7 @@ def study(action: str, name: str = "default", args: dict | None = None) -> str:
         elif action == "report":
             return f"report written: {_study.report(pdir, name)}"
         elif action != "status":
-            raise ValueError("action: start|status|hypothesis|iterate|built|measure|calibrate|report")
+            raise ValueError("action: start|status|hypothesis|iterate|built|test_plan|measure|calibrate|report")
         return json.dumps(_study.status(pdir, name), ensure_ascii=False)
     except ValueError as e:
         raise FreeCADError(str(e)) from None
