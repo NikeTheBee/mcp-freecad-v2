@@ -96,7 +96,7 @@ import FreeCAD
 import freecad_layers as _fl
 _fl._mcpfc_stamp = _stamp
 from freecad_layers import (state, verify, checkpoint, recovery, spec, analysis, bom, drawing, gate,
-                            fem, render, projects, recipes, export)
+                            fem, render, projects, recipes, export, stdparts)
 """
 # FreeCAD's working folder follows the selected project: a relative file name
 # (an STL export, a saved copy) lands in the project the user is working on
@@ -338,13 +338,9 @@ _out = export.summary(export.export(_a['target'], _a['path'] or None, fmt=_a['fm
 def fem_static(target: str, fixed: list[str], loads: list[dict], material: str | dict = "steel",
                mesh_size_mm: float | None = None, min_safety_factor: float = 2.0,
                max_displacement_mm: float | None = None, refine: bool = False) -> str:
-    """Linear static stress analysis (CalculiX): max displacement, von Mises stress, safety factor.
-
-    fixed: faces held in place, "FaceN" or a bounding-box side "xmin|xmax|ymin|ymax|zmin|zmax".
-    loads: [{"faces": "xmax", "force_N": 100, "direction": [0, 0, -1]}] (total force per entry).
-    material: steel|stainless|aluminium|pla|petg|abs or {"E": MPa, "nu", "rho": kg/m3, "yield": MPa}.
-    refine=True re-solves on a finer mesh and reports convergence. Not for buckling/plasticity/contact.
-    """
+    """Quick linear static check inside FreeCAD: displacement, von Mises, safety factor.
+    fixed: "FaceN" or xmin..zmax; loads [{"faces", "force_N", "direction"}]; material name or
+    {E, nu, rho, yield}. refine: convergence. Pressure, gravity, modes, heat: simulate()."""
     return _run("""
 _r = fem.static(_a['target'], _a['fixed'], _a['loads'], material=_a['material'],
                 mesh_size_mm=_a['mesh'], min_safety_factor=_a['sf'],
@@ -439,7 +435,7 @@ def bill_of_materials(csv_path: str = "", overwrite: bool = False) -> str:
     return _run("""
 _s = bom.bom_for(FreeCAD.ActiveDocument, _a['csv'] or None, overwrite=_a['ow'])
 _out = {"verdict": bom.verdict(_s),
-        "rows": [{k: r[k] for k in ('item', 'designation', 'qty', 'bbox_mm')} for r in _s['rows']]}
+        "rows": [{k: r[k] for k in ('item', 'designation', 'qty', 'bbox_mm', 'source')} for r in _s['rows']]}
 """, csv=csv_path, ow=overwrite)
 
 
@@ -535,6 +531,25 @@ if _why:
 else:
     _out = _v
 """, body=body, diameter=diameter, x=x, y=y, through=through, depth=depth, name=name)
+
+
+@mcp.tool()
+@_safe
+def std_part(kind: str, size: str, length: float = 0.0, at: list[float] | None = None,
+             axis: str = "z", name: str = "") -> str:
+    """Bought part (ISO nominal, no thread, 'buy' in the BOM): iso4762|iso4017 screw (M2-M20,
+    length), iso4032 nut, iso7089 washer, bearing (608...). Face at `at`, shank to -axis."""
+    return _run("""
+if FreeCAD.ActiveDocument is None:
+    raise ValueError('no active document')
+_r = stdparts.make(FreeCAD.ActiveDocument, _a['kind'], _a['size'], _a['length'], _a['name'],
+                   _a['at'], _a['axis'])
+_cl = ''
+if _a['kind'].lower() in ('iso4762', 'iso4017', 'shcs', 'socket_head', 'hex_screw', 'nut', 'iso4032', 'washer', 'iso7089'):
+    _cl = f" | ISO 273 clearance hole D{stdparts.clearance(_a['size'], 'medium'):g} (fine D{stdparts.clearance(_a['size'], 'fine'):g})"
+_out = (f"{'OK' if _r['valid'] else 'FAIL'} {_r['name']}: {_r['designation']}, "
+        f"{_r['mass_g_steel']:g} g if steel" + _cl)
+""", kind=kind, size=size, length=length, at=at or [0, 0, 0], axis=axis, name=name)
 
 
 # ------------------------------------------------------------------ workshop (simulations, studies)
@@ -719,7 +734,7 @@ def simulate(kind: str, target: str = "", params: dict | None = None, study: str
 @mcp.tool()
 @_safe
 def job(id: str, action: str = "status", study: str = "default", label: str = "") -> str:
-    """A long simulation: action status (result when done) | cancel."""
+    """Long simulation: action status (result when done) | cancel."""
     pdir = _fl.project_dir()
     try:
         res = _runner.job(pdir, id, action)
@@ -798,8 +813,7 @@ def study(action: str, name: str = "default", args: dict | None = None) -> str:
 @mcp.tool()
 @_safe
 def tools_status(refresh: bool = False) -> str:
-    """Installed environments/tools and each simulation kind's reference-case state.
-    refresh=True re-runs every reference case (minutes)."""
+    """Installed envs/tools and each kind's reference-case state; refresh=True re-runs them."""
     try:
         st = _runner.status(refresh)
     except RuntimeError as e:

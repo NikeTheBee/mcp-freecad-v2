@@ -330,9 +330,12 @@ def collect(doc, include_hidden: bool = True) -> List[Dict[str, Any]]:
     by_stem: Dict[str, List[int]] = {}
     for inst, part in _parts(doc, include_hidden):
         shp = _solid_shape(part)
-        stem = _label_stem(part.Label)
+        # a standard part (stdparts) is named by its designation and bought, not made
+        stem = getattr(part, "StdPart", "") or _label_stem(part.Label)
+        source = getattr(part, "Source", "") or "make"
         sig = _signature(shp)
-        same = [i for i in by_stem.get(stem, ()) if _same_signature(groups[i]["_sig"], sig)]
+        same = [i for i in by_stem.get(stem, ()) if _same_signature(groups[i]["_sig"], sig)
+                and groups[i]["source"] == source]
         # same measures can still be a left and a right hand: those are two parts
         g = None
         for i in same:
@@ -347,7 +350,8 @@ def collect(doc, include_hidden: bool = True) -> List[Dict[str, Any]]:
             groups.append({"designation": stem + (" (mirrored)" if same else ""),
                            "volume_mm3": round(float(shp.Volume), 2),
                            "bbox_mm": _own_size(shp),
-                           "qty": 1, "refs": [inst.Name], "_sig": sig, "_shape": shp})
+                           "qty": 1, "refs": [inst.Name], "source": source,
+                           "_sig": sig, "_shape": shp})
         else:
             g["qty"] += 1
             g["refs"].append(inst.Name)
@@ -370,11 +374,11 @@ def export_csv(rows: List[Dict[str, Any]], path: str,
     out = safe_out_path(path, {".csv"}, overwrite=overwrite)
     with out.open("w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
-        w.writerow(["Item", "Designation", "Qty", "Volume_mm3", "Size_mm", "Refs"])
+        w.writerow(["Item", "Designation", "Qty", "Volume_mm3", "Size_mm", "Refs", "Source"])
         for r in rows:
             w.writerow([r["item"], _csv_safe(r["designation"]), r["qty"],
                         r["volume_mm3"], "x".join(str(d) for d in r["bbox_mm"]),
-                        _csv_safe(";".join(r["refs"]))])
+                        _csv_safe(";".join(r["refs"])), r.get("source", "make")])
     return str(out)
 
 
@@ -390,6 +394,7 @@ def bom_for(doc, csv_path: Optional[str] = None,
 
 def verdict(summary: Dict[str, Any]) -> str:
     """Token-minimal one-liner."""
+    buy = sum(r["qty"] for r in summary["rows"] if r.get("source") == "buy")
     return (f"BOM: {summary['lines']} distinct part(s), "
-            f"{summary['total_parts']} total"
+            f"{summary['total_parts']} total" + (f" ({buy} purchased)" if buy else "")
             + (f" -> {summary['csv']}" if summary.get("csv") else ""))

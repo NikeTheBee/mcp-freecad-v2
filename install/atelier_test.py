@@ -200,6 +200,16 @@ async def run(inst: Instance, project: str, home: str) -> None:
             st = json.loads(await call("study", action="status", name="lightest"))
             assert st["iteration"] == 2 and st["state"] == "ready_to_build", st
 
+            # purchased parts beside the made one: named by their standard, 'buy' in the BOM
+            for x in (20, 60):
+                txt = await call("std_part", kind="iso4762", size="M6", length=20, at=[x, 10, 0], axis="-z")
+                assert txt.startswith("OK ") and "ISO 4762 M6x20" in txt and "clearance hole D6.6" in txt, txt
+            txt = await call("bill_of_materials")
+            rows = json.loads(txt)["rows"]
+            scr = [r for r in rows if r["designation"] == "ISO 4762 M6x20"]
+            assert scr and scr[0]["qty"] == 2 and scr[0]["source"] == "buy", rows
+            assert any(r["source"] == "make" for r in rows), rows
+
             # project files handed to an adapter: copied into the study, their BYTES in the cache key
             logs = Path(project) / "projects" / "Beam" / "logs"
             logs.mkdir(parents=True, exist_ok=True)
