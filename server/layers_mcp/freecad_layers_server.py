@@ -96,7 +96,7 @@ import FreeCAD
 import freecad_layers as _fl
 _fl._mcpfc_stamp = _stamp
 from freecad_layers import (state, verify, checkpoint, recovery, spec, analysis, bom, drawing, gate,
-                            fem, render, projects, recipes, export, stdparts, builddoc)
+                            fem, render, projects, recipes, export, stdparts, builddoc, dfm)
 """
 # FreeCAD's working folder follows the selected project: a relative file name
 # (an STL export, a saved copy) lands in the project the user is working on
@@ -292,9 +292,14 @@ def check(target: str, expect_solid: bool = True) -> str:
 
 @mcp.tool()
 @_safe
-def analyze(target: str) -> str:
-    """Measured facts: verdict, holes (diameter, position, through/blind), min wall estimate."""
-    return _run("_out = analysis.report(_a['target'])", _timeout=_ANALYSIS_TIMEOUT, target=target)
+def analyze(target: str, dfm: dict | None = None) -> str:
+    """Measured facts: verdict, holes, min wall. dfm {process: cnc|mold, axis, tool_d, draft_deg}
+    adds manufacturability (sharp inside corners, radii under the tool, set-ups, draft)."""
+    return _run("""
+_out = analysis.report(_a['target'])
+if _a['dfm']:
+    _out = str(_out) + ' | ' + dfm.summary(dfm.check(_a['target'], **_a['dfm']))
+""", _timeout=_ANALYSIS_TIMEOUT, target=target, dfm=dfm or {})
 
 
 @mcp.tool()

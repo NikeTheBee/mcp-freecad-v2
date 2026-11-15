@@ -209,6 +209,11 @@ async def run(inst: Instance, project: str, home: str) -> None:
             scr = [r for r in rows if r["designation"] == "ISO 4762 M6x20"]
             assert scr and scr[0]["qty"] == 2 and scr[0]["source"] == "buy", rows
             assert any(r["source"] == "make" for r in rows), rows
+            # manufacturability of the beam: a plain bar mills fine; no draft for a mould
+            txt = await call("analyze", target="Body", dfm={"process": "cnc", "tool_d": 6})
+            assert "OK DFM cnc" in txt, txt
+            txt = await call("analyze", target="Body", dfm={"process": "mold", "axis": "z"})
+            assert "FAIL DFM mold" in txt and "4 side face(s)" in txt, txt
             # assembly instructions: a made part, then the screws; a label from a document is data
             inst.call("execute_python_sync", {"code": (
                 "import FreeCAD\nFreeCAD.getDocument('Opt').getObject('Body').Label = "
