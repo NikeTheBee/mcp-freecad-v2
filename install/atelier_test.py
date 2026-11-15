@@ -209,6 +209,22 @@ async def run(inst: Instance, project: str, home: str) -> None:
             scr = [r for r in rows if r["designation"] == "ISO 4762 M6x20"]
             assert scr and scr[0]["qty"] == 2 and scr[0]["source"] == "buy", rows
             assert any(r["source"] == "make" for r in rows), rows
+            # assembly instructions: a made part, then the screws; a label from a document is data
+            inst.call("execute_python_sync", {"code": (
+                "import FreeCAD\nFreeCAD.getDocument('Opt').getObject('Body').Label = "
+                "'Beam<script>alert(1)</script>'\n'ok'")})
+            txt = await call("bill_of_materials", instructions="auto", steps=[
+                {"parts": ["Body"], "note": "clamp the beam root in the vice"},
+                {"parts": ["ISO_4762_M6x20", "ISO_4762_M6x001"], "note": "screws from below",
+                 "torque_Nm": 10}])
+            sheet = Path(txt.split('-> ')[-1].split('"')[0].strip())
+            page = sheet.read_text(encoding="utf-8")
+            assert "2 steps" in txt and page.count("data:image/png;base64,") == 2, txt
+            assert "<script>" not in page and "Beam&lt;script&gt;" in page, page[:600]
+            assert "10 N&middot;m (given by the user)" in page and "ISO 4762 M6x20" in page
+            txt = await call("bill_of_materials", instructions="auto")    # default steps
+            assert "2 steps" in txt and "maker's value" in Path(
+                txt.split('-> ')[-1].split('"')[0].strip()).read_text(encoding="utf-8"), txt
 
             # project files handed to an adapter: copied into the study, their BYTES in the cache key
             logs = Path(project) / "projects" / "Beam" / "logs"

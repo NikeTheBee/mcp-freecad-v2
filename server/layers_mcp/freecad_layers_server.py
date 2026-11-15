@@ -96,7 +96,7 @@ import FreeCAD
 import freecad_layers as _fl
 _fl._mcpfc_stamp = _stamp
 from freecad_layers import (state, verify, checkpoint, recovery, spec, analysis, bom, drawing, gate,
-                            fem, render, projects, recipes, export, stdparts)
+                            fem, render, projects, recipes, export, stdparts, builddoc)
 """
 # FreeCAD's working folder follows the selected project: a relative file name
 # (an STL export, a saved copy) lands in the project the user is working on
@@ -429,14 +429,20 @@ else:
 
 @mcp.tool()
 @_safe
-def bill_of_materials(csv_path: str = "", overwrite: bool = False) -> str:
-    """Parts list of the active document (Body = 1 part; links, Draft arrays = instances;
-    a linked sub-assembly counts each part inside); optional CSV."""
+def bill_of_materials(csv_path: str = "", overwrite: bool = False, instructions: str = "",
+                      steps: list | None = None) -> str:
+    """Parts list of the active document (made / bought; links and arrays counted), optional CSV.
+    instructions: an .html path ("auto" = builddoc/) for the assembly sheet, one picture per step;
+    steps [{parts, note, torque_Nm}] (default: each made part, then each standard part)."""
     return _run("""
 _s = bom.bom_for(FreeCAD.ActiveDocument, _a['csv'] or None, overwrite=_a['ow'])
 _out = {"verdict": bom.verdict(_s),
         "rows": [{k: r[k] for k in ('item', 'designation', 'qty', 'bbox_mm', 'source')} for r in _s['rows']]}
-""", csv=csv_path, ow=overwrite)
+if _a['ins']:
+    _b = builddoc.build(FreeCAD.ActiveDocument, _a['steps'], None if _a['ins'] == 'auto' else _a['ins'],
+                        overwrite=_a['ow'] or _a['ins'] == 'auto')
+    _out["instructions"] = f"{_b['steps']} steps -> {_b['path']}"
+""", _timeout=_ANALYSIS_TIMEOUT, csv=csv_path, ow=overwrite, ins=instructions, steps=steps)
 
 
 @mcp.tool()

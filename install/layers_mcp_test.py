@@ -37,8 +37,9 @@ async def run(inst: Instance, project: str, out: str) -> None:
             size = len(json.dumps([t.model_dump(exclude_none=True) for t in tools]))
             print(f"{len(tools)} tools, schema {size} chars (~{size // 4} tokens)")
             # 18 tools fit in 16000; the 4 workshop tools (simulate, job, study, tools_status)
-            # replace dozens of per-tool servers for ~800 tokens; std_part ~150 more
-            assert size < 17500, size
+            # replace dozens of per-tool servers for ~800 tokens; std_part and the assembly
+            # instructions of bill_of_materials ~500 more (23 tools, ~4500 tokens)
+            assert size < 18000, size
 
             async def call(_tool, **kw):
                 txt = _t(await s.call_tool(_tool, kw))
