@@ -651,7 +651,9 @@ _out = {'old': _old, 'ok': _ok, 'verdict': verify.verdict(_o)[:200] if _o is not
 
 def _optimize(pdir: Path, study_name: str, a: dict) -> str:
     """study optimize: vary spreadsheet cells, re-check, re-simulate, keep the best design."""
+    import importlib
     from atelier import optimize as _opt
+    _opt = importlib.reload(_opt)          # an update applies without restarting the client
     kind, target = a.get("kind", ""), a.get("target", "")
     vars_ = a.get("vars") or []
     if not kind or not vars_:

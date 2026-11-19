@@ -26,6 +26,8 @@ from . import bom, project_dir, render, safe_out_path
 def _auto_steps(doc) -> List[Dict[str, Any]]:
     made, bought = [], {}
     for inst, part in bom._parts(doc, False):
+        if (getattr(part, "Source", "") or "make") == "ref":
+            continue
         if (getattr(part, "Source", "") or "make") == "buy":
             bought.setdefault(getattr(part, "StdPart", "") or part.Label, []).append(inst.Name)
         else:

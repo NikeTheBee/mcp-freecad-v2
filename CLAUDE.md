@@ -3,7 +3,9 @@
 AI-piloted FreeCAD (natural language → parametric CAD/robotics), via MCP, on Windows.
 
 ## Stack
-- FreeCAD 1.1.1 at `A:\FreeCAD\bin\` (`freecad.exe` GUI, `freecadcmd.exe` headless, bundled Python 3.11).
+- FreeCAD 1.1.4 portable, installed by `install\install.ps1` under `<workshop home>\tools\FreeCAD-1.1.4\`
+  (`bin\freecad.exe` GUI, `bin\freecadcmd.exe` headless, bundled Python 3.11). The previous 1.1.1 at
+  `A:\FreeCAD\` (security advisories fixed in 1.1.2-1.1.4) is kept as a fallback, not used.
 - MCP base: `blwfish/freecad-mcp` v8.3.0, **vendored and modified** in `/server/freecad-mcp`
   (git subtree, stays LGPL). Edit it like our own code, log every change in
   `server/freecad-mcp/CHANGES-NikeTheBee.md`, and pull upstream with
@@ -15,11 +17,13 @@ AI-piloted FreeCAD (natural language → parametric CAD/robotics), via MCP, on W
     (mcp 2.x, psutil — nothing in the system Python). See `claude mcp get freecad`.
   - FreeCAD-side addon `AICopilot`: headless server started from `/server/freecad-mcp`; a copy is
     installed in `%APPDATA%\FreeCAD\v1-1\Mod` for GUI use.
-  - `FREECAD_MCP_FREECAD_BIN` (in the server's launch env) points at `A:\FreeCAD\bin\freecadcmd.exe`.
+  - `FREECAD_MCP_FREECAD_BIN` (in the server's launch env) points at the workshop's FreeCAD 1.1.4
+    `freecadcmd.exe`; the replaced install is recorded in `~/.freecad-mcp/previous_freecad.json` and hands
+    the port over (`SECURITY.md`).
 
 ## Key commands
-- Start FreeCAD GUI: `A:\FreeCAD\bin\freecad.exe`
-- Run a script headless: `A:\FreeCAD\bin\freecadcmd.exe <script.py>`
+- Start FreeCAD GUI: `<workshop home>\tools\FreeCAD-1.1.4\bin\freecad.exe`
+- Run a script headless: `<workshop home>\tools\FreeCAD-1.1.4\bin\freecadcmd.exe <script.py>`
 - Check MCP server health: `claude mcp list` / `claude mcp get freecad`
 
 ## FreeCAD startup is automatic
@@ -81,7 +85,7 @@ reliability tools — prefer them over `execute_python`).
 
 ## Pointers
 - Full spec: `@docs/CAHIER_DES_CHARGES.md` · Compatibility audit: `@docs/COMPATIBILITY.md` · Security: `@SECURITY.md`
-- Domain knowledge: `/skills/<domain>/SKILL.md` — load on demand. Available: `skill-verify` (reliability layers & tools), `skill-partdesign` (sketch/Pad/Pocket/holes + spreadsheet variants), `skill-assembly` (multi-part assemblies, fits), `skill-print3d` (STL/3MF export), `skill-exchange` (STEP/IGES), `skill-techdraw` (2D plans -> DXF), `skill-bom` (nomenclature), `skill-fem` (CalculiX setup), `skill-gear` (involute spur gears), `skill-kinematics` (linkage motion laws), `skill-rocket` (Rocketry WB), `skill-drone` (AirPlaneDesign WB + analytical aero + external CFD), `skill-robotics-ros` (CROSS URDF export + ros2_control/Gazebo), `skill-cam` (DISABLED — never emit machine G-code; read it if CNC is requested). Whole project from a natural-language request: `skill-atelier` (the pipeline: requirements -> model -> simulate -> optimize -> fabrication files -> real test -> calibrate). Workshop (simulations outside FreeCAD): `skill-sim` (the 4 tools, core FEM/thermal/fatigue/fields kinds, the build-test-calibrate loop), `skill-marine`, `skill-elec`, `skill-aero-sim`, `skill-dynamics`.
+- Domain knowledge: `/skills/<domain>/SKILL.md` — load on demand. Available: `skill-verify` (reliability layers & tools), `skill-partdesign` (sketch/Pad/Pocket/holes + spreadsheet variants), `skill-assembly` (multi-part assemblies, fits), `skill-print3d` (STL/3MF export), `skill-exchange` (STEP/IGES), `skill-techdraw` (2D plans -> DXF), `skill-bom` (nomenclature), `skill-fem` (CalculiX setup), `skill-gear` (involute spur gears), `skill-kinematics` (linkage motion laws), `skill-rocket` (Rocketry WB), `skill-drone` (AirPlaneDesign WB + analytical aero + external CFD), `skill-robotics-ros` (CROSS URDF export + ros2_control/Gazebo), `skill-cam` (DISABLED — never emit machine G-code; read it if CNC is requested). Whole project from a natural-language request: `skill-atelier` (the pipeline: requirements -> model -> simulate -> optimize -> fabrication files -> real test -> calibrate). Workshop (simulations outside FreeCAD): `skill-sim` (the 4 tools, core FEM/thermal/fatigue/fields kinds, the build-test-calibrate loop), `skill-marine`, `skill-elec`, `skill-aero-sim`, `skill-dynamics`, `skill-cfd` (SU2, Elmer), `skill-sitl` (ArduPilot SITL, loopback only), `skill-gazebo` (Gazebo underwater, URDF/SDF checks), `skill-space` (orbits, GMAT, delta-v, satellite thermal), `skill-geo` (OpenGeoSys, consolidation), `skill-fab` (PrusaSlicer project 3MF, never G-code), `skill-firmware` (STM32 firmware in Renode).
 - Home-grown layers (§7): `server/freecad_layers/` — `state` (project memory), `spec` (design contract), `verify` (geometry checks), `analysis` (holes, walls, printability), `gate` (what `check` runs), `export` (verified files), `fem` (CalculiX static stress), `checkpoint` (rollback), `recovery` (autosave), `projects` (several designs), `recipes` (verified, reusable), `render` (views), `bom`, `drawing`, `kinematics`, `aero`, `urdf_aug`; exposed as MCP tools by `server/layers_mcp/`. Any NEW file-writing code MUST use the shared gates `safe_out_path`/`safe_under` (SECURITY.md).
 - Project memory data: `/project_state/state.json` · Checkpoints: `/checkpoints/` · Autosaves: `/recovery/`
   for the default project; named projects under `/projects/<name>/`; recipes in `/recipes/` (all gitignored)

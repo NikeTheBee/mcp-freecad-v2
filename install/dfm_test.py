@@ -62,4 +62,9 @@ assert r["status"] == "OK", r
 r = dfm.check("Tapered", "mold", axis="z", draft_deg=3)
 assert r["status"] == "FAIL" and "2.00 deg" in r["issues"][0], r
 print("2 deg tapered block: OK at 1 deg, 2.00 deg reported under 3 deg OK")
+sealed = Part.makeCylinder(50, 200).cut(Part.makeCylinder(46, 190, V(0, 0, 5)))
+feat("Sealed", sealed)
+r = dfm.check("Sealed", "cnc", tool_d=6)
+assert r["status"] == "FAIL" and "closed internal cavity" in r["issues"][0], r
+print("sealed hollow housing: closed cavity found, split required OK")
 print("DFM_OK")

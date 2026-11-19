@@ -618,62 +618,59 @@ qu'un exemple réel a fait tout le tour de la boucle.
 | **7. Voies B et C** | WSL2, puis ROS 2, si choisis. | M |
 | **8. Plug and play** | Plugin et marketplace Claude Code, `-Packs tout`, documentation, CI. | S |
 
-### État au 2026-11-14
+### État au 2026-11-19
 
 Choix du propriétaire : atelier complet, tout ce qui est lourd sur un disque de données choisi
 (`-Home`), « on le fabrique, on l'essaie, on compare l'essai à la simulation » en boucle jusqu'à
-l'accord.
+l'accord, et une demande en langage naturel conduite d'un seul tenant (`skill-atelier`).
 
 **Fait (vérifié par les tests) :**
-- **Phase 0 :**
-  - FreeCAD 1.1.4 portable : 41/42 tests de la suite, le dernier repasse seul (charge machine) ;
-  - `install.ps1` en une commande : pixi figé, 10 environnements verrouillés (`sim`, `pde`, `opt`,
-    `aero`, `robot`, `elec`, `geo`, `space`, `post`, `ros`) et 21 outils hors conda vérifiés par
-    SHA256 ;
+- **Fondations :**
+  - FreeCAD 1.1.4 portable, avec passation automatique depuis l'ancienne installation ;
+  - `install.ps1` en une commande : pixi figé, 10 environnements verrouillés et 22 outils hors
+    conda vérifiés par SHA256 ;
   - lanceur d'adaptateurs : `python -I`, sans shell, délai, plafond mémoire, cache, tâches longues,
-    fichiers d'entrée du projet ;
-  - un type de calcul ne tourne que si ses cas de référence passent ;
-  - outils `simulate`, `job`, `study`, `tools_status` ;
-  - correction des deux bugs de la base : repère des opérations dans un conteneur déplacé, copies
-    PartDesign hors pièce.
-- **Phase 1, partielle :** CalculiX hors FreeCAD (force, pression, gravité, rotation, dilatation,
-  modes propres, flambage, thermique, thermomécanique), fatigue (rainflow + Miner), EDP sur mesure
-  (NGSolve), MuJoCo / Pinocchio / commande.
-- **Phase 2, partielle :** ngspice en bac à sable, PyBaMM, Magpylib, sections de câbles (IEC),
-  bilan de puissance, règles de sécurité électrique actives.
-- **Phase 3, partielle :**
-  - `tolstack` ;
-  - plan d'essai réel et feuille de mesures (`study test_plan`) ;
-  - recalage automatique d'un paramètre du modèle sur la mesure (`study calibrate auto`) ;
-  - le paramètre recalé est appliqué de lui-même aux simulations suivantes.
-- **Packs de domaine :**
-  - **marin :** hydrostatique, masse d'eau ajoutée (Capytaine), propulseurs (Wageningen B),
-    coques sous pression, joints toriques ;
-  - **air et fusée :** profils, aile, tuyère, combustion (Cantera), vol RocketPy, propriétés des
-    fluides ;
-  - **robotique et terre :** multicorps, dynamique inverse, commande, équilibre ZMP,
-    terramécanique.
-- **Voie C :** ROS 2 Lyrical (Nav2, MoveIt, ros2_control, ros_gz, slam_toolbox) et Gazebo Jetty
-  (gz-sim 10), natifs.
-- **62 cas de référence**, tous au vert, relancés à chaque installation.
+    fichiers d'entrée du projet, audit des sockets (boucle locale seulement) ;
+  - un type de calcul ne tourne que si ses cas de référence passent.
+- **15 adaptateurs, 105 cas de référence**, relancés à chaque installation :
+
+  | Adaptateur | Domaine | Cas |
+  |---|---|---|
+  | `fem_ccx` | statique (force, pression, gravité, rotation, dilatation), modes, flambage, thermique, thermomécanique | 8 |
+  | `pde` | EDP sur mesure (NGSolve) | 3 |
+  | `fatigue` | rainflow ASTM E1049 + Miner | 2 |
+  | `tolstack` | chaînes de cotes | 2 |
+  | `cfd` | SU2 (Euler, Navier-Stokes, RANS), Elmer (écoulement + chaleur) | 3 |
+  | `marine` | hydrostatique, masse ajoutée, propulseurs, coques sous pression, joints toriques | 11 |
+  | `gazebo` | véhicule sous-marin dans Gazebo, contrôle des conversions URDF / SDF / MJCF | 7 |
+  | `sitl` | ArduCopter, ArduSub, ArduRover simulés | 4 |
+  | `aero` | profils, aile, tuyère, combustion, vol de fusée, propriétés des fluides | 12 |
+  | `space` | orbites, GMAT, delta-v, thermique de satellite | 13 |
+  | `dynamics` | multicorps, dynamique inverse, commande, équilibre, terramécanique | 13 |
+  | `geo` | eaux souterraines et thermique du sol (OpenGeoSys), consolidation, forages | 7 |
+  | `elec` | circuits, batteries, aimants, câbles, bilan de puissance | 11 |
+  | `firmware` | microprogramme STM32 compilé et exécuté dans Renode | 3 |
+  | `fab` | contrôle d'impression, projet PrusaSlicer 3MF (jamais de G-code) | 6 |
+
+- **Du modèle au réel :**
+  - `study` : critères, itérations, **optimisation automatique** des cotes du tableur, plan
+    d'essai réel et feuille de mesures, **recalage automatique** sur la mesure, rapport ;
+  - pièces du commerce (`std_part`, ISO 4762 / 4017 / 4032 / 7089 / 15) ;
+  - nomenclature acheté / fabriqué et **notice de montage** HTML ;
+  - fabricabilité (`analyze(dfm=...)` : usinage 3 axes, dépouille de moulage).
+- **Voie C :** ROS 2 Lyrical (Nav2, MoveIt, ros2_control, ros_gz, slam_toolbox) et Gazebo Jetty.
 
 **Reste :**
-- **Adaptateurs à brancher sur les outils déjà installés :**
-  - Elmer, SU2 et OpenFOAM (fluides) ;
-  - ArduPilot SITL (vol et plongée simulés) ;
-  - Gazebo (véhicule sous-marin) ;
-  - GMAT / Orekit et Basilisk (espace) ;
-  - OpenGeoSys (sous-sol) ;
-  - Renode (microprogramme) ;
-  - PrusaSlicer (projet 3MF, sans G-code).
-- **Outils sans version portable :** KiCad et CAMotics. Leurs installeurs écrivent hors du dossier
-  choisi : installation manuelle à valider.
-- **Phase 3 :** `dfm`, `stdparts`, `builddoc`, `convert_check`.
-- **Phase 6 :** optimisation multi-paramètres dans `study`, Doorstop.
-- **Voie B :** WSL2.
-- **Phase 8 :** plugin.
+- **KiCad et CAMotics :** pas de version portable ; leurs installeurs écrivent hors du dossier
+  choisi. Installation manuelle par le propriétaire, puis adaptateur `kicad_gate`.
+- **Ateliers FreeCAD tiers (Fasteners, SheetMetal) :** exécuter leur code exige une revue et
+  l'accord du propriétaire. Les pièces du commerce sont couvertes par `std_part` en attendant.
+- **Voie B (WSL2) :** OpenFOAM complet, PX4, Stonefish, DEM-Engine, crocoddyl.
+- **Espace :** Basilisk (attitude), SpacePy (radiations), sgp4.
 - **Binaires SITL :** ArduPilot ne publie que des versions reconstruites chaque nuit. Ils sont
   marqués optionnels et leur empreinte est à refixer quand elle ne correspond plus.
+- **Base vendorisée :** la version amont 8.7.0 est sortie ; fusion à faire avec
+  `bootstrap.py --update-base`, puis la suite complète.
 
 ---
 

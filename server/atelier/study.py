@@ -136,8 +136,11 @@ def new_iteration(project_dir: Path, name: str, change: str,
     if not change.strip():
         raise ValueError("say what changed (the correction) and why")
     s = load(project_dir, name)
-    s["history"].append({"iteration": s["iteration"], "state": s["state"], "results": s["results"],
-                         "params": s["params"], "measurements": s["measurements"]})
+    # deep copies: the next iteration updates s["params"] in place, and a shared reference made
+    # the history show the NEW parameters under the old iteration
+    snap = json.loads(json.dumps({"results": s["results"], "params": s["params"],
+                                  "measurements": s["measurements"]}, default=str))
+    s["history"].append({"iteration": s["iteration"], "state": s["state"], **snap})
     s["iteration"] += 1
     s["params"].update(params or {})
     s["results"] = {}

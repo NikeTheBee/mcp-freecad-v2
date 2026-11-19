@@ -333,6 +333,8 @@ def collect(doc, include_hidden: bool = True) -> List[Dict[str, Any]]:
         # a standard part (stdparts) is named by its designation and bought, not made
         stem = getattr(part, "StdPart", "") or _label_stem(part.Label)
         source = getattr(part, "Source", "") or "make"
+        if source == "ref":                    # analysis / reference geometry: not a part to make
+            continue
         sig = _signature(shp)
         same = [i for i in by_stem.get(stem, ()) if _same_signature(groups[i]["_sig"], sig)
                 and groups[i]["source"] == source]

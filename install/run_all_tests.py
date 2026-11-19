@@ -40,6 +40,7 @@ PURE_TESTS = [
     ("state_test.py", "STATE_OK"),
     ("projects_test.py", "PROJECTS_OK"),
     ("optimize_test.py", "OPTIMIZE_OK"),
+    ("study_test.py", "STUDY_OK"),
 ]
 
 # (script, success sentinel) — run under freecadcmd

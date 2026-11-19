@@ -100,23 +100,16 @@ def _surface(geom: Path, size: float = 0.0, curvature: int = 48, target_panels: 
         com /= max(cad_v, 1e-30)
         bbox = gmsh.model.getBoundingBox(-1, -1)
         diag = math.dist(bbox[:3], bbox[3:])
-        # outward sign of each surface, outer shell only
-        keep: Dict[int, int] = {}
+        # the surface loops of each solid; which one is the OUTER shell is decided after meshing,
+        # by the volume each loop encloses: the CAD bounding boxes of curved faces (tori of
+        # fillets) are loose, and an inner cavity with fillets looked bigger than its hull
+        solid_loops: List[List[List[int]]] = []
         voids = 0
         for _, v in vols:
             _, loops = gmsh.model.occ.getSurfaceLoops(v)
-            loops = [list(l) for l in loops]
-            if len(loops) > 1:
-                def vol_bb(sl):
-                    bb = np.array([gmsh.model.getBoundingBox(2, s) for s in sl])
-                    lo, hi = bb[:, :3].min(0), bb[:, 3:].max(0)
-                    return float(np.prod(hi - lo))
-                outer = max(loops, key=vol_bb)
-                voids += len(loops) - 1
-            else:
-                outer = loops[0]
-            for s in outer:
-                keep[abs(int(s))] = 1
+            loops = [[abs(int(x)) for x in l] for l in loops]
+            voids += len(loops) - 1
+            solid_loops.append(loops)
         if size <= 0:
             size = diag / 40
         if target_panels:
@@ -131,14 +124,26 @@ def _surface(geom: Path, size: float = 0.0, curvature: int = 48, target_panels: 
             tags, coords, _ = gmsh.model.mesh.getNodes()
             xyz = coords.reshape(-1, 3)
             idx = {int(t): i for i, t in enumerate(tags)}
-            per_surface = []
-            for s in keep:
-                et, _, en = gmsh.model.mesh.getElements(2, s)
-                for t, n in zip(et, en):
-                    if t == 2:
-                        per_surface.append(np.vectorize(idx.get)(
-                            np.asarray(n, dtype=np.int64).reshape(-1, 3)))
-            tris = _orient(per_surface, len(xyz), xyz)
+            def loop_tris(loop):
+                parts = []
+                for sf in loop:
+                    et, _, en = gmsh.model.mesh.getElements(2, sf)
+                    for t, n in zip(et, en):
+                        if t == 2:
+                            parts.append(np.vectorize(idx.get)(np.asarray(n, dtype=np.int64).reshape(-1, 3)))
+                return _orient(parts, len(xyz), xyz)
+
+            def enclosed(t):
+                if not len(t):
+                    return 0.0
+                a, b, c = xyz[t[:, 0]], xyz[t[:, 1]], xyz[t[:, 2]]
+                return abs(float(np.einsum("ij,ij->i", a, np.cross(b, c)).sum()) / 6.0)
+
+            shells = []
+            for loops in solid_loops:
+                cands = [loop_tris(l) for l in loops]
+                shells.append(max(cands, key=enclosed))
+            tris = np.concatenate(shells) if shells else np.zeros((0, 3), dtype=np.int64)
             if (not target_panels or attempt == 2 or not len(tris)
                     or 0.6 * target_panels <= len(tris) <= 1.3 * target_panels):
                 break
@@ -747,6 +752,24 @@ def shape_geometry(inp: Dict[str, Any], work: Path) -> Dict[str, Any]:
             gmsh.model.occ.addBox(*spec["box"])
         elif "sphere" in spec:
             gmsh.model.occ.addSphere(*spec["sphere"])
+        elif "hollow_cylinder" in spec:
+            # sealed housing: outer R x H, cavity of radius Ri between end caps `cap` thick,
+            # its edges filleted rf (curved faces with loose CAD bounding boxes)
+            R, H, Ri, cap, rf = spec["hollow_cylinder"]
+            occ = gmsh.model.occ
+            # cavity = a half-profile with rounded corners (XZ plane) revolved about Z: its
+            # fillets are tori, as in a CAD fillet
+            z0, z1 = cap, H - cap
+            pts = [occ.addPoint(0, 0, z0), occ.addPoint(Ri - rf, 0, z0), occ.addPoint(Ri - rf, 0, z0 + rf),
+                   occ.addPoint(Ri, 0, z0 + rf), occ.addPoint(Ri, 0, z1 - rf), occ.addPoint(Ri - rf, 0, z1 - rf),
+                   occ.addPoint(Ri - rf, 0, z1), occ.addPoint(0, 0, z1)]
+            cl = [occ.addLine(pts[0], pts[1]), occ.addCircleArc(pts[1], pts[2], pts[3]),
+                  occ.addLine(pts[3], pts[4]), occ.addCircleArc(pts[4], pts[5], pts[6]),
+                  occ.addLine(pts[6], pts[7]), occ.addLine(pts[7], pts[0])]
+            surf = occ.addPlaneSurface([occ.addCurveLoop(cl)])
+            cav = [e for e in occ.revolve([(2, surf)], 0, 0, 0, 0, 0, 1, 2 * math.pi) if e[0] == 3]
+            outer = occ.addCylinder(0, 0, 0, 0, 0, H, R)
+            occ.cut([(3, outer)], cav)
         else:
             xc, yc, z0, R, H = spec["cylinder"]
             gmsh.model.occ.addCylinder(xc, yc, z0, 0, 0, H, R)
@@ -791,6 +814,14 @@ REFERENCES = [
                 "rho_kg_m3": _RHO, "cg_mm": [0, 0, -20]},
         "expect": {"buoyancy_N": [_RHO * G * _V_SPH, 1e-4],
                    "net_buoyancy_N": [_RHO * G * _V_SPH - 3.5 * G, 1e-3], "BG_mm": [20.0, 1e-3]},
+    },
+    {   # sealed hollow housing with filleted inner edges: it displaces its OUTER envelope,
+        # V = pi R^2 H (the cavity is sealed); faceting of the curved hull within 0.5 %
+        "name": "sealed_hollow_housing", "kind": "hydrostatics", "setup": "shape_geometry",
+        "inp": {"shape_mm": {"hollow_cylinder": [50, 200, 47.3, 4.45, 3]}, "submerged": True,
+                "mass_kg": 1.0, "rho_kg_m3": _RHO, "cg_mm": [0, 0, 100]},
+        "expect": {"envelope_volume_m3": [math.pi * 0.05 ** 2 * 0.2, 5e-3],
+                   "buoyancy_N": [_RHO * G * math.pi * 0.05 ** 2 * 0.2, 5e-3]},
     },
     {   # potential flow: sphere in unbounded fluid, added mass = 1/2 rho V (Lamb, Hydrodynamics
         # §92); constant-panel BEM converges from above (~2 % at 3000 panels)

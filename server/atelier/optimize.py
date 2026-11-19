@@ -122,12 +122,17 @@ class Search:
             if len(self.vars) == 1:
                 self._line(x0, self.vars[0], self.max_runs)
             else:
-                per = max(3, self.max_runs // (2 * len(self.vars)))
-                for _sweep in range(2):
+                # coordinate sweeps, each line refined (>= 2 steps past its grid), until the
+                # budget is spent or a whole sweep finds nothing new
+                per = max(5, self.max_runs // (2 * len(self.vars)))
+                while len(self.runs) < self.max_runs:
+                    before = len(self.runs)
                     for v in self.vars:
                         b = self.best()
                         base = dict(b["x"]) if b else x0
                         self._line(base, v, per)
+                    if len(self.runs) == before:
+                        break
         except StopIteration:
             pass
         b = self.best()

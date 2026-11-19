@@ -86,6 +86,12 @@ def check(target, process: str = "cnc", axis: str = "z", tool_d: float = 6.0,
     a = _AX[axis]
     issues: List[str] = []
     warns: List[str] = []
+    # a closed cavity (a solid with more than one shell) cannot be reached by a tool nor released
+    # from a mould: the part has to be split (tube + end caps, two half-shells...)
+    voids = sum(max(0, len(s.Shells) - 1) for s in shp.Solids)
+    if voids and process in ("cnc", "mold"):
+        issues.append(f"{voids} closed internal cavity(ies): no tool or mould core can reach them; split "
+                      "the part (e.g. tube + end caps with seals) and check each piece")
     if process == "cnc":
         r_tool = tool_d / 2
         sharp = []

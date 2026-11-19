@@ -36,6 +36,15 @@ r = search(lambda x: {"f": (x["x"] - 3) ** 2 + (x["y"] + 1) ** 2},
 assert r["best"]["values"]["f"] < 0.02, r["best"]
 print("2 variables, interior optimum OK")
 
+# 2 variables, monotone constraint (wall / end-cap like): lightest feasible within 4 % of the optimum
+def housing(x):
+    return {"sf": min(0.9 * x["w"], 0.07 * x["c"] ** 2), "m": x["w"] + 0.3 * x["c"]}
+r = search(housing, [{"name": "w", "lo": 1.5, "hi": 4}, {"name": "c", "lo": 3, "hi": 8}], objective="m",
+           constraints={"sf": {"min": 2}}, max_runs=14)
+m_opt = 2 / 0.9 + 0.3 * math.sqrt(2 / 0.07)
+assert r["feasible"] and r["best"]["values"]["m"] < 1.04 * m_opt and len(r["runs"]) == 14, r["best"]
+print(f"2 variables, boundary optimum: mass {r['best']['values']['m']:.4f} (optimum {m_opt:.4f}) OK")
+
 calls = []
 r = search(lambda x: calls.append(x) or None, [{"name": "t", "lo": 0, "hi": 1}],
            constraints={"sf": {"min": 1}}, max_runs=4)

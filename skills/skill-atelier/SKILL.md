@@ -33,6 +33,8 @@ to build in one go. This skill is the method; the domain skills hold the details
    | parts fit together | `tolstack`, `check_assembly` |
    | vehicle in water / ROS | `gz_underwater`, `convert_check` (skill-gazebo), ROS 2 env (skill-robotics-ros) |
    | printable, fits the bed | `printability`, `print_check`, `print_project` (skill-fab) |
+   | firmware computes right, fits the flash | `firmware_sim` (skill-firmware) |
+   | made with standard screws / bearings | `std_part`; `analyze(dfm=...)` for machining / moulding |
 4. **Contract and study.** `require(...)` for every geometric requirement (bbox, holes,
    mass, wall...). `study start` with `criteria` per kind (`safety_factor >= 2`, `f1_Hz >= 2×`
    the excitation, `net_buoyancy_N` in a band, `autonomy_h >= x`...), the hypotheses with their
@@ -45,6 +47,16 @@ to build in one go. This skill is the method; the domain skills hold the details
    - the concept (material, shape, architecture) → change it, `study iterate {change}`.
    Repeat until the study says `ready_to_build`. Never stop at the first FAIL, never call a
    FAIL or UNKNOWN "good enough".
+   Before trusting a stress result:
+   - re-run it with `mesh_size` halved: a peak that keeps rising sits on a sharp re-entrant
+     corner (a singularity), and the fix is a fillet in the design, not a finer mesh;
+   - keep a margin for what the mesh has not settled, written as a hypothesis;
+   - when two models bracket reality (clamped vs simply supported plate, bonded vs sliding
+     contact), size on the worse one and say so.
+   Before `ready_to_build`, run `analyze(target, dfm={...})` on every part. A closed internal
+   cavity, a sharp inside corner or an unreachable face is a design change, not a note: for
+   example, split a sealed shell into a tube and end caps with seal glands, then check the glands
+   (`oring_gland`) and their tolerance stack (`tolstack`).
 7. **Fabrication files.** `export` (STEP / 3MF / STL, read back and compared), `drawing_sheet`
    (DXF), `bill_of_materials`, `print_project` (PrusaSlicer project, no G-code), KiCad / WireViz
    outputs for electronics. Machining: STEP + drawing for the human's CAM, never G-code.
