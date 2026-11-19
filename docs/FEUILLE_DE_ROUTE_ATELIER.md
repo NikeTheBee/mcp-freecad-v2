@@ -632,7 +632,7 @@ l'accord, et une demande en langage naturel conduite d'un seul tenant (`skill-at
   - lanceur d'adaptateurs : `python -I`, sans shell, délai, plafond mémoire, cache, tâches longues,
     fichiers d'entrée du projet, audit des sockets (boucle locale seulement) ;
   - un type de calcul ne tourne que si ses cas de référence passent.
-- **15 adaptateurs, 105 cas de référence**, relancés à chaque installation :
+- **15 adaptateurs, 106 cas de référence**, relancés à chaque installation :
 
   | Adaptateur | Domaine | Cas |
   |---|---|---|
@@ -641,7 +641,7 @@ l'accord, et une demande en langage naturel conduite d'un seul tenant (`skill-at
   | `fatigue` | rainflow ASTM E1049 + Miner | 2 |
   | `tolstack` | chaînes de cotes | 2 |
   | `cfd` | SU2 (Euler, Navier-Stokes, RANS), Elmer (écoulement + chaleur) | 3 |
-  | `marine` | hydrostatique, masse ajoutée, propulseurs, coques sous pression, joints toriques | 11 |
+  | `marine` | hydrostatique, masse ajoutée, propulseurs, coques sous pression, joints toriques | 12 |
   | `gazebo` | véhicule sous-marin dans Gazebo, contrôle des conversions URDF / SDF / MJCF | 7 |
   | `sitl` | ArduCopter, ArduSub, ArduRover simulés | 4 |
   | `aero` | profils, aile, tuyère, combustion, vol de fusée, propriétés des fluides | 12 |
