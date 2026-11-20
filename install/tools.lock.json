@@ -10,7 +10,8 @@
     "sha256": "aa4f02efac31566176d639007e65a36740aa7b56c22673c44ecfd2611e7a6b2c",
     "archive": "zip",
     "dest": "pixi/bin",
-    "bin": "pixi.exe"
+    "bin": "pixi.exe",
+    "size": 33542762
   },
   "freecad": {
     "version": "1.1.4",
@@ -24,7 +25,8 @@
     "dest": "tools/FreeCAD-1.1.4",
     "strip": 1,
     "bin": "bin/freecadcmd.exe",
-    "note": "fixes the 1.1.1 advisories (code execution / file write when opening a crafted FCStd)"
+    "note": "fixes the 1.1.1 advisories (code execution / file write when opening a crafted FCStd)",
+    "size": 418088341
   },
   "elmer": {
     "version": "26.1",

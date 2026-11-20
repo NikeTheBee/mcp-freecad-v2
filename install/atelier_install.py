@@ -3,15 +3,17 @@
     powershell -ExecutionPolicy Bypass -File install\\install.ps1 -Home D:\\Atelier -Packs tout
     (or: py -3 install/atelier_install.py --home D:\\Atelier --packs socle,marin,elec)
 
-1. pixi, pinned, SHA256 checked (install/tools.lock.json).
-2. `pixi install --locked` for the environments of the chosen packs (packs/packs.json): exactly the
+1. Prints what is about to be downloaded (every tool and pixi environment the chosen packs need,
+   with its size) and asks to confirm, UNLESS run non-interactively (CI, piped) or with --yes.
+2. pixi, pinned, SHA256 checked (install/tools.lock.json).
+3. `pixi install --locked` for the environments of the chosen packs (packs/packs.json): exactly the
    packages and hashes of pixi.lock, in <home>/envs (never in the repo, never in FreeCAD's Python).
-3. The tools outside conda of those packs (tools.lock.json): official URL, SHA256 checked BEFORE
+4. The tools outside conda of those packs (tools.lock.json): official URL, SHA256 checked BEFORE
    extraction, archive members checked against path traversal.
-4. <home>/atelier.json (where each environment and tool is) + ~/.freecad-mcp/atelier_home.
-5. The reference cases of every adapter whose environment is installed; an adapter that fails
+5. <home>/atelier.json (where each environment and tool is) + ~/.freecad-mcp/atelier_home.
+6. The reference cases of every adapter whose environment is installed; an adapter that fails
    stays unusable (simulate refuses it).
-6. --register: re-registers the MCP servers on the workshop's FreeCAD (install/bootstrap.py).
+7. --register: re-registers the MCP servers on the workshop's FreeCAD (install/bootstrap.py).
 
 Idempotent: what is installed and matches its hash is skipped. Stops at the first error, except for a
 tool marked "optional" in tools.lock.json (a rolling upstream build): it is reported and left out.
@@ -170,6 +172,60 @@ def install_envs(pixi: Path, home: Path, envs, dry: bool) -> dict:
             if i["name"] in envs and i.get("prefix") and Path(i["prefix"]).is_dir()}
 
 
+# Pixi environments are hundreds of small conda-forge packages: no single size field to sum
+# before solving. These are each environment's own on-disk size, measured on a real install
+# (2026-11-19); an environment sharing packages with one already on disk (the py312 base,
+# numpy...) downloads less than its own figure suggests, and totals move with upstream package
+# updates, so the preflight total stays an "approximately".
+ENV_SIZE_GB = {
+    "sim": 3.2, "pde": 1.3, "opt": 3.7, "aero": 1.3, "robot": 4.3, "elec": 2.2, "geo": 1.8,
+    "space": 1.5, "post": 2.5, "ros": 9.5,
+}
+
+
+def preflight(packs: list, envs: list, tools: list, home: Path, assume_yes: bool, dry: bool) -> None:
+    """Print what is about to be downloaded, with sizes, and ask to confirm before touching
+    anything. Skips the question (prints the banner only) for --dry-run, --yes, or a
+    non-interactive run (CI, piped input): it never hangs waiting for an answer nobody can give."""
+    rows = []
+    tool_total = 0
+    for t in tools:
+        sz = LOCK.get(t, {}).get("size")
+        if sz:
+            tool_total += sz
+        info = LOCK.get(t, {})
+        single = info.get("archive") == "file"
+        mark = (home / info["dest"] / (f"{MARK}.{t}" if single else MARK)) if info else None
+        done = mark and mark.is_file() and mark.read_text(encoding="utf-8").strip() == info.get("sha256")
+        rows.append((t, sz, "already installed" if done else None))
+    env_total_gb = sum(ENV_SIZE_GB.get(e, 0.0) for e in envs
+                       if not (home / "envs").exists() or not any((home / "envs").glob(f"*/envs/{e}")))
+    say("about to download, for packs " + ", ".join(packs) + ":")
+    for t, sz, note in rows:
+        size_s = f"{sz / 1e6:.0f} MB" if sz else "size unknown"
+        say(f"  tool  {t:16s} {size_s}" + (f"  ({note})" if note else ""))
+    for e in envs:
+        already = (home / "envs").exists() and any((home / "envs").glob(f"*/envs/{e}"))
+        say(f"  env   {e:16s} ~{ENV_SIZE_GB.get(e, 0.0):.1f} GB"
+            + ("  (already installed, will be checked/kept)" if already else ""))
+    grand_gb = tool_total / 1e9 + env_total_gb
+    say(f"total new download: approximately {grand_gb:.1f} GB "
+        f"({tool_total / 1e9:.1f} GB of tools + ~{env_total_gb:.1f} GB of environments)"
+        + (" (dry run: nothing will actually be fetched)" if dry else ""))
+    if dry or assume_yes:
+        return
+    try:
+        interactive = sys.stdin.isatty() and sys.stdout.isatty()
+    except (AttributeError, ValueError):
+        interactive = False
+    if not interactive:
+        say("non-interactive run: continuing without asking (pass --yes to silence this note)")
+        return
+    reply = input(f"Download about {grand_gb:.1f} GB now? [y/N] ").strip().lower()
+    if reply not in ("y", "yes"):
+        raise SystemExit("cancelled: nothing was downloaded or changed")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--home", type=Path, default=None, help="workshop root (default: MCPFC_HOME / previous)")
@@ -177,6 +233,7 @@ def main() -> int:
     ap.add_argument("--register", action="store_true", help="register the MCP servers on this FreeCAD")
     ap.add_argument("--skip-validate", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--yes", action="store_true", help="skip the download-size confirmation")
     a = ap.parse_args()
     home = (a.home or default_home()).resolve()
     packs = list(PACKS) if a.packs.strip() == "tout" else ["socle", *[p.strip() for p in a.packs.split(",")]]
@@ -191,6 +248,7 @@ def main() -> int:
     free = shutil.disk_usage(home).free / 2**30
     if free < 40:
         say(f"WARNING only {free:.0f} GB free on {home.anchor}: the full workshop needs ~40 GB")
+    preflight(packs, envs, tools, home, a.yes, a.dry_run)
     pixi = install_tool("pixi", home, a.dry_run)
     tool_paths = {}
     for t in tools:

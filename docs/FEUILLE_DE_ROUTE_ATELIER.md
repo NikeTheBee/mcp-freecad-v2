@@ -431,35 +431,49 @@ git clone https://github.com/NikeTheBee/mcp-freecad-v2
 cd mcp-freecad-v2
 powershell -ExecutionPolicy Bypass -File install\install.ps1 -Packs socle,marin,elec
 ```
+0. **Affiche ce qui va être téléchargé avant de télécharger quoi que ce soit** : chaque outil et
+   chaque environnement pixi des packs choisis, avec sa taille, et le total (quelques Go pour un
+   seul pack, environ 33 Go pour `-Packs tout`). Déjà installé et intact → sauté, affiché comme
+   tel. Lancé à la main dans un terminal, il demande confirmation ; lancé depuis un script ou une
+   intégration continue (rien à répondre), ou avec `-Yes`, il continue sans poser la question.
 1. Télécharge une version figée de pixi et vérifie son SHA256.
 2. Lance `pixi install --locked` : les environnements des packs choisis, exactement ceux du verrou.
-3. Télécharge les outils hors conda listés dans `tools.lock.json` (FreeCAD, Elmer, SU2, KiCad,
-   PrusaSlicer, binaires SITL, XFOIL/AVL/QPROP, BELLHOP, GMAT...), en vérifiant le SHA256 et la
-   signature quand il y en a une.
+3. Télécharge les outils hors conda listés dans `tools.lock.json` (FreeCAD, Elmer, SU2, PrusaSlicer,
+   binaires SITL, XFOIL/AVL/QPROP, OpenRocket, GMAT, Renode, compilateur Arm, git-lfs...), en
+   vérifiant le SHA256 avant toute extraction.
 4. Lance `bootstrap.py`, qui enregistre les serveurs MCP et pose les skills des packs.
 5. Lance les cas de référence des packs. Un outil qui échoue est marqué « non validé » et reste
    inutilisable.
 
 On évite volontairement `irm … | iex` (exécuter un script directement depuis Internet).
-`-Packs tout` installe tous les packs natifs.
+`-Packs tout` installe tous les packs natifs **et télécharge tous leurs outils** (pas seulement
+FreeCAD) : voir le total affiché à l'étape 0 avant de confirmer.
 
-### 8.3 Packs (tailles estimées)
+### 8.3 Packs (tailles mesurées le 2026-11-19, environnement + outils propres au pack)
+
+Chaque pack installé seul ; un environnement partagé par plusieurs packs (`elec` par exemple)
+n'est téléchargé qu'une fois si plusieurs de ces packs sont choisis ensemble.
 
 | Pack | Contenu principal | Taille |
 |---|---|---|
-| `socle` | FreeCAD 1.1.4, serveurs MCP, CalculiX étendu, Gmsh, Netgen, NGSolve, Elmer, PyVista, Optuna/SALib/BoTorch, pyLife, MuJoCo, python-control | ~5 Go |
-| `fluides` | SU2, CfdOF + blueCFD-Core (OpenFOAM 12), ParaView | ~4 Go |
-| `air` | AeroSandbox, NeuralFoil, XFOIL, AVL, QPROP, JSBSim, ArduPilot SITL, pymavlink, RotorPy | ~1 Go |
-| `fusee` | RocketPy, OpenRocket + Java, orlab, CEA, CoolProp, Cantera, pygasflow | ~1 Go |
-| `espace` | Basilisk, Orekit, GMAT, pyViewFactor, SpacePy | ~1.5 Go |
-| `terre` | PyChrono, Pinocchio, Pink, mink, CasADi, OpenCV, Open3D, PCL, RTAB-Map | ~3 Go |
-| `soussol` | OpenGeoSys, Kratos GeoMechanics, gprMax | ~1.5 Go |
-| `marin` | Capytaine, MoorDyn, Gazebo Jetty, ArduSub SITL, PythonVehicleSimulator, arlpy + BELLHOP | ~3 Go |
-| `elec` | KiCad 10, ngspice, spicelib, PyBaMM, Magpylib, GetDP, FEMMT, scikit-rf, WireViz + Graphviz | ~3 Go |
-| `embarque` | PlatformIO, Arduino CLI, Zephyr SDK, ESP-IDF, Arm GNU, OpenOCD, Renode, sigrok-cli, PyVISA | ~6 Go |
-| `fab` | PrusaSlicer, CAMotics, sparrow, SheetMetal, Fasteners, freecad.gears, InteractiveHtmlBom, lib3mf | ~1 Go |
-| `ros` (option) | ROS 2 Lyrical, Nav2, MoveIt, ros2_control ; Visual Studio 2022 Build Tools exigés | ~13 Go |
-| `wsl` (option) | Ubuntu : OpenFOAM v2606, PX4, Stonefish, POSIM, DEM-Engine, Yade, crocoddyl/TSID, preCICE, JAX | ~25 Go |
+| `socle` | FreeCAD 1.1.4, serveurs MCP, CalculiX, Gmsh, NGSolve, Elmer, PyVista, Optuna/SALib/BoTorch, pyLife, MuJoCo, python-control, ParaView | ~7.6 Go |
+| `fluides` | SU2 | ~2.5 Go |
+| `opt` | BoTorch/GPyTorch (PyTorch CPU) pour l'optimisation bayésienne | ~3.7 Go |
+| `air` | AeroSandbox, NeuralFoil, XFOIL, AVL, QPROP, JSBSim, ArduPilot SITL, pymavlink | ~1.3 Go |
+| `fusee` | RocketPy, OpenRocket + Java (du pack `espace`), CEA, CoolProp, Cantera, pygasflow | ~2.9 Go |
+| `espace` | GMAT, openjdk, orekit-jpype | ~1.9 Go |
+| `terre` | PyChrono, Pinocchio, mink, Pink, CasADi, OpenCV, Open3D | ~4.3 Go |
+| `soussol` | OpenGeoSys | ~1.8 Go |
+| `marin` | Capytaine, gmsh, pyvista (dans l'environnement `sim`) | ~3.2 Go |
+| `elec` | ngspice, spicelib, PyBaMM, Magpylib, scikit-rf, WireViz, PlatformIO | ~2.2 Go |
+| `embarque` | PlatformIO (dans `elec`), Renode, compilateur Arm GNU | ~2.6 Go |
+| `fab` | PrusaSlicer | ~0.1 Go |
+| `ros` | ROS 2 Lyrical (RoboStack), Nav2, MoveIt, ros2_control, ros_gz, slam_toolbox, Gazebo Jetty | ~9.5 Go |
+| `outillage` | git-lfs | ~0.01 Go |
+| `wsl` (non fait) | Ubuntu : OpenFOAM complet, PX4, Stonefish, DEM-Engine, crocoddyl/TSID, preCICE, JAX | non mesuré |
+
+`-Packs tout` : **33 Go au total** (vérifié par `--dry-run` sur un dossier vide : 1.7 Go d'outils +
+31.3 Go pour les 10 environnements, chacun compté une seule fois même s'il sert plusieurs packs).
 
 ### 8.4 Formats d'échange : ce qui rend les outils compatibles
 
