@@ -459,7 +459,7 @@ n'est téléchargé qu'une fois si plusieurs de ces packs sont choisis ensemble.
 | `socle` | FreeCAD 1.1.4, serveurs MCP, CalculiX, Gmsh, NGSolve, Elmer, PyVista, Optuna/SALib/BoTorch, pyLife, MuJoCo, python-control, ParaView | ~7.6 Go |
 | `fluides` | SU2 | ~2.5 Go |
 | `opt` | BoTorch/GPyTorch (PyTorch CPU) pour l'optimisation bayésienne | ~3.7 Go |
-| `air` | AeroSandbox, NeuralFoil, XFOIL, AVL, QPROP, JSBSim, ArduPilot SITL, pymavlink | ~1.3 Go |
+| `air` | AeroSandbox, NeuralFoil, XFOIL, AVL, QPROP, JSBSim, ArduPilot SITL, pymavlink, OpenVSP + VSPAERO | ~1.4 Go |
 | `fusee` | RocketPy, OpenRocket + Java (du pack `espace`), CEA, CoolProp, Cantera, pygasflow | ~2.9 Go |
 | `espace` | GMAT, openjdk, orekit-jpype | ~1.9 Go |
 | `terre` | PyChrono, Pinocchio, mink, Pink, CasADi, OpenCV, Open3D | ~4.3 Go |
@@ -474,6 +474,8 @@ n'est téléchargé qu'une fois si plusieurs de ces packs sont choisis ensemble.
 
 `-Packs tout` : **33 Go au total** (vérifié par `--dry-run` sur un dossier vide : 1.7 Go d'outils +
 31.3 Go pour les 10 environnements, chacun compté une seule fois même s'il sert plusieurs packs).
+OpenVSP ajoute 80 Mo à `air` depuis le 2026-11-20 ; le pack `fluides-plus` (OpenFOAM) en ajoutera
+1,2 Go à lui seul, et le préflight l'annoncera comme les autres.
 
 ### 8.4 Formats d'échange : ce qui rend les outils compatibles
 
@@ -646,7 +648,7 @@ l'accord, et une demande en langage naturel conduite d'un seul tenant (`skill-at
   - lanceur d'adaptateurs : `python -I`, sans shell, délai, plafond mémoire, cache, tâches longues,
     fichiers d'entrée du projet, audit des sockets (boucle locale seulement) ;
   - un type de calcul ne tourne que si ses cas de référence passent.
-- **18 adaptateurs, 123 cas de référence**, relancés à chaque installation :
+- **20 adaptateurs, 131 cas de référence**, relancés à chaque installation :
 
   | Adaptateur | Domaine | Cas |
   |---|---|---|
@@ -668,6 +670,10 @@ l'accord, et une demande en langage naturel conduite d'un seul tenant (`skill-at
   | `aeroelastic` | flottement (p-k, DLM PanelAero ou Theodorsen), divergence, rafale, flottement d'ailerons de fusée | 7 |
   | `pogo` | couplage longitudinal structure-propulsion d'un lanceur à ergols liquides, lignes d'alimentation, accumulateur | 4 |
   | `draw` | croquis, photo ou SVG vers contours cotés (SVG + DXF), planche à dessin locale | 6 |
+  | `mdo` | disciplines couplées (MDA), optimisation multidisciplinaire et plans d'expériences (OpenMDAO + pyOptSparse) | 6 |
+  | `vsp` | géométrie conceptuelle d'aéronef et aérodynamique VSPAERO (OpenVSP), export STEP vers FreeCAD | 2 |
+  | `mdo` | disciplines couplées (MDA), optimisation multidisciplinaire et plans d'expériences (OpenMDAO + pyOptSparse) | 6 |
+  | `vsp` | géométrie conceptuelle d'aéronef et aérodynamique VSPAERO (OpenVSP), export STEP vers FreeCAD | 2 |
 
 - **Du modèle au réel :**
   - `study` : critères, itérations, **optimisation automatique** des cotes du tableur, plan
@@ -680,11 +686,23 @@ l'accord, et une demande en langage naturel conduite d'un seul tenant (`skill-at
 **Reste :**
 - **Audit outils du 2026-11-20** (`docs/AUDIT_OUTILS_2026-11-20.md`) : comparaison fonction par
   fonction avec ANSYS Fluent, l'aéroélasticité Nastran, l'analyse POGO et un outil de dessin, puis
-  les trous et les remplaçants libres. Vague 1 faite (`aeroelastic`, `pogo`, `draw`). Vague 2 :
-  OpenFOAM 12 par blueCFD-Core (VOF, cavitation, MRF, 6-DOF, FW-H) en pack `fluides-plus`,
-  OpenVSP, OpenMDAO + pyOptSparse, DualSPHysics. Vague 3 : SHARPy, MBDyn/DUST (whirl flutter),
-  stratifiés composites, propagation de fissure, flambage de coque raidie, hélice marine, openEMS,
-  couplage FSI par fichiers, binaire BELLHOP pour `arlpy`.
+  les trous et les remplaçants libres.
+  - Vague 1 **faite** : `aeroelastic`, `pogo`, `draw`.
+  - Vague 2 **faite sauf OpenFOAM** : `mdo` (OpenMDAO + pyOptSparse) et `vsp` (OpenVSP 3.56,
+    épinglé au lock) sont en place et validés. **DualSPHysics est écarté** : son dépôt ne
+    contient que les outils annexes, le solveur est derrière la page de téléchargement du projet
+    (leur `README` le dit), donc pas d'installation épinglée sans formulaire ; `interFoam`
+    couvrira la surface libre et le sloshing.
+  - **OpenFOAM 12 par blueCFD-Core 2024-1** : installeur téléchargé et vérifié (1 230 349 717
+    octets, SHA1 identique au SHA1 publié, SHA256 `7f2d0366…5baa`), et c'est un **Inno Setup
+    5.4.2**, donc `innoextract` 1.9 (épinglé au lock) sait l'ouvrir **sans l'exécuter** : pas de
+    droits admin, pas d'entrée de registre, rien d'exécuté depuis le téléchargement. Reste à
+    faire une fois l'extraction autorisée : relever l'arborescence réelle, finir l'entrée
+    `bluecfd` du lock (le chemin `bin` doit être vrai, pas deviné), créer le pack
+    `fluides-plus` et l'adaptateur `foam` (VOF, cavitation, MRF, 6-DOF).
+  - Vague 3 : SHARPy, MBDyn/DUST (whirl flutter), stratifiés composites, propagation de fissure,
+    flambage de coque raidie, hélice marine, openEMS, couplage FSI par fichiers, binaire BELLHOP
+    pour `arlpy`, et un SPH librement installable (PySPH ou SPlisHSPlasH) si le besoin revient.
 - **KiCad et CAMotics :** pas de version portable ; leurs installeurs écrivent hors du dossier
   choisi. Installation manuelle par le propriétaire, puis adaptateur `kicad_gate`.
 - **Ateliers FreeCAD tiers (Fasteners, SheetMetal) :** exécuter leur code exige une revue et

@@ -1,0 +1,435 @@
+"""OpenVSP: conceptual aircraft geometry and vortex-lattice aerodynamics (env `aero`).
+
+OpenVSP (NASA, Vehicle Sketch Pad) builds a parametric aircraft from a handful of numbers and
+VSPAERO gives its forces and stability derivatives. Where `aero wing` (AeroSandbox) answers in
+milliseconds on a simplified planform, this carries the real lofted geometry: it is the step
+between "a wing roughly this size" and a surface FreeCAD can take over as STEP.
+
+Everything is headless and file-based: the adapter writes an AngelScript file, `vspscript.exe`
+runs it, and the results come back as CSV. The bundled Python API (built for 3.13) is never
+imported.
+
+Kinds:
+- vsp_wing   build a parametric wing (span, chord, taper, sweep, dihedral, twist, NACA section),
+             run a VSPAERO alpha sweep, and optionally export STEP and STL for FreeCAD
+- vsp_model  the same sweep on YOUR OpenVSP model (`params.files = ["aircraft.vsp3"]`)
+
+Units: SI. Lengths m, areas m^2, angles in degrees (`sweep_deg`, `alpha_deg`...). `span_m` is the
+FULL span of the mirrored wing; OpenVSP's own section parameter is the half span, which the
+adapter converts. Coefficients are referred to `Sref = span x mean chord`, `bref = span`,
+`cref = mean chord` unless you give your own.
+
+Limits, restated in every result:
+- VSPAERO's vortex lattice is INVISCID and LINEAR: no stall, no separation, no
+  compressibility beyond the Prandtl-Glauert correction. `CDi` is the induced drag it computes;
+  `CDo` is its own parasite ESTIMATE at the default Reynolds number (reported as
+  `Re_millions`), not a validated drag count, so judge `CDi` and treat `CDtot` as indicative;
+- this build of VSPAERO exposes the vortex-lattice solver only (no panel mode);
+- a lifting surface at a high angle, with separation or a propeller in the way, is outside it:
+  that is what `cfd` (SU2) is for;
+- the geometry is a loft, not a stress model: thickness and spars are yours to add in FreeCAD.
+
+Exactness: REFERENCES below. The lift slope of a rectangular wing against Helmbold's formula
+(the same reference the other lifting-surface adapters are held to), the induced-drag identity
+CDi = CL^2 / (pi AR e) against VSPAERO's own span efficiency, zero lift at zero angle for a
+symmetric section, and the exported STL's bounding box against the wing that was asked for.
+"""
+from __future__ import annotations
+
+import os
+
+os.environ.setdefault("OPENBLAS_CORETYPE", "Sandybridge")
+os.environ.setdefault("MKL_THREADING_LAYER", "SEQUENTIAL")
+
+import csv  # noqa: E402
+import math  # noqa: E402
+import re  # noqa: E402
+import struct  # noqa: E402
+from pathlib import Path  # noqa: E402
+from typing import Any, Dict, List, Optional, Tuple  # noqa: E402
+
+from _common import result, run_exe, tool  # noqa: E402
+
+ENV = "aero"
+KINDS = {
+    "vsp_wing": {"timeout": 900,
+                 "doc": "parametric wing in OpenVSP + VSPAERO alpha sweep: CL, CDi, CMy, lift "
+                        "slope, span efficiency; optional STEP/STL export for FreeCAD"},
+    "vsp_model": {"timeout": 900,
+                  "doc": "VSPAERO alpha sweep on your own .vsp3 model (params.files)"},
+}
+
+
+def versions() -> Dict[str, str]:
+    out = {}
+    try:
+        exe = Path(tool("openvsp"))
+        out["openvsp"] = exe.parent.name
+        ver = exe.parent / "CHANGELOG.md"
+        if ver.is_file():
+            m = re.search(r"(\d+\.\d+\.\d+)", ver.read_text(encoding="utf-8",
+                                                             errors="replace")[:4000])
+            if m:
+                out["openvsp"] = m.group(1)
+    except Exception as e:  # noqa: BLE001
+        out["openvsp"] = f"missing ({e})"
+    from importlib.metadata import PackageNotFoundError, version
+    for p in ("numpy",):
+        try:
+            out[p] = version(p)
+        except PackageNotFoundError:
+            out[p] = "missing"
+    return out
+
+
+def _f(x) -> float:
+    v = float(x)
+    if not math.isfinite(v):
+        raise ValueError(f"not a finite number: {x!r}")
+    return v
+
+
+def _pos(inp: Dict[str, Any], key: str, default=None) -> float:
+    if key in inp:
+        v = _f(inp[key])
+    elif default is not None:
+        v = _f(default)
+    else:
+        raise ValueError(f"missing input `{key}`")
+    if v <= 0:
+        raise ValueError(f"`{key}` must be > 0, got {v}")
+    return v
+
+
+# --------------------------------------------------------------------------- script generation
+def _sweep_block(inp: Dict[str, Any], sref: float, bref: float, cref: float) -> str:
+    """The VSPAERO part of the script: geometry pass, then the alpha sweep."""
+    a0 = _f(inp.get("alpha_start_deg", 0.0))
+    a1 = _f(inp.get("alpha_end_deg", 8.0))
+    n = int(inp.get("alpha_points", 5))
+    if n < 1 or n > 40:
+        raise ValueError("`alpha_points` must be between 1 and 40")
+    if n > 1 and a1 <= a0:
+        raise ValueError("`alpha_end_deg` must be greater than `alpha_start_deg`")
+    mach = _f(inp.get("mach", 0.0))
+    if not 0.0 <= mach < 0.95:
+        raise ValueError("`mach` must be in [0, 0.95): VSPAERO is subsonic here")
+    if inp.get("panel_method"):
+        # the example scripts shipped with OpenVSP still set an `AnalysisMethod` input, but
+        # VSPAERO 3.56 no longer exposes it: this build runs the vortex-lattice solver only
+        raise ValueError("`panel_method` is not available in this VSPAERO build: it exposes the "
+                         "vortex-lattice solver only. Use the `cfd` adapter (SU2) for thickness "
+                         "and viscous effects.")
+    ncpu = max(1, min(8, int(inp.get("cpu", 2))))
+    return f"""
+  string compGeom = "VSPAEROComputeGeometry";
+  SetAnalysisInputDefaults( compGeom );
+  ExecAnalysis( compGeom );
+
+  string sweep = "VSPAEROSweep";
+  SetAnalysisInputDefaults( sweep );
+  array<double> srefv(1, {sref:.9g});   SetDoubleAnalysisInput( sweep, "Sref", srefv );
+  array<double> brefv(1, {bref:.9g});   SetDoubleAnalysisInput( sweep, "bref", brefv );
+  array<double> crefv(1, {cref:.9g});   SetDoubleAnalysisInput( sweep, "cref", crefv );
+  array<int> refFlag(1, 0);             SetIntAnalysisInput( sweep, "RefFlag", refFlag );
+  array<double> a0v(1, {a0:.9g});       SetDoubleAnalysisInput( sweep, "AlphaStart", a0v );
+  array<double> a1v(1, {a1:.9g});       SetDoubleAnalysisInput( sweep, "AlphaEnd", a1v );
+  array<int> anp(1, {n});               SetIntAnalysisInput( sweep, "AlphaNpts", anp );
+  array<double> machv(1, {mach:.9g});   SetDoubleAnalysisInput( sweep, "MachStart", machv );
+  array<int> mnp(1, 1);                 SetIntAnalysisInput( sweep, "MachNpts", mnp );
+  array<int> cpuv(1, {ncpu});           SetIntAnalysisInput( sweep, "NCPU", cpuv );
+  string res = ExecAnalysis( sweep );
+  WriteResultsCSVFile( res, "results.csv" );
+
+  while ( GetNumTotalErrors() > 0 )
+  {{
+    ErrorObj err = PopLastError();
+    Print( "VSPERROR " + err.GetErrorString() );
+  }}
+"""
+
+
+def _wants_aero(inp: Dict[str, Any]) -> bool:
+    """`run_aero: false` builds and exports the geometry without calling VSPAERO: the fast path
+    when all you want is a surface to take into FreeCAD."""
+    return bool(inp.get("run_aero", True))
+
+
+def _wing_script(inp: Dict[str, Any], work: Path) -> Tuple[str, float, float, float]:
+    span = _pos(inp, "span_m")
+    root = _pos(inp, "root_chord_m")
+    taper = _f(inp.get("taper", 1.0))
+    if not 0.05 <= taper <= 1.0:
+        raise ValueError("`taper` (tip chord / root chord) must be between 0.05 and 1")
+    sweep = _f(inp.get("sweep_deg", 0.0))
+    if abs(sweep) > 70:
+        raise ValueError("`sweep_deg` must be between -70 and 70")
+    dihedral = _f(inp.get("dihedral_deg", 0.0))
+    twist = _f(inp.get("twist_deg", 0.0))
+    thick = _f(inp.get("thickness_ratio", 0.12))
+    camber = _f(inp.get("camber", 0.0))
+    if not 0.01 <= thick <= 0.3 or not -0.1 <= camber <= 0.1:
+        raise ValueError("`thickness_ratio` 0.01..0.3 and `camber` -0.1..0.1")
+    tess = int(inp.get("span_panels", 20))
+    if not 4 <= tess <= 60:
+        raise ValueError("`span_panels` must be between 4 and 60")
+
+    tip = root * taper
+    mean = 0.5 * (root + tip)
+    sref = _f(inp.get("sref_m2", span * mean))
+    bref = _f(inp.get("bref_m", span))
+    cref = _f(inp.get("cref_m", mean))
+    exports = []
+    if bool(inp.get("export_step", False)):
+        exports.append('  ExportFile( "wing.stp", SET_ALL, EXPORT_STEP );')
+    if bool(inp.get("export_stl", False)):
+        exports.append('  ExportFile( "wing.stl", SET_ALL, EXPORT_STL );')
+
+    script = f"""// generated by the workshop: parametric wing + VSPAERO
+void main()
+{{
+  string wid = AddGeom( "WING" );
+  SetGeomName( wid, "wing" );
+  SetParmVal( wid, "Sym_Planar_Flag", "Sym", SYM_XZ );
+  SetDriverGroup( wid, 1, SPAN_WSECT_DRIVER, TAPER_WSECT_DRIVER, ROOTC_WSECT_DRIVER );
+  SetParmVal( wid, "SectTess_U", "XSec_1", {tess} );
+  SetParmVal( wid, "Span", "XSec_1", {span / 2.0:.9g} );
+  SetParmVal( wid, "Taper", "XSec_1", {taper:.9g} );
+  SetParmVal( wid, "Root_Chord", "XSec_1", {root:.9g} );
+  SetParmVal( wid, "Sweep", "XSec_1", {sweep:.9g} );
+  SetParmVal( wid, "Sweep_Location", "XSec_1", 0.25 );
+  SetParmVal( wid, "Dihedral", "XSec_1", {dihedral:.9g} );
+  SetParmVal( wid, "Twist", "XSec_1", {twist:.9g} );
+  Update();
+
+  string xsurf = GetXSecSurf( wid, 0 );
+  for ( int i = 0 ; i < 2 ; i++ )
+  {{
+    ChangeXSecShape( xsurf, i, XS_FOUR_SERIES );
+    string xs = GetXSec( xsurf, i );
+    SetParmVal( GetXSecParm( xs, "ThickChord" ), {thick:.9g} );
+    SetParmVal( GetXSecParm( xs, "Camber" ), {camber:.9g} );
+  }}
+  Update();
+
+  WriteVSPFile( "wing.vsp3", SET_ALL );
+  ClearVSPModel();
+  ReadVSPFile( "wing.vsp3" );
+{chr(10).join(exports)}
+{_sweep_block(inp, sref, bref, cref) if _wants_aero(inp) else ""}
+}}
+"""
+    return script, sref, bref, cref
+
+
+def _model_script(inp: Dict[str, Any], work: Path) -> Tuple[str, float, float, float]:
+    name = None
+    for f in sorted(work.iterdir()):
+        if f.suffix.lower() == ".vsp3":
+            name = f.name
+            break
+    if name is None:
+        raise ValueError("no .vsp3 file in the job folder: pass it with "
+                         "`params.files = [\"path/to/model.vsp3\"]`")
+    sref = _pos(inp, "sref_m2")
+    bref = _pos(inp, "bref_m")
+    cref = _pos(inp, "cref_m")
+    script = f"""// generated by the workshop: VSPAERO on a supplied model
+void main()
+{{
+  ReadVSPFile( "{name}" );
+{_sweep_block(inp, sref, bref, cref)}
+}}
+"""
+    return script, sref, bref, cref
+
+
+# --------------------------------------------------------------------------- results
+def _read_results(work: Path) -> List[Dict[str, float]]:
+    """VSPAERO's results CSV is a stack of blocks: `Results_Name,<name>` then one line per field.
+    The alpha sweep's forces live in the `VSPAERO_Polar` block as parallel columns."""
+    f = work / "results.csv"
+    if not f.is_file():
+        raise ValueError("VSPAERO produced no results.csv (see vsp.log in the job folder)")
+    blocks: Dict[str, Dict[str, List[str]]] = {}
+    current = None
+    with f.open(newline="", encoding="utf-8", errors="replace") as fh:
+        for row in csv.reader(fh):
+            if not row or not row[0].strip():
+                continue
+            key = row[0].strip()
+            if key == "Results_Name":
+                current = row[1].strip() if len(row) > 1 else ""
+                blocks.setdefault(current, {})
+            elif current is not None:
+                blocks[current][key] = [c.strip() for c in row[1:] if c.strip() != ""]
+    polar = blocks.get("VSPAERO_Polar") or {}
+    if not polar:
+        raise ValueError(f"no VSPAERO_Polar block in results.csv (blocks: {', '.join(blocks)})")
+    # the names VSPAERO 3.56 writes, which are not the ones its own example scripts use:
+    # CLtot / CMytot / L_D, not CL / CMy / L/D
+    want = ("Alpha", "CLtot", "CDtot", "CDi", "CDo", "CMytot", "L_D", "E", "Mach", "Re_1e6")
+    cols = {k: polar[k] for k in want if k in polar}
+    n = min((len(v) for v in cols.values()), default=0)
+    if n == 0:
+        raise ValueError("the polar block is empty")
+    rows = []
+    for i in range(n):
+        row = {}
+        for k, v in cols.items():
+            try:
+                row[k] = float(v[i])
+            except ValueError:
+                pass
+        rows.append(row)
+    return rows
+
+
+def _stl_bbox(path: Path) -> Optional[Tuple[float, float, float]]:
+    """Bounding box of a binary or ASCII STL, without a mesh library."""
+    import numpy as np
+    b = path.read_bytes()
+    pts: List[Tuple[float, float, float]] = []
+    if len(b) > 84 and not b[:80].lstrip().lower().startswith(b"solid"):
+        n = struct.unpack("<I", b[80:84])[0]
+        if 84 + 50 * n <= len(b):
+            for i in range(n):
+                o = 84 + 50 * i + 12
+                pts.extend(struct.unpack("<9f", b[o:o + 36])[j:j + 3] for j in (0, 3, 6))
+    if not pts:
+        txt = b.decode("utf-8", errors="replace")
+        pts = [tuple(float(x) for x in m.groups())           # type: ignore[misc]
+               for m in re.finditer(r"vertex\s+(\S+)\s+(\S+)\s+(\S+)", txt)]
+    if not pts:
+        return None
+    a = np.asarray(pts, dtype=float)
+    return tuple(float(x) for x in (a.max(axis=0) - a.min(axis=0)))   # type: ignore[return-value]
+
+
+def _collect_exports(work: Path, files: List[str], values: Dict[str, Any]):
+    """Add the exported geometry to the answer, and measure the STL so that the export is checked
+    rather than assumed."""
+    for extra in ("wing.stp", "wing.stl", "wing.vsp3"):
+        p = work / extra
+        if not p.is_file():
+            continue
+        files.append(str(p))
+        if extra == "wing.stl":
+            bb = _stl_bbox(p)
+            if bb:
+                values["stl_bbox_m"] = [round(x, 6) for x in bb]
+                values["stl_span_m"] = round(max(bb), 6)
+    return files, values
+
+
+def _run(kind: str, inp: Dict[str, Any], work: Path) -> Dict[str, Any]:
+    exe = Path(tool("openvsp"))
+    if kind == "vsp_wing":
+        script, sref, bref, cref = _wing_script(inp, work)
+    else:
+        script, sref, bref, cref = _model_script(inp, work)
+    sp = work / "case.vspscript"
+    sp.write_text(script, encoding="utf-8")
+    timeout = float(KINDS[kind]["timeout"])
+    proc = run_exe([str(exe), "-script", sp.name], work, timeout)
+    code = proc.returncode
+    out = (proc.stdout or "") + (proc.stderr or "")
+    (work / "vsp.log").write_text(out, encoding="utf-8", errors="replace")
+    errs = [ln for ln in out.splitlines() if ln.startswith("VSPERROR")]
+    if code != 0 and not (work / "results.csv").is_file():
+        raise ValueError(f"vspscript failed (exit {code}): {out.strip()[-400:]}")
+
+    if not _wants_aero(inp):
+        values: Dict[str, Any] = {"sref_m2": sref, "bref_m": bref, "cref_m": cref,
+                                  "aspect_ratio": round(bref * bref / sref, 6), "points": 0}
+        files = [str(work / "vsp.log")]
+        files, values = _collect_exports(work, files, values)
+        return result(values, inp.get("limits"),
+                      "geometry only (no VSPAERO run): " + ", ".join(
+                          Path(f).name for f in files if not f.endswith("vsp.log")),
+                      files=files,
+                      notes=["`run_aero: false`: a loft and its export, nothing was computed",
+                             "import the STEP into FreeCAD, then build your own sketch and "
+                             "structure on it"])
+
+    rows = _read_results(work)
+    alphas = [r.get("Alpha", float("nan")) for r in rows]
+    cls = [r.get("CLtot", float("nan")) for r in rows]
+    values: Dict[str, Any] = {
+        "points": len(rows),
+        "alpha_deg": [round(a, 6) for a in alphas],
+        "CL": [round(c, 6) for c in cls],
+        "CDi": [round(r.get("CDi", float("nan")), 8) for r in rows],
+        "CDtot": [round(r.get("CDtot", float("nan")), 8) for r in rows],
+        "CMy": [round(r.get("CMytot", float("nan")), 6) for r in rows],
+        "sref_m2": sref, "bref_m": bref, "cref_m": cref,
+        "aspect_ratio": round(bref * bref / sref, 6),
+    }
+    if len(rows) >= 2:
+        # least squares slope over the sweep, per radian
+        import numpy as np
+        a = np.asarray(alphas, dtype=float)
+        c = np.asarray(cls, dtype=float)
+        good = np.isfinite(a) & np.isfinite(c)
+        if good.sum() >= 2:
+            slope = float(np.polyfit(np.radians(a[good]), c[good], 1)[0])
+            values["CL_alpha_per_rad"] = round(slope, 6)
+            values["CL_alpha_per_deg"] = round(slope * math.pi / 180.0, 8)
+    last = rows[-1]
+    for k, name in (("E", "span_efficiency"), ("L_D", "lift_to_drag"), ("CDo", "CDo"),
+                    ("Re_1e6", "Re_millions")):
+        if k in last:
+            values[name] = round(last[k], 6)
+    if "E" in last and last.get("CDi", 0) > 0 and abs(last.get("CLtot", 0)) > 1e-6:
+        ar = bref * bref / sref
+        pred = last["CLtot"] ** 2 / (math.pi * ar * last["E"])
+        values["cdi_vs_cl2_identity_rel"] = round(abs(pred - last["CDi"]) / last["CDi"], 6)
+    files = [str(work / "results.csv"), str(work / "vsp.log")]
+    files, values = _collect_exports(work, files, values)
+    notes = ["VSPAERO vortex lattice: inviscid and linear, no stall and no profile drag",
+             "coefficients are referred to the Sref / bref / cref printed above",
+             "a loft, not a structure: thickness and spars belong in FreeCAD"]
+    if errs:
+        notes.append(f"OpenVSP reported {len(errs)} API error(s), see vsp.log")
+    head = (f"{len(rows)} point(s), AR {values['aspect_ratio']:.2f}"
+            + (f", CL_alpha {values['CL_alpha_per_rad']:.3f} /rad"
+               if "CL_alpha_per_rad" in values else ""))
+    return result(values, inp.get("limits"), head, files=files, notes=notes)
+
+
+def run(kind: str, inp: Dict[str, Any], work: Path) -> Dict[str, Any]:
+    if kind not in KINDS:
+        raise ValueError(f"unknown kind {kind!r}; known: {', '.join(sorted(KINDS))}")
+    return _run(kind, inp, Path(work))
+
+
+# --------------------------------------------------------------------------- references
+# Helmbold's lifting-surface formula for a straight wing (Anderson, Fundamentals of
+# Aerodynamics, eq. 5.81; an approximation good to a few per cent at AR 8), the same reference
+# the AeroSandbox and PanelAero paths are held to:
+_AR = 8.0
+_HELMBOLD = 2.0 * math.pi * _AR / (2.0 + math.sqrt(_AR ** 2 + 4.0))
+_SPAN, _CHORD = 8.0, 1.0            # AR = 8 rectangular wing, 1 m chord
+
+REFERENCES = [
+    {   # Lift slope against Helmbold, and the induced-drag identity against VSPAERO's own span
+        # efficiency. Measured 2026-11-20: 4.61 /rad against Helmbold's 4.91, i.e. 6 % below --
+        # Helmbold is itself an approximation good to a few per cent and the vortex lattice adds
+        # its discretisation, so the tolerance is 8 %. The identity, in contrast, is arithmetic
+        # and matches to better than 0.1 %.
+        "name": "rectangular_wing_lift_slope", "kind": "vsp_wing",
+        "inp": {"span_m": _SPAN, "root_chord_m": _CHORD, "taper": 1.0,
+                "thickness_ratio": 0.12, "camber": 0.0, "span_panels": 24,
+                "alpha_start_deg": 0.0, "alpha_end_deg": 6.0, "alpha_points": 4,
+                "mach": 0.0},
+        "expect": {"CL_alpha_per_rad": [_HELMBOLD, 0.08],
+                   "aspect_ratio": [_AR, 1e-9],
+                   "cdi_vs_cl2_identity_rel": [0.0, 1e-3]},
+    },
+    {   # the geometry path to FreeCAD: the exported STL must be the wing that was asked for
+        "name": "wing_stl_export_size", "kind": "vsp_wing",
+        "inp": {"span_m": _SPAN, "root_chord_m": _CHORD, "taper": 1.0, "span_panels": 12,
+                "run_aero": False, "export_stl": True, "export_step": True},
+        "expect": {"stl_span_m": [_SPAN, 0.01], "aspect_ratio": [_AR, 1e-9]},
+    },
+]

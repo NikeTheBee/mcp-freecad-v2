@@ -34,6 +34,7 @@
    "aero"
   ],
   "tools": [
+   "openvsp",
    "xfoil",
    "avl",
    "qprop",
@@ -44,6 +45,9 @@
    "sitl_cyg_stdcxx",
    "sitl_cyg_iconv",
    "sitl_cyg_intl"
+  ],
+  "skills": [
+   "skill-vsp"
   ]
  },
  "fusee": {

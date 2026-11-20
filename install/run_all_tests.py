@@ -42,8 +42,8 @@ PURE_TESTS = [
     ("optimize_test.py", "OPTIMIZE_OK"),
     ("study_test.py", "STUDY_OK"),
     ("preflight_test.py", "PREFLIGHT_OK"),
-    # reference cases of the fast workshop adapters; REFCASES_SIM_SKIP without the workshop
-    ("refcases_sim_test.py", "REFCASES_SIM_OK"),
+    # reference cases of the fast workshop adapters; REFCASES_SKIP without the workshop
+    ("refcases_test.py", "REFCASES_OK"),
 ]
 
 # (script, success sentinel) — run under freecadcmd

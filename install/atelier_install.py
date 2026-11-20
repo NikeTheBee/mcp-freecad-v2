@@ -9,7 +9,8 @@
 3. `pixi install --locked` for the environments of the chosen packs (packs/packs.json): exactly the
    packages and hashes of pixi.lock, in <home>/envs (never in the repo, never in FreeCAD's Python).
 4. The tools outside conda of those packs (tools.lock.json): official URL, SHA256 checked BEFORE
-   extraction, archive members checked against path traversal.
+   extraction, archive members checked against path traversal. An `inno` archive is an Inno
+   Setup installer UNPACKED with innoextract, never executed.
 5. <home>/atelier.json (where each environment and tool is) + ~/.freecad-mcp/atelier_home.
 6. The reference cases of every adapter whose environment is installed; an adapter that fails
    stays unusable (simulate refuses it).
@@ -123,9 +124,23 @@ def install_tool(name: str, home: Path, dry: bool) -> Path:
             listing = subprocess.run([_bsdtar(), "-tf", str(f)], capture_output=True, text=True, check=True)
             _safe_members(listing.stdout.splitlines(), tmp)
             subprocess.run([_bsdtar(), "-xf", str(f), "-C", str(tmp)], check=True)
+        elif t["archive"] == "inno":
+            # An Inno Setup installer is UNPACKED, never run: no elevation, no registry entry, no
+            # Start Menu shortcut, nothing from the download is executed. innoextract writes only
+            # under its -d directory and sanitises the member names itself.
+            ie = install_tool("innoextract", home, dry)
+            say(f"{name}: unpacking the installer with innoextract (it is not run)")
+            r = subprocess.run([str(ie), "-d", str(tmp), "-e", "-s", str(f)],
+                               capture_output=True, text=True)
+            if r.returncode:
+                raise SystemExit(f"{name}: innoextract failed: "
+                                 f"{(r.stderr or r.stdout).strip()[-400:]}")
+            _safe_members([str(q.relative_to(tmp)) for q in tmp.rglob("*")], tmp)
         else:
             raise SystemExit(f"{name}: unknown archive type {t['archive']}")
         src = tmp
+        if t["archive"] == "inno" and (tmp / "app").is_dir():
+            src = tmp / "app"        # innoextract puts the installed tree under {app}
         for _ in range(int(t.get("strip", 0))):
             kids = [k for k in src.iterdir()]
             if len(kids) != 1 or not kids[0].is_dir():

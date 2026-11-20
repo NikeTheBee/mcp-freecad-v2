@@ -201,8 +201,38 @@ Revue des domaines visés par le projet : aéronautique, spatial, drone, sous-ma
    l'échelle par cote de référence.
 4. Ajouts d'environnement : `panelaero`, `fluids`, `thermo`, `ht`, plus BELLHOP au lock.
 
-**Vague 2** : OpenFOAM via blueCFD-Core (pack `fluides-plus` : VOF, cavitation, MRF, 6-DOF, FW-H),
-OpenVSP, OpenMDAO et pyOptSparse, DualSPHysics (après lecture de sa licence).
+**Vague 2 (faite le 2026-11-20, sauf OpenFOAM)**
+
+- `mdo` : OpenMDAO 3.45 et pyOptSparse 2.17 dans l'environnement `opt`. MDA, optimisation sous
+  contraintes avec dérivées exactes, plans d'expériences. Validé sur le problème de Sellar (racine
+  en forme fermée et optimum publié), une quadratique contrainte résolue à la main, Rosenbrock et
+  un plan factoriel complet.
+- `vsp` : OpenVSP 3.56.0 (NASA Open Source Agreement 1.3), épinglé au lock. Géométrie d'aéronef
+  paramétrique, VSPAERO en treillis de tourbillons, export STEP et STL vers FreeCAD. Validé sur la
+  pente de portance de Helmbold, l'identité de traînée induite et l'envergure du STL exporté.
+  Note relevée en route : les scripts d'exemple livrés avec OpenVSP sont périmés (ils règlent une
+  entrée `AnalysisMethod` que la 3.56 n'expose plus) et les champs du CSV sont `CLtot`, `CMytot`,
+  `L_D`, pas ceux de la documentation.
+- **DualSPHysics : écarté.** Son propre `README` dans `bin/windows` dit que « le dépôt GitHub ne
+  contient que les outils principaux » et renvoie au paquet complet sur le site du projet pour le
+  reste, solveur compris. Pas d'installation épinglée sans passer par leur page de
+  téléchargement, donc hors de la promesse « une commande ». `interFoam` couvre le besoin réel
+  (surface libre, sloshing) ; si un vrai SPH redevient nécessaire, PySPH ou SPlisHSPlasH sont les
+  candidats libres à évaluer.
+- **OpenFOAM 12 par blueCFD-Core 2024-1 : préparé, installation à autoriser.** L'installeur a été
+  téléchargé et vérifié (1 230 349 717 octets ; son SHA1 est identique au SHA1 publié par le
+  projet, qui ne publie pas de SHA256 ; SHA256 calculé :
+  `7f2d036698dc6a5385bda665a71feef9e81b065abf7d013571a6e9afaf585baa`). C'est un **Inno Setup
+  5.4.2**, et `innoextract` 1.9 (zlib, épinglé au lock, 520 Ko) couvre Inno 1.2.10 à 6.0.5 : on
+  peut donc **ouvrir l'installeur sans l'exécuter**, ce qui préserve « une commande, sans admin,
+  rien d'exécuté depuis Internet ». Ce qui reste : extraire une fois pour relever l'arborescence
+  réelle du dossier OpenFOAM, finir l'entrée `bluecfd` du lock (son chemin `bin` doit être vrai et
+  non deviné), créer le pack `fluides-plus` et écrire l'adaptateur `foam`.
+  Cas de référence prévus pour `foam`, tous à réponse exacte ou publiée : Poiseuille laminaire
+  (profil exact), cylindre de Schäfer-Turek 2D-1 (Cd 5,5795 et Cl 0,0106, déjà utilisés pour Elmer
+  et SU2, donc un troisième solveur sur la même référence), colonne d'eau au repos (pression
+  hydrostatique exacte), caisson flottant (tirant d'eau d'Archimède exact), rotation en bloc
+  solide (p = ½ρω²r² exact) et rupture de barrage contre Martin & Moyce. FW-H reporté en vague 3.
 
 **Vague 3** : SHARPy, MBDyn ou DUST (whirl flutter), composites, fissuration, coque raidie, hélice
 marine, openEMS, couplage FSI par fichiers.
