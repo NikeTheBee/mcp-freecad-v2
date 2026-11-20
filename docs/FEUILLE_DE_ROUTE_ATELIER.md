@@ -646,7 +646,7 @@ l'accord, et une demande en langage naturel conduite d'un seul tenant (`skill-at
   - lanceur d'adaptateurs : `python -I`, sans shell, délai, plafond mémoire, cache, tâches longues,
     fichiers d'entrée du projet, audit des sockets (boucle locale seulement) ;
   - un type de calcul ne tourne que si ses cas de référence passent.
-- **15 adaptateurs, 106 cas de référence**, relancés à chaque installation :
+- **18 adaptateurs, 123 cas de référence**, relancés à chaque installation :
 
   | Adaptateur | Domaine | Cas |
   |---|---|---|
@@ -665,6 +665,9 @@ l'accord, et une demande en langage naturel conduite d'un seul tenant (`skill-at
   | `elec` | circuits, batteries, aimants, câbles, bilan de puissance | 11 |
   | `firmware` | microprogramme STM32 compilé et exécuté dans Renode | 3 |
   | `fab` | contrôle d'impression, projet PrusaSlicer 3MF (jamais de G-code) | 6 |
+  | `aeroelastic` | flottement (p-k, DLM PanelAero ou Theodorsen), divergence, rafale, flottement d'ailerons de fusée | 7 |
+  | `pogo` | couplage longitudinal structure-propulsion d'un lanceur à ergols liquides, lignes d'alimentation, accumulateur | 4 |
+  | `draw` | croquis, photo ou SVG vers contours cotés (SVG + DXF), planche à dessin locale | 6 |
 
 - **Du modèle au réel :**
   - `study` : critères, itérations, **optimisation automatique** des cotes du tableur, plan
@@ -675,6 +678,13 @@ l'accord, et une demande en langage naturel conduite d'un seul tenant (`skill-at
 - **Voie C :** ROS 2 Lyrical (Nav2, MoveIt, ros2_control, ros_gz, slam_toolbox) et Gazebo Jetty.
 
 **Reste :**
+- **Audit outils du 2026-11-20** (`docs/AUDIT_OUTILS_2026-11-20.md`) : comparaison fonction par
+  fonction avec ANSYS Fluent, l'aéroélasticité Nastran, l'analyse POGO et un outil de dessin, puis
+  les trous et les remplaçants libres. Vague 1 faite (`aeroelastic`, `pogo`, `draw`). Vague 2 :
+  OpenFOAM 12 par blueCFD-Core (VOF, cavitation, MRF, 6-DOF, FW-H) en pack `fluides-plus`,
+  OpenVSP, OpenMDAO + pyOptSparse, DualSPHysics. Vague 3 : SHARPy, MBDyn/DUST (whirl flutter),
+  stratifiés composites, propagation de fissure, flambage de coque raidie, hélice marine, openEMS,
+  couplage FSI par fichiers, binaire BELLHOP pour `arlpy`.
 - **KiCad et CAMotics :** pas de version portable ; leurs installeurs écrivent hors du dossier
   choisi. Installation manuelle par le propriétaire, puis adaptateur `kicad_gate`.
 - **Ateliers FreeCAD tiers (Fasteners, SheetMetal) :** exécuter leur code exige une revue et

@@ -109,6 +109,14 @@ def _clean_env(env: str) -> Dict[str, str]:
                 # OpenBLAS 0.3.34's auto-selected kernels crash (access violation) on some small
                 # matrix products on Zen 4 CPUs; the Sandybridge kernels are correct everywhere
                 OPENBLAS_CORETYPE=os.environ.get("OPENBLAS_CORETYPE", "Sandybridge"),
+                # The socle environments resolve to the MKL build of libblas (ipopt, mumps and
+                # casadi pull it in). MKL's default threading layer loads a second OpenMP
+                # runtime next to the llvm-openmp already loaded by gmsh/vtk, and every LAPACK
+                # call (inv, solve, svd, eig) then kills the process with no message. The
+                # sequential layer is correct, deterministic -- which is what reference cases
+                # want -- and here as fast as the threaded one. `TBB` also works if a future
+                # solver needs threaded BLAS.
+                MKL_THREADING_LAYER=os.environ.get("MKL_THREADING_LAYER", "SEQUENTIAL"),
                 NO_PROXY="*", HTTP_PROXY="http://127.0.0.1:9", HTTPS_PROXY="http://127.0.0.1:9")
     if prefix:
         keep["CONDA_PREFIX"] = str(prefix)

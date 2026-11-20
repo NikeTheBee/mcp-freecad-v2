@@ -36,6 +36,13 @@ smt = "2.15.*"
 scikit-learn = "*"
 control = "0.10.*"
 casadi = "*"
+# aeroelasticity: DLM/VLM unsteady aerodynamic influence coefficients, validated against
+# MSC.Nastran by DLR (BSD-3). Used by the `aeroelastic` adapter with CalculiX modes.
+panelaero = "*"
+# pipe/line hydraulics and fluid properties: POGO feedlines, regenerative cooling, ballast
+fluids = "*"
+thermo = "*"
+ht = "*"
 sympy = "*"
 imageio = "*"
 [feature.socle.pypi-dependencies]
