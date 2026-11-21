@@ -26,7 +26,7 @@ sys.path.insert(0, str(REPO))
 
 # (adapter, environment); an adapter whose environment or tool is missing is skipped, not failed
 ADAPTERS = (("aeroelastic", "sim"), ("pogo", "sim"), ("draw", "sim"), ("structure", "sim"),
-            ("mdo", "opt"), ("vsp", "aero"))
+            ("mdo", "opt"), ("traj", "opt"), ("vsp", "aero"))
 
 
 def _home() -> str | None:

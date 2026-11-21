@@ -648,7 +648,7 @@ l'accord, et une demande en langage naturel conduite d'un seul tenant (`skill-at
   - lanceur d'adaptateurs : `python -I`, sans shell, délai, plafond mémoire, cache, tâches longues,
     fichiers d'entrée du projet, audit des sockets (boucle locale seulement) ;
   - un type de calcul ne tourne que si ses cas de référence passent.
-- **22 adaptateurs, 143 cas de référence**, relancés à chaque installation :
+- **23 adaptateurs, 145 cas de référence**, relancés à chaque installation :
 
   | Adaptateur | Domaine | Cas |
   |---|---|---|
@@ -674,10 +674,12 @@ l'accord, et une demande en langage naturel conduite d'un seul tenant (`skill-at
   | `vsp` | géométrie conceptuelle d'aéronef et aérodynamique VSPAERO (OpenVSP), export STEP vers FreeCAD | 2 |
   | `structure` | stratifiés composites (théorie classique, Tsai-Wu) et propagation de fissure (Paris, Forman, fuite avant rupture) | 9 |
   | `foam` | OpenFOAM 12 (blueCFD-Core, Windows natif) : Couette et Poiseuille exacts, cas fournis avec refus des dictionnaires qui compilent du code | 3 |
+  | `traj` | optimisation de trajectoire / commande optimale (NASA dymos) : brachistochrone exact, bang-bang exact | 2 |
   | `mdo` | disciplines couplées (MDA), optimisation multidisciplinaire et plans d'expériences (OpenMDAO + pyOptSparse) | 6 |
   | `vsp` | géométrie conceptuelle d'aéronef et aérodynamique VSPAERO (OpenVSP), export STEP vers FreeCAD | 2 |
   | `structure` | stratifiés composites (théorie classique, Tsai-Wu) et propagation de fissure (Paris, Forman, fuite avant rupture) | 9 |
   | `foam` | OpenFOAM 12 (blueCFD-Core, Windows natif) : Couette et Poiseuille exacts, cas fournis avec refus des dictionnaires qui compilent du code | 3 |
+  | `traj` | optimisation de trajectoire / commande optimale (NASA dymos) : brachistochrone exact, bang-bang exact | 2 |
 
 - **Du modèle au réel :**
   - `study` : critères, itérations, **optimisation automatique** des cotes du tableur, plan

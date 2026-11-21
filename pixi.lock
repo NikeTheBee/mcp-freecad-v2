@@ -966,6 +966,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/78/d6/b0d9d83177397c018efa3579c54990f8d9b3af17fdcf97b0e549609a0571/glfw-2.11.0-py2.py3-none-win_amd64.whl
       - pypi: https://files.pythonhosted.org/packages/a4/7a/9812cb8be9828ab688203c5ac5f743c60652887f0c00995a6f6f19f912bd/pyre_extensions-0.0.32-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/b5/99/7b1adac7e97ce7bbda34792dc6e9b2f5cc5cffd1875883f78a818b2a2687/mypy_extensions-1.2.0-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/b5/ba/a1064c0576a7d8d1f720c93adf2ed4553e43abf80d615304d639300fc502/dymos-1.16.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/b6/70/c419a361b09ccb618b5165daa919003ccdd9c148356f7ff71a710db6bcf0/gpytorch-1.15.2-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/b9/f7/f59dc75abfbc4f232666ada6ae3946da0af8a8bcd46f058ee063786c3681/mujoco_studio_wasm-4.0.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/c1/50/aaffc306e9f609596a50a3220832058ccee6023436ba6eceb750c3ebc45a/botorch-0.18.1-py3-none-any.whl
@@ -973,6 +974,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/d6/9e/e7238fdc9ca2f0dd53de15702b3ff16f603ee1148cb4666c5e7a8cdecc01/mujoco_core-4.0.1-cp312-cp312-win_amd64.whl
       - pypi: https://files.pythonhosted.org/packages/de/e4/1ba6f44e491c4eece978685230dde56b14d51a0365bc1b774ddaa94d14cd/pyopengl-3.1.10-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/e6/34/ee74708a93704baca5c1ef439817c4cb649f73382c518380ccc5ab335603/linear_operator-0.6.1-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/ed/8f/599cc4bfaf284bf2f5080b9e5a4687ee0cbcd3bd7fe00b0a1d1781e6c798/om_pycycle-4.4.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/ef/55/6dc6d6bb953bdfc52519a0059592c52b6e3b8ad51cf8256dffceb55b0610/setuptools-84.2.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/ef/90/5d0096a325aa0f83ba7a3968bfb485b67e32c947bdf9cd0fcb4b485be718/filelock-4.2.10-py3-none-any.whl
   pde:
@@ -27578,6 +27580,72 @@ packages:
   version: 1.2.0
   sha256: 993e7a20aa5671eb41a7132cf555af30062da99729601601b9a8382b11cae768
   requires_python: '>=3.10'
+- pypi: https://files.pythonhosted.org/packages/b5/ba/a1064c0576a7d8d1f720c93adf2ed4553e43abf80d615304d639300fc502/dymos-1.16.0-py3-none-any.whl
+  name: dymos
+  version: 1.16.0
+  sha256: 6167fa4ab099d1caa3fdc7c5875e203abc88387fa88c5859eb9aac0dc4ce1461
+  requires_dist:
+  - numpy>=2.0
+  - openmdao>=3.39
+  - scipy>=1.13
+  - aiounittest ; extra == 'all'
+  - bokeh ; extra == 'all'
+  - ipython ; extra == 'all'
+  - jax ; extra == 'all'
+  - jaxlib ; extra == 'all'
+  - jupyter ; extra == 'all'
+  - linkify-it-py ; extra == 'all'
+  - matplotlib ; extra == 'all'
+  - myst-nb ; extra == 'all'
+  - nbconvert ; extra == 'all'
+  - notebook ; extra == 'all'
+  - numba ; extra == 'all'
+  - numpydoc>=1.1 ; extra == 'all'
+  - packaging ; extra == 'all'
+  - papermill ; extra == 'all'
+  - playwright>=1.20 ; extra == 'all'
+  - pre-commit ; extra == 'all'
+  - pycodestyle ; extra == 'all'
+  - redbaron ; extra == 'all'
+  - sphinx-book-theme ; extra == 'all'
+  - sphinx-copybutton ; extra == 'all'
+  - sphinx-design ; extra == 'all'
+  - sphinx>=7.4,<8 ; extra == 'all'
+  - sphinxcontrib-bibtex ; extra == 'all'
+  - tabulate ; extra == 'all'
+  - testflo>=1.3.6 ; extra == 'all'
+  - bokeh ; extra == 'docs'
+  - ipython ; extra == 'docs'
+  - jax ; extra == 'docs'
+  - jaxlib ; extra == 'docs'
+  - jupyter ; extra == 'docs'
+  - linkify-it-py ; extra == 'docs'
+  - matplotlib ; extra == 'docs'
+  - myst-nb ; extra == 'docs'
+  - nbconvert ; extra == 'docs'
+  - notebook ; extra == 'docs'
+  - numpydoc>=1.1 ; extra == 'docs'
+  - papermill ; extra == 'docs'
+  - redbaron ; extra == 'docs'
+  - sphinx-book-theme ; extra == 'docs'
+  - sphinx-copybutton ; extra == 'docs'
+  - sphinx-design ; extra == 'docs'
+  - sphinx>=7.4,<8 ; extra == 'docs'
+  - sphinxcontrib-bibtex ; extra == 'docs'
+  - tabulate ; extra == 'docs'
+  - ipython ; extra == 'notebooks'
+  - notebook ; extra == 'notebooks'
+  - tabulate ; extra == 'notebooks'
+  - numba ; extra == 'numba'
+  - aiounittest ; extra == 'test'
+  - matplotlib ; extra == 'test'
+  - numpydoc>=1.1 ; extra == 'test'
+  - packaging ; extra == 'test'
+  - playwright>=1.20 ; extra == 'test'
+  - pre-commit ; extra == 'test'
+  - pycodestyle ; extra == 'test'
+  - testflo>=1.3.6 ; extra == 'test'
+  requires_python: '>=3.11'
 - pypi: https://files.pythonhosted.org/packages/b6/70/c419a361b09ccb618b5165daa919003ccdd9c148356f7ff71a710db6bcf0/gpytorch-1.15.2-py3-none-any.whl
   name: gpytorch
   version: 1.15.2
@@ -27800,6 +27868,16 @@ packages:
   - flake8-print==5.0.0 ; extra == 'test'
   - pytest ; extra == 'test'
   requires_python: '>=3.10'
+- pypi: https://files.pythonhosted.org/packages/ed/8f/599cc4bfaf284bf2f5080b9e5a4687ee0cbcd3bd7fe00b0a1d1781e6c798/om_pycycle-4.4.0-py3-none-any.whl
+  name: om-pycycle
+  version: 4.4.0
+  sha256: b666f7c1794dc41bc1c2d27cb3659180d783aaaaed55a8de639be3a5f32472f5
+  requires_dist:
+  - openmdao>=3.10.0
+  - testflo>=1.3.6 ; extra == 'test'
+  - parameterized ; extra == 'test'
+  - parameterized ; extra == 'all'
+  - testflo>=1.3.6 ; extra == 'all'
 - pypi: https://files.pythonhosted.org/packages/ef/55/6dc6d6bb953bdfc52519a0059592c52b6e3b8ad51cf8256dffceb55b0610/setuptools-84.2.1-py3-none-any.whl
   name: setuptools
   version: 84.2.1

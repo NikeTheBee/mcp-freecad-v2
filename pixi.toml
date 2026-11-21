@@ -60,6 +60,11 @@ openmdao = "3.45.*"
 pyoptsparse = "2.17.*"
 [feature.opt.pypi-dependencies]
 botorch = "==0.18.*"
+# NASA optimal control / trajectory optimisation (pseudospectral) and NASA thermodynamic
+# cycle analysis of engines, both on OpenMDAO. From PyPI: the conda-forge dymos build still
+# pins numpy < 2, which the workshop left behind.
+dymos = "*"
+om-pycycle = "*"
 
 # ---------------------------------------------------------------- fluids / propulsion / air
 [feature.flow.dependencies]
