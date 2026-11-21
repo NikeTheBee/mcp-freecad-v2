@@ -82,3 +82,19 @@ Pictures (`render_views`) only at the design milestone or on request.
   required". Li-ion: BMS + fuse, datasheet limits only. Underwater: SELV, IP68, pressure test
   first. Solid rocket propellant formulation and anything weapon-like: refused.
 - Never "safe" or "certified": "the model predicts X under hypotheses H; test it".
+
+## `study` arguments
+| action | args |
+|---|---|
+| `start` | `goal`, `criteria` {kind: {value: {min\|max}}}, `hypotheses` [text \| {text, source}], `params`, `acceptance` {quantity: {min\|max}} (real test), `agreement` (0.1) |
+| `status` | (none) |
+| `hypothesis` | `text`, `source` |
+| `iterate` | `change`, `params` |
+| `built` | `note` |
+| `test_plan` | `predicted` {quantity: "kind.value"}, `instruments` |
+| `measure` | `data`, `source`, `predicted`, or `csv` |
+| `calibrate` | `auto` {quantity, param, e.g. "material.E"}, or `factors`, `note` |
+| `optimize` | `kind`, `target`, `params`, `vars` [{cell: "Sheet.alias", lo, hi}], `objective`, `sense`, `constraints`, `max_runs`; the best design is applied |
+| `report` | (none) |
+
+`simulate(..., study=name)` feeds the study, with the calibration applied.

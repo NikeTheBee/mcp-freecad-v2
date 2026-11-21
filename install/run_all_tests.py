@@ -42,6 +42,10 @@ PURE_TESTS = [
     # the bill of materials is generated from the lock files: running it keeps them
     # parseable and keeps the SBOM a real capability rather than a script nobody calls
     ("sbom.py", "SBOM_OK"),
+    # any MCP client: generated configs readable and merged; a bare client sees tools,
+    # skills as tool / resources / prompt
+    ("mcp_clients_test.py", "MCP_CLIENTS_TEST_OK"),
+    ("universal_mcp_test.py", "UNIVERSAL_MCP_OK"),
     ("state_test.py", "STATE_OK"),
     ("projects_test.py", "PROJECTS_OK"),
     ("optimize_test.py", "OPTIMIZE_OK"),

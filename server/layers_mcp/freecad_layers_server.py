@@ -769,13 +769,8 @@ def job(id: str, action: str = "status", study: str = "default", label: str = ""
 @_safe
 def study(action: str, name: str = "default", args: dict | None = None) -> str:
     """Design loop until the real object matches the model; each answer gives the next action.
-    start {goal, criteria {kind: {value: {min|max}}}, hypotheses [text|{text,source}], params,
-    acceptance {quantity: {min|max}} (real test), agreement (0.1)} | status | hypothesis {text,
-    source} | iterate {change, params} | built {note} | test_plan {predicted {quantity:
-    "kind.value"}, instruments} | measure {data, source, predicted} or {csv} | calibrate {auto
-    {quantity, param e.g. "material.E"}} or {factors, note} | optimize {kind, target, params,
-    vars [{cell: "Sheet.alias", lo, hi}], objective, sense, constraints, max_runs} (best design
-    applied) | report. simulate(..., study=name) feeds it, calibration applied."""
+    action: start | status | hypothesis | iterate | built | test_plan | measure | calibrate |
+    optimize | report; their args: skill("skill-atelier"). simulate(..., study=name) feeds it."""
     a = dict(args or {})
     pdir = _fl.project_dir()
     try:
@@ -841,6 +836,58 @@ def tools_status(refresh: bool = False) -> str:
         lines.append(f"{name} [{a['env']}] {a.get('state')}: {', '.join(a['kinds'])}"
                      + (f" — {a['reference']}" if a.get("reference") else ""))
     return "\n".join(lines)
+
+
+# ------------------------------------------------------------------ skills, for any MCP client
+# The domain know-how lives in skills/<name>/SKILL.md. Claude Code loads them by itself; every
+# other client (Cursor, VS Code, Codex, Gemini CLI, LM Studio, Continue...) gets them through MCP:
+# a tool (works everywhere), resources skill://<name> and a prompt (where the client has them).
+_SKILLS = REPO / "skills"
+
+
+def _skill_names() -> list:
+    return sorted(d.name for d in _SKILLS.iterdir() if (d / "SKILL.md").is_file()) if _SKILLS.is_dir() else []
+
+
+def _skill_index() -> str:
+    rows = []
+    for n in _skill_names():
+        txt = (_SKILLS / n / "SKILL.md").read_text(encoding="utf-8")
+        load = next((ln for ln in txt.splitlines() if ln.startswith("**Load when:**")), "")
+        rows.append(f"- {n}: {load.replace('**Load when:**', '').strip()[:160]}")
+    return "Skills (read one with skill(name) before working in its domain):\n" + "\n".join(rows)
+
+
+def _skill_text(name: str) -> str:
+    name = (name or "").strip()
+    if name not in _skill_names():          # only an existing folder name: no path reaches the disk
+        raise FreeCADError(f"unknown skill {name!r}; one of: {', '.join(_skill_names())}")
+    return (_SKILLS / name / "SKILL.md").read_text(encoding="utf-8")
+
+
+@mcp.tool()
+def skill(name: str = "") -> str:
+    """Domain know-how: no name = index; a name = its rules, params, limits. Read before a domain."""
+    return _skill_text(name) if name else _skill_index()
+
+
+@mcp.resource("skill://index", name="skills-index", mime_type="text/markdown",
+              description="Which skill to read for which engineering task")
+def skill_index_resource() -> str:
+    return _skill_index()
+
+
+@mcp.resource("skill://{name}", name="skill", mime_type="text/markdown",
+              description="One skill: rules, parameters, limits, validation")
+def skill_resource(name: str) -> str:
+    return _skill_text(name)
+
+
+@mcp.prompt(name="engineering_workflow", description="Start an engineering session: the golden rules and the skills index")
+def engineering_workflow() -> str:
+    agents = REPO / "AGENTS.md"
+    head = agents.read_text(encoding="utf-8") if agents.is_file() else ""
+    return head + "\n\n" + _skill_index()
 
 
 if __name__ == "__main__":

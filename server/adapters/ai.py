@@ -6,8 +6,10 @@ Kinds:
              on samples of a DECLARED function; validation metrics, size, operations per inference,
              ONNX export checked against PyTorch, latency, fit into a target's flash / RAM
 - rl_train   reinforcement learning (PPO, SAC, A2C, TD3) on a Gymnasium environment of the list
-             below (classic control and MuJoCo); evaluation over N episodes, the policy exported
-             to ONNX and checked action by action against the trained one
+             below (classic control and MuJoCo), OR on YOUR robot (env "custom"): a template
+             (cart_pole, balance_bot) or your MJCF, observed sensors, a declared reward and end
+             condition, control rate, domain randomisation (mass, sensor noise, initial state);
+             evaluation over N episodes, the policy exported to ONNX and checked action by action
 - onnx_check an ONNX file of the study folder: inputs/outputs, operators, parameters, size,
              a test inference, latency, and operators outside the microcontroller-friendly set
 
@@ -291,6 +293,87 @@ def _nn_fit(inp: Dict[str, Any], work: Path) -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------- reinforcement learning
+def _custom_env_factory(inp: Dict[str, Any], work: Path):
+    """A Gymnasium env around a MuJoCo robot of the project (templates of _robots, or an MJCF)."""
+    import gymnasium as gym
+    import mujoco
+    import numpy as np
+    import _robots
+    from mdo import _check_expr
+
+    robot = inp.get("robot") or {}
+    m0, meta = _robots.load(robot, work)
+    names = list(_robots.sensors(m0, mujoco.MjData(m0)))
+    obs_names = [str(n) for n in inp.get("observe") or names]
+    acts = [str(n) for n in inp.get("act") or list(meta["actuators"])]
+    act_ids = [mujoco.mj_name2id(m0, mujoco.mjtObj.mjOBJ_ACTUATOR, n) for n in acts]
+    if any(i < 0 for i in act_ids):
+        raise ValueError(f"act: actuators of the model are {list(meta['actuators'])}")
+    known = tuple(n for n in names) + tuple(f"u{i}" for i in range(len(acts))) + ("t",)
+    reward = str(inp.get("reward", "1"))
+    terminate = str(inp.get("terminate", "-1"))
+    _check_expr(reward, known)
+    _check_expr(terminate, known)
+    hz = float(inp.get("control_hz", 50.0))
+    episode = float(inp.get("episode_s", 10.0))
+    rnd = inp.get("randomize") or {}
+    mass_pct = float(rnd.get("mass_pct", 0.0)) / 100.0
+    noise = {str(k): float(v) for k, v in (rnd.get("sensor_noise") or {}).items()}
+    init = {str(k): [float(a), float(b)] for k, (a, b) in (rnd.get("initial") or {}).items()}
+
+    class MjEnv(gym.Env):
+        metadata = {"render_modes": []}
+
+        def __init__(self):
+            self.m, _ = _robots.load(robot, work)
+            self.d = mujoco.MjData(self.m)
+            self.sub = max(1, int(round(1.0 / (hz * self.m.opt.timestep))))
+            self.max_k = int(episode * hz)
+            self.mass0 = self.m.body_mass.copy()
+            self.lo = np.array([meta["actuators"][n][0] for n in acts])
+            self.hi = np.array([meta["actuators"][n][1] for n in acts])
+            for n in obs_names:
+                if n not in names:
+                    raise ValueError(f"observe: {n!r} is not a sensor; one of {names}")
+            self.observation_space = gym.spaces.Box(-np.inf, np.inf, (len(obs_names),), np.float32)
+            self.action_space = gym.spaces.Box(-1.0, 1.0, (len(acts),), np.float32)
+
+        def _obs(self, sd):
+            v = [sd[n] if not isinstance(sd[n], tuple) else sd[n][0] for n in obs_names]
+            v = [x + (self.np_random.normal(0, noise[n]) if n in noise else 0.0) for x, n in zip(v, obs_names)]
+            return np.array(v, dtype=np.float32)
+
+        def reset(self, seed=None, options=None):
+            super().reset(seed=seed)
+            mujoco.mj_resetData(self.m, self.d)
+            self.m.body_mass[:] = self.mass0 * (1 + self.np_random.uniform(-mass_pct, mass_pct, self.mass0.shape))
+            for jn, (a, b) in init.items():
+                j = mujoco.mj_name2id(self.m, mujoco.mjtObj.mjOBJ_JOINT, jn)
+                if j < 0:
+                    raise ValueError(f"randomize.initial: no joint {jn!r}")
+                self.d.qpos[self.m.jnt_qposadr[j]] = self.np_random.uniform(a, b)
+            mujoco.mj_forward(self.m, self.d)
+            self.k = 0
+            return self._obs(_robots.sensors(self.m, self.d)), {}
+
+        def step(self, action):
+            a = np.clip(np.asarray(action, dtype=float), -1, 1)
+            u = self.lo + (a + 1) / 2 * (self.hi - self.lo)
+            for i, ai in enumerate(act_ids):
+                self.d.ctrl[ai] = u[i]
+            for _ in range(self.sub):
+                mujoco.mj_step(self.m, self.d)
+            self.k += 1
+            sd = _robots.sensors(self.m, self.d)
+            env = {n: (v if not isinstance(v, tuple) else v[0]) for n, v in sd.items()}
+            env.update({f"u{i}": float(x) for i, x in enumerate(u)}, t=float(self.d.time))
+            r = float(_evaluate(reward, env))
+            term = bool(float(_evaluate(terminate, env)) > 0)
+            return self._obs(sd), r, term, self.k >= self.max_k, {}
+
+    return MjEnv
+
+
 def _rl_train(inp: Dict[str, Any], work: Path) -> Dict[str, Any]:
     import gymnasium as gym
     import numpy as np
@@ -299,8 +382,11 @@ def _rl_train(inp: Dict[str, Any], work: Path) -> Dict[str, Any]:
     from stable_baselines3.common.env_util import make_vec_env
 
     env_id = str(inp.get("env", "CartPole-v1"))
-    if env_id not in ENVS:
-        raise ValueError(f"env {env_id!r} not in {ENVS}")
+    factory = None
+    if env_id == "custom":
+        factory = _custom_env_factory(inp, work)
+    elif env_id not in ENVS:
+        raise ValueError(f"env {env_id!r} not in {ENVS} or 'custom' (your robot)")
     algo = str(inp.get("algo", "PPO")).upper()
     if algo not in ALGOS:
         raise ValueError(f"algo in {ALGOS}")
@@ -319,14 +405,14 @@ def _rl_train(inp: Dict[str, Any], work: Path) -> Dict[str, Any]:
         raise ValueError(f"hyperparams not allowed: {sorted(bad)}")
     net = [int(h) for h in inp.get("net_arch", [64, 64])][:6]
     n_envs = int(inp.get("n_envs", 8 if algo in ("PPO", "A2C") else 1))
-    venv = make_vec_env(env_id, n_envs=max(1, min(n_envs, 16)), seed=seed)
+    venv = make_vec_env(factory or env_id, n_envs=max(1, min(n_envs, 16)), seed=seed)
     cls = getattr(sb3, algo)
     model = cls("MlpPolicy", venv, seed=seed, verbose=0, device="cpu",
                 policy_kwargs={"net_arch": net}, **hp)
     t0 = time.time()
     model.learn(total_timesteps=steps)
     train_s = time.time() - t0
-    eval_env = gym.make(env_id)
+    eval_env = factory() if factory else gym.make(env_id)
     n_ep = int(inp.get("eval_episodes", 20))
     rets: List[float] = []
     obs_bank: List[Any] = []
@@ -375,7 +461,7 @@ def _rl_train(inp: Dict[str, Any], work: Path) -> Dict[str, Any]:
     else:
         agree = float((np.abs(oa.reshape(pa.shape) - pa) <= 1e-4 * (1 + np.abs(pa))).all(axis=-1).mean()
                       if pa.ndim > 1 else (np.abs(oa.reshape(-1) - pa) <= 1e-4).mean())
-    threshold = getattr(eval_env.spec, "reward_threshold", None)
+    threshold = inp.get("success_return") if factory else getattr(eval_env.spec, "reward_threshold", None)
     mean = float(np.mean(rets))
     vals: Dict[str, Any] = {"mean_return": round(mean, 3), "std_return": round(float(np.std(rets)), 3),
                             "min_return": round(float(np.min(rets)), 3), "episodes": len(rets),
@@ -479,6 +565,17 @@ REFERENCES = [
              "hyperparams": {"n_steps": 32, "batch_size": 256, "gae_lambda": 0.8, "gamma": 0.98,
                              "n_epochs": 20, "ent_coef": 0.0, "learning_rate": 0.001, "clip_range": 0.2},
              "eval_episodes": 20},
+     "expect": {"solved": [1.0, 0], "onnx_action_agreement": [1.0, 0]}},
+    {"name": "custom_cart_pole_template_ppo", "kind": "rl_train",
+     "inp": {"env": "custom", "robot": {"template": "cart_pole"},
+             "observe": ["x", "x_rate", "pitch", "pitch_rate"], "reward": "1 - 0.02*x**2 - 0.01*x_rate**2",
+             "terminate": "maximum(abs(pitch) - 0.2, abs(x) - 2.4)", "control_hz": 50,
+             "episode_s": 10, "success_return": 475,
+             "randomize": {"mass_pct": 10, "initial": {"pitch": [-0.05, 0.05], "x": [-0.05, 0.05]}},
+             "algo": "PPO", "timesteps": 200000, "seed": 0, "n_envs": 8,
+             "hyperparams": {"n_steps": 256, "batch_size": 256, "n_epochs": 10, "gamma": 0.99,
+                             "gae_lambda": 0.95, "learning_rate": 0.0003, "ent_coef": 0.0},
+             "eval_episodes": 10},
      "expect": {"solved": [1.0, 0], "onnx_action_agreement": [1.0, 0]}},
     {"name": "onnx_tiny_gemm_relu", "kind": "onnx_check", "setup": "_setup_tiny_onnx",
      "inp": {"test_input": [1.0, 2.0, 3.0]},

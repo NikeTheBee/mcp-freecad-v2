@@ -80,7 +80,8 @@
    "sitl_cyg_intl"
   ],
   "skills": [
-   "skill-mecha"
+   "skill-mecha",
+   "skill-sil"
   ]
  },
  "soussol": {
@@ -109,7 +110,8 @@
   "tools": [],
   "skills": [
    "skill-elec",
-   "skill-pcb"
+   "skill-pcb",
+   "skill-kicad"
   ]
  },
  "embarque": {

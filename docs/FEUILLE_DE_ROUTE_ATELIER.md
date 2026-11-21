@@ -648,7 +648,7 @@ l'accord, et une demande en langage naturel conduite d'un seul tenant (`skill-at
   - lanceur d'adaptateurs : `python -I`, sans shell, délai, plafond mémoire, cache, tâches longues,
     fichiers d'entrée du projet, audit des sockets (boucle locale seulement) ;
   - un type de calcul ne tourne que si ses cas de référence passent.
-- **27 adaptateurs, 164 cas de référence**, relancés à chaque installation :
+- **29 adaptateurs, 172 cas de référence** (dont 4 en attente de KiCad), relancés à chaque installation :
 
   | Adaptateur | Domaine | Cas |
   |---|---|---|
@@ -678,7 +678,9 @@ l'accord, et une demande en langage naturel conduite d'un seul tenant (`skill-at
   | `cycle` | cycle de turboréacteur NASA pyCycle (conception + hors conception) : valeurs de non-régression pyCycle/NPSS | 1 |
   | `pcb` | largeur de piste et via IPC-2221, impédance microruban / triplaque (Pozar), ERC d'une netlist, faisceau WireViz + chutes de tension | 9 |
   | `mecha` | bruit de capteur (variance d'Allan), ADC / ENOB, filtre de Kalman, moteur CC + réducteur | 5 |
-  | `ai` | réseaux de neurones (régression, classification), apprentissage par renforcement (PPO/SAC/A2C/TD3, Gymnasium + MuJoCo), export ONNX vérifié | 4 |
+  | `ai` | réseaux de neurones (régression, classification), apprentissage par renforcement (PPO/SAC/A2C/TD3, Gymnasium + MuJoCo), environnement sur mesure (le robot du projet), export ONNX vérifié | 5 |
+  | `sil` | microprogramme STM32 réel dans Renode, en boucle fermée sur le robot MuJoCo (chariot-pendule, gyropode, MJCF) ; contrôle du modèle contre la forme fermée | 3 |
+  | `kicad` | KiCad 10 : DRC, ERC, Gerber, perçage, placement, IPC-2581, STEP de la carte contrôlé (installé par le propriétaire) | 4 |
 
 - **Du modèle au réel :**
   - `study` : critères, itérations, **optimisation automatique** des cotes du tableur, plan
@@ -759,8 +761,29 @@ suivants rééquilibrent le projet.
 | Lot | Contenu | État |
 |---|---|---|
 | R1 | `cycle` (pyCycle, NASA) ; `pcb` (IPC-2221 piste et via, impédance microruban et ligne triplaque, ERC d'une netlist, faisceau WireViz) ; `mecha` (variance d'Allan, ADC/ENOB, filtre de Kalman, moteur CC) ; `ai`, nouvel environnement (PyTorch CPU, Gymnasium, Stable-Baselines3, ONNX Runtime : régression ou classification, apprentissage par renforcement, export ONNX vérifié) | **fait**, 19 cas de référence verts |
-| R2 | KiCad 10, installé par le propriétaire : `winget install -e --id KiCad.KiCad`. Adaptateur `kicad` sur `kicad-cli` : ERC, DRC, Gerber, perçage, nomenclature, STEP vers FreeCAD | à faire |
+| R2 | KiCad 10, installé par le propriétaire : `winget install -e --id KiCad.KiCad`. Adaptateur `kicad` sur `kicad-cli` : ERC, DRC, Gerber, perçage, nomenclature, STEP vers FreeCAD | **fait** sauf KiCad : R2.1 à R2.3 validés ; `kicad` écrit, il se valide dès que KiCad est installé |
 | R3 | Arbres de comportement et machines d'état vérifiés ; MPC CasADi sur les modèles MuJoCo ; quantification int8 d'un réseau pour microcontrôleur ; banc sigrok / PyVISA en lecture seule | à faire |
+
+**Lot R2 en détail : les 20 % qui manquent pour un projet mécatronique complet** (ex. un gyropode
+autonome : mécanique, carte, capteurs, moteurs, commande, IA, microprogramme, essai réel).
+
+Outils retenus après recherche (libres, gratuits, locaux, natifs Windows) :
+
+| # | Manque | Outil retenu | Ce que l'adaptateur fera | Cas de référence |
+|---|---|---|---|---|
+| R2.1 | **Harnais universel** : l'atelier ne doit pas dépendre de Claude Code | protocole MCP standard (stdio) + `AGENTS.md` | les skills servis aussi comme ressources et prompts MCP ; configurations générées pour Claude Code/Desktop, Cursor, VS Code, Codex CLI, Gemini CLI, LM Studio, Continue, Windsurf | chaque configuration se relit ; un client MCP nu liste les outils et lit un skill |
+| R2.2 | **IA sur le robot de l'utilisateur** | MuJoCo + Gymnasium + Stable-Baselines3 (déjà là) | environnement sur mesure : modèle MJCF du projet ou gabarit paramétré (gyropode, chariot-pendule), récompense et fin d'épisode déclarées (liste blanche), bruit capteur, retard et variation de masse (randomisation de domaine) | taux d'instabilité égal à la forme fermée (0,06 % et 0,007 %) ; chariot-pendule sur mesure résolu par PPO (retour 499/500, masse ±10 %) — **fait** |
+| R2.3 | **Microprogramme et physique ensemble** (logiciel dans la boucle) | Renode 1.17 (déjà là) piloté en pas à pas par son moniteur sur la boucle locale, couplé à MuJoCo | le vrai binaire STM32 lit ses capteurs dans une boîte aux lettres en RAM et écrit sa commande ; Renode avance de 1 ms, MuJoCo aussi, à chaque pas | LQR compilé pour STM32 : chariot-pendule stabilisé dans Renode, écart 1,8e-8 avec la même loi en Python, aucune échéance manquée — **fait** (`sil`) |
+| R2.4 | **Carte réelle** | KiCad 10 (`kicad-cli` : ERC, DRC, Gerber, perçage, placement, nomenclature, STEP, IPC-2581) + Freerouting 2.x (routeur automatique, Java 17, DSN → SES) | ERC/DRC en verdict, fichiers de fabrication, STEP de la carte vers FreeCAD, routage automatique en option | carte générée : DRC propre, puis la même avec un défaut d'isolement que le DRC doit trouver ; STEP aux cotes de la carte |
+
+KiCad n'a pas de version portable : le propriétaire l'installe une fois (`winget install -e --id
+KiCad.KiCad`), l'adaptateur trouve `kicad-cli` et ne s'active qu'après ses cas de référence.
+
+Écartés :
+- les serveurs MCP KiCad tiers : ils exécutent du code et écrivent hors du projet ;
+- le serveur IPC de KiCad sans interface : il n'apparaît qu'à partir de KiCad 11 ;
+- un compilateur hôte pour le microprogramme : le binaire réel dans Renode est plus fidèle et
+  reste isolé.
 
 **Test d'acceptation :** un exercice réel d'école d'ingénieur, l'exercice de la Sorbonne fourni
 par le propriétaire, traité de bout en bout : modèle, simulations, vérifications, rapport.
