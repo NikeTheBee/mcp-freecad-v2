@@ -194,7 +194,7 @@ def install_envs(pixi: Path, home: Path, envs, dry: bool) -> dict:
 # updates, so the preflight total stays an "approximately".
 ENV_SIZE_GB = {
     "sim": 3.2, "pde": 1.3, "opt": 3.7, "aero": 1.3, "robot": 4.3, "elec": 2.2, "geo": 1.8,
-    "space": 1.5, "post": 2.5, "ros": 9.5,
+    "space": 1.5, "post": 2.5, "ros": 9.5, "ai": 2.6,
 }
 
 

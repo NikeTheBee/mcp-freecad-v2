@@ -123,6 +123,20 @@ orekit-jpype = "*"
 [feature.pde.pypi-dependencies]
 ngsolve = "*"
 
+# ---------------------------------------------------------------- AI for mechatronics (CPU only)
+# Neural networks for piloting and decisions: supervised fitting, reinforcement learning on
+# Gymnasium / MuJoCo models, export to ONNX checked by ONNX Runtime. Models leave as ONNX only
+# (no pickle): what an embedded target or a ROS node can load without executing code.
+[feature.ai.dependencies]
+pytorch = "2.*"
+onnx = "1.*"
+onnxruntime = "1.*"
+onnxscript = "*"
+gymnasium = "1.*"
+stable-baselines3 = "2.*"
+[feature.ai.pypi-dependencies]
+mujoco = ">=3.3"
+
 # ---------------------------------------------------------------- post-processing
 [feature.post.dependencies]
 paraview = "6.*"
@@ -154,6 +168,7 @@ aero = { features = ["py312", "flow"], no-default-feature = true }
 opt = { features = ["py312", "socle", "opt"] }
 robot = { features = ["py312", "socle", "robot"] }
 elec = { features = ["py312", "elec"] }
+ai = { features = ["py312", "ai"], no-default-feature = true }
 geo = { features = ["py312", "geo"], no-default-feature = true }
 space = { features = ["py312", "space"], no-default-feature = true }
 pde = { features = ["py312", "pde"], no-default-feature = true }

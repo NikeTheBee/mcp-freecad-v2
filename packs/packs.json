@@ -78,6 +78,9 @@
    "sitl_cyg_stdcxx",
    "sitl_cyg_iconv",
    "sitl_cyg_intl"
+  ],
+  "skills": [
+   "skill-mecha"
   ]
  },
  "soussol": {
@@ -103,7 +106,11 @@
   "envs": [
    "elec"
   ],
-  "tools": []
+  "tools": [],
+  "skills": [
+   "skill-elec",
+   "skill-pcb"
+  ]
  },
  "embarque": {
   "envs": [
@@ -142,6 +149,15 @@
   ],
   "skills": [
    "skill-foam"
+  ]
+ },
+ "ia": {
+  "envs": [
+   "ai"
+  ],
+  "tools": [],
+  "skills": [
+   "skill-ai"
   ]
  }
 }

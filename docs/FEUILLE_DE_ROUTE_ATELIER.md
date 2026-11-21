@@ -648,7 +648,7 @@ l'accord, et une demande en langage naturel conduite d'un seul tenant (`skill-at
   - lanceur d'adaptateurs : `python -I`, sans shell, délai, plafond mémoire, cache, tâches longues,
     fichiers d'entrée du projet, audit des sockets (boucle locale seulement) ;
   - un type de calcul ne tourne que si ses cas de référence passent.
-- **23 adaptateurs, 145 cas de référence**, relancés à chaque installation :
+- **27 adaptateurs, 164 cas de référence**, relancés à chaque installation :
 
   | Adaptateur | Domaine | Cas |
   |---|---|---|
@@ -675,11 +675,10 @@ l'accord, et une demande en langage naturel conduite d'un seul tenant (`skill-at
   | `structure` | stratifiés composites (théorie classique, Tsai-Wu) et propagation de fissure (Paris, Forman, fuite avant rupture) | 9 |
   | `foam` | OpenFOAM 12 (blueCFD-Core, Windows natif) : Couette et Poiseuille exacts, cas fournis avec refus des dictionnaires qui compilent du code | 3 |
   | `traj` | optimisation de trajectoire / commande optimale (NASA dymos) : brachistochrone exact, bang-bang exact | 2 |
-  | `mdo` | disciplines couplées (MDA), optimisation multidisciplinaire et plans d'expériences (OpenMDAO + pyOptSparse) | 6 |
-  | `vsp` | géométrie conceptuelle d'aéronef et aérodynamique VSPAERO (OpenVSP), export STEP vers FreeCAD | 2 |
-  | `structure` | stratifiés composites (théorie classique, Tsai-Wu) et propagation de fissure (Paris, Forman, fuite avant rupture) | 9 |
-  | `foam` | OpenFOAM 12 (blueCFD-Core, Windows natif) : Couette et Poiseuille exacts, cas fournis avec refus des dictionnaires qui compilent du code | 3 |
-  | `traj` | optimisation de trajectoire / commande optimale (NASA dymos) : brachistochrone exact, bang-bang exact | 2 |
+  | `cycle` | cycle de turboréacteur NASA pyCycle (conception + hors conception) : valeurs de non-régression pyCycle/NPSS | 1 |
+  | `pcb` | largeur de piste et via IPC-2221, impédance microruban / triplaque (Pozar), ERC d'une netlist, faisceau WireViz + chutes de tension | 9 |
+  | `mecha` | bruit de capteur (variance d'Allan), ADC / ENOB, filtre de Kalman, moteur CC + réducteur | 5 |
+  | `ai` | réseaux de neurones (régression, classification), apprentissage par renforcement (PPO/SAC/A2C/TD3, Gymnasium + MuJoCo), export ONNX vérifié | 4 |
 
 - **Du modèle au réel :**
   - `study` : critères, itérations, **optimisation automatique** des cotes du tableur, plan
@@ -720,6 +719,57 @@ l'accord, et une demande en langage naturel conduite d'un seul tenant (`skill-at
   marqués optionnels et leur empreinte est à refixer quand elle ne correspond plus.
 - **Base vendorisée :** la version amont 8.7.0 est sortie ; fusion à faire avec
   `bootstrap.py --update-base`, puis la suite complète.
+
+### Prochaine étape (décidée le 2026-11-21) : robotique, électronique, mécatronique, IA embarquée
+
+**Constat.** Sur 23 adaptateurs, une douzaine servent l'air et l'espace. Il manque à un ingénieur
+électronicien et à un ingénieur roboticien le cœur de leur métier :
+- pas de circuit imprimé : ni largeur de piste, ni impédance, ni contrôle électrique du schéma ;
+- pas de capteurs : ni bruit d'IMU, ni convertisseur analogique-numérique, ni fusion de capteurs ;
+- pas de dimensionnement de moteur ;
+- pas d'environnement pour créer, entraîner et embarquer un réseau de neurones de pilotage ou de
+  décision.
+
+L'aéronautique est donc **gelée** : on n'y ajoute rien sans besoin d'un projet réel. Les lots
+suivants rééquilibrent le projet.
+
+**Chaîne visée : électronique.**
+1. Schéma.
+2. Contrôle électrique (ERC).
+3. Carte : largeur de piste, impédance, via.
+4. Contrôle des règles de dessin (DRC).
+5. Fichiers de fabrication : Gerber, perçage, nomenclature, placement.
+6. STEP de la carte dans FreeCAD, puis `check` : la carte rentre dans le boîtier.
+7. Faisceau (WireViz) avec la chute de tension de chaque fil.
+8. Microprogramme (Renode).
+9. Banc de mesure.
+
+**Chaîne visée : robotique.**
+1. Capteurs : bruit, quantification, filtrage.
+2. Actionneurs : moteur, réducteur, échauffement.
+3. Dynamique et commande : `dynamics`, déjà là.
+4. Décision et pilotage par réseau de neurones : apprentissage supervisé ou par renforcement, sur
+   les modèles MuJoCo existants.
+5. Export ONNX, taille et latence comparées à la cible.
+6. Microprogramme.
+7. Essai réel et recalage.
+
+**Lots :**
+
+| Lot | Contenu | État |
+|---|---|---|
+| R1 | `cycle` (pyCycle, NASA) ; `pcb` (IPC-2221 piste et via, impédance microruban et ligne triplaque, ERC d'une netlist, faisceau WireViz) ; `mecha` (variance d'Allan, ADC/ENOB, filtre de Kalman, moteur CC) ; `ai`, nouvel environnement (PyTorch CPU, Gymnasium, Stable-Baselines3, ONNX Runtime : régression ou classification, apprentissage par renforcement, export ONNX vérifié) | **fait**, 19 cas de référence verts |
+| R2 | KiCad 10, installé par le propriétaire : `winget install -e --id KiCad.KiCad`. Adaptateur `kicad` sur `kicad-cli` : ERC, DRC, Gerber, perçage, nomenclature, STEP vers FreeCAD | à faire |
+| R3 | Arbres de comportement et machines d'état vérifiés ; MPC CasADi sur les modèles MuJoCo ; quantification int8 d'un réseau pour microcontrôleur ; banc sigrok / PyVISA en lecture seule | à faire |
+
+**Test d'acceptation :** un exercice réel d'école d'ingénieur, l'exercice de la Sorbonne fourni
+par le propriétaire, traité de bout en bout : modèle, simulations, vérifications, rapport.
+
+**Règles inchangées :**
+- aucun calcul sans cas de référence ;
+- un réseau de neurones ne commande jamais un vrai moteur ;
+- l'IA n'enregistre jamais de pickle : export ONNX seulement, et un `.pt` ou `.pkl` fourni est
+  refusé.
 
 ---
 

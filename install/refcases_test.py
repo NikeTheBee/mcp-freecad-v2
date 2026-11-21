@@ -7,7 +7,8 @@ change to the solvers, to the lock or to the runner is caught here rather than i
 Covered: `aeroelastic` (flutter, divergence, gust, fin flutter, AIC), `pogo` (feedline, closed
 loop, accumulator), `draw` (image and SVG tracing), `structure`
 (composite laminates and crack growth), `mdo` (coupled disciplines, optimisation,
-experiments) and `vsp` (OpenVSP geometry and VSPAERO). All of them answer in seconds. The heavy
+experiments), `traj` (dymos), `cycle` (pyCycle), `vsp` (OpenVSP and VSPAERO), `pcb` (traces,
+vias, impedance, ERC, harness), `mecha` (sensors, Kalman, DC motor) and `ai` (networks, RL, ONNX). All of them answer in seconds. The heavy
 adapters (space, gazebo, sitl, cfd, foam...) stay out of the suite on purpose: the installer runs
 their reference cases, and `tools_status()` reruns any that went stale.
 
@@ -26,7 +27,8 @@ sys.path.insert(0, str(REPO))
 
 # (adapter, environment); an adapter whose environment or tool is missing is skipped, not failed
 ADAPTERS = (("aeroelastic", "sim"), ("pogo", "sim"), ("draw", "sim"), ("structure", "sim"),
-            ("mdo", "opt"), ("traj", "opt"), ("vsp", "aero"))
+            ("mdo", "opt"), ("traj", "opt"), ("cycle", "opt"), ("vsp", "aero"),
+            ("pcb", "elec"), ("mecha", "sim"), ("ai", "ai"))
 
 
 def _home() -> str | None:
