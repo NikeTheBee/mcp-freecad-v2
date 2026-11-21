@@ -38,7 +38,14 @@ Two flags worth reading before anything else:
 `delta_sigma_MPa` (the stress RANGE of one cycle), `C`, `m`, `Kc_MPa_sqrt_m`, `a_initial_m`, and
 optionally `R`, `a_final_m`, `law` (`paris` or `forman`), `delta_K_threshold_MPa_sqrt_m`,
 `beta` (`centre_crack_infinite_plate`, `centre_crack_finite_width` + `width_m`,
-`edge_crack_single`, `surface_crack_semicircular`), `inspection_life_fraction`.
+`edge_crack_single`, `surface_crack_semicircular`), `inspection_life_fraction`, and
+**`thickness_m`** — give it whenever there is a wall.
+
+**Leak before break.** With `thickness_m`, the calculation stops when the crack reaches the far
+face: it leaks. Without it, a surface crack in a 3 mm wall is happily reported as growing to a
+"critical" 2.4 m, which is arithmetic, not engineering. `leak_before_break: 1` means it leaks
+first (usually the benign outcome, and the one inspection relies on); `0` with a wall given means
+K reaches Kc inside the wall — it breaks.
 
 Answers: `cycles_to_failure`, `critical_crack_m`, `delta_K_initial/final`, `Kmax_final`,
 `inspection_crack_m` (the size an inspection has to catch to leave that fraction of life), and
@@ -46,6 +53,8 @@ Answers: `cycles_to_failure`, `critical_crack_m`, `delta_K_initial/final`, `Kmax
 and the answer says so instead of inventing a number.
 
 ## What to say when you report
+- **A negative Tsai-Wu index is normal** and means comfortably safe (it happens in
+  compression). It is reported as it is, not clamped, so a criterion on it still gets judged.
 - **First-ply failure.** An index above 1 means one ply has failed, not that the laminate broke.
   For a real allowable, carry a margin: a lay-up's measured strengths scatter by 10 % and more.
 - **`C` and `m` are the whole answer.** They belong to that material, that orientation and that
@@ -62,7 +71,7 @@ exactly (and B = 0); a symmetric balanced 8-ply stack gives B = 0 and A16 = A26 
 while a single 45° ply is correctly reported as not balanced; a 0° ply pulled to exactly its
 fibre strength gives **exactly 1** in both criteria; and the Paris integration matches its
 analytic antiderivative, including when it runs all the way to the critical crack it found
-(Kmax = Kc there) and when the threshold stops it dead. See `REFERENCES` in
+(Kmax = Kc there) when the threshold stops it dead, and when a wall is reached first (leak before break, the life being the closed-form integral up to the wall). See `REFERENCES` in
 `server/adapters/structure.py`.
 
 ## Limits

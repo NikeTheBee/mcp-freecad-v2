@@ -648,7 +648,7 @@ l'accord, et une demande en langage naturel conduite d'un seul tenant (`skill-at
   - lanceur d'adaptateurs : `python -I`, sans shell, délai, plafond mémoire, cache, tâches longues,
     fichiers d'entrée du projet, audit des sockets (boucle locale seulement) ;
   - un type de calcul ne tourne que si ses cas de référence passent.
-- **21 adaptateurs, 139 cas de référence**, relancés à chaque installation :
+- **21 adaptateurs, 140 cas de référence**, relancés à chaque installation :
 
   | Adaptateur | Domaine | Cas |
   |---|---|---|
@@ -672,10 +672,10 @@ l'accord, et une demande en langage naturel conduite d'un seul tenant (`skill-at
   | `draw` | croquis, photo ou SVG vers contours cotés (SVG + DXF), planche à dessin locale | 6 |
   | `mdo` | disciplines couplées (MDA), optimisation multidisciplinaire et plans d'expériences (OpenMDAO + pyOptSparse) | 6 |
   | `vsp` | géométrie conceptuelle d'aéronef et aérodynamique VSPAERO (OpenVSP), export STEP vers FreeCAD | 2 |
-  | `structure` | stratifiés composites (théorie classique, Tsai-Wu) et propagation de fissure (Paris, Forman, tolérance aux dommages) | 8 |
+  | `structure` | stratifiés composites (théorie classique, Tsai-Wu) et propagation de fissure (Paris, Forman, fuite avant rupture) | 9 |
   | `mdo` | disciplines couplées (MDA), optimisation multidisciplinaire et plans d'expériences (OpenMDAO + pyOptSparse) | 6 |
   | `vsp` | géométrie conceptuelle d'aéronef et aérodynamique VSPAERO (OpenVSP), export STEP vers FreeCAD | 2 |
-  | `structure` | stratifiés composites (théorie classique, Tsai-Wu) et propagation de fissure (Paris, Forman, tolérance aux dommages) | 8 |
+  | `structure` | stratifiés composites (théorie classique, Tsai-Wu) et propagation de fissure (Paris, Forman, fuite avant rupture) | 9 |
 
 - **Du modèle au réel :**
   - `study` : critères, itérations, **optimisation automatique** des cotes du tableur, plan

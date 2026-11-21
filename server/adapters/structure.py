@@ -243,7 +243,7 @@ def _run_laminate(inp: Dict[str, Any], work: Path) -> Dict[str, Any]:
         sol = np.linalg.solve(abd_mat, np.concatenate([nvec, mvec]))
         eps0, kap = sol[:3], sol[3:]
         f12_mode = str(inp.get("f12", "mises")).lower()
-        worst_ms = worst_tw = 0.0
+        worst_ms = worst_tw = None
         plydata = []
         for i, lay in enumerate(layers):
             zc = 0.5 * (lay["z0"] + lay["z1"])
@@ -261,23 +261,32 @@ def _run_laminate(inp: Dict[str, Any], work: Path) -> Dict[str, Any]:
                    "tau12_MPa": round(float(t12), 6)}
             row.update({k: round(float(v), 9) for k, v in fail.items()})
             plydata.append(row)
-            worst_ms = max(worst_ms, fail.get("max_stress_index", 0.0))
-            worst_tw = max(worst_tw, fail.get("tsai_wu_index", 0.0))
+            # a Tsai-Wu index can be NEGATIVE (comfortably safe in compression): keep the
+            # worst one as it is instead of clamping it at zero, or a criterion on it would be
+            # reported as "not computed" exactly when the laminate is safest
+            if "max_stress_index" in fail:
+                worst_ms = (fail["max_stress_index"] if worst_ms is None
+                            else max(worst_ms, fail["max_stress_index"]))
+            if "tsai_wu_index" in fail:
+                worst_tw = (fail["tsai_wu_index"] if worst_tw is None
+                            else max(worst_tw, fail["tsai_wu_index"]))
         values["plies_detail"] = plydata
         values["strain_x"] = round(float(eps0[0]), 9)
         values["strain_y"] = round(float(eps0[1]), 9)
         values["curvature_x_1_mm"] = round(float(kap[0]), 12)
-        if worst_ms:
+        if worst_ms is not None:
             values["max_stress_index"] = round(worst_ms, 9)
-            values["max_stress_margin"] = round(1.0 / worst_ms - 1.0, 6)
-        if worst_tw:
+            if worst_ms > 0:
+                values["max_stress_margin"] = round(1.0 / worst_ms - 1.0, 6)
+        if worst_tw is not None:
             values["tsai_wu_index"] = round(worst_tw, 9)
-            values["tsai_wu_margin"] = round(1.0 / worst_tw - 1.0, 6)
+            if worst_tw > 0:
+                values["tsai_wu_margin"] = round(1.0 / worst_tw - 1.0, 6)
     head = (f"{len(layers)} plies, {h:.3f} mm: Ex {values['Ex_MPa'] / 1000:.1f} GPa, "
             f"Ey {values['Ey_MPa'] / 1000:.1f} GPa"
             + (", symmetric" if sym else ", NOT symmetric (it will warp when cured or loaded)")
             + (", balanced" if bal else ", NOT balanced (in-plane shear couples to stretching)"))
-    if "tsai_wu_index" in values:
+    if values.get("tsai_wu_index") is not None:
         head += f"; worst Tsai-Wu {values['tsai_wu_index']:.3f}"
     return result(values, inp.get("limits"), head,
                   notes=["thin-plate CLT: in-plane and bending only, no transverse shear, no "
@@ -327,6 +336,9 @@ def _run_crack(inp: Dict[str, Any], work: Path) -> Dict[str, Any]:
     beta_name = str(inp.get("beta", "centre_crack_infinite_plate"))
     width = _f(inp.get("width_m", 0.0))
     dk_th = _f(inp.get("delta_K_threshold_MPa_sqrt_m", 0.0))
+    wall = _f(inp.get("thickness_m", 0.0))      # the wall the crack grows through, if there is one
+    if wall < 0:
+        raise ValueError("`thickness_m` must be >= 0")
 
     def dk(a: float) -> float:
         return beta_of(beta_name, a, width) * ds * math.sqrt(math.pi * a)
@@ -354,6 +366,12 @@ def _run_crack(inp: Dict[str, Any], work: Path) -> Dict[str, Any]:
             break
     a_c = 0.5 * (lo + hi)
     a_f = min(_f(inp.get("a_final_m", a_c)), a_c)
+    # leak before break: with a wall thickness given, a surface crack reaching the far face is
+    # the end of the calculation -- it leaks. Which of the two comes first is the answer that
+    # matters, and quoting a critical crack longer than the wall would be nonsense.
+    leak = bool(wall > 0 and wall < a_f)
+    if leak:
+        a_f = wall
     if a_f <= a_i:
         raise ValueError("`a_final_m` must be larger than `a_initial_m`")
 
@@ -391,7 +409,10 @@ def _run_crack(inp: Dict[str, Any], work: Path) -> Dict[str, Any]:
         "delta_K_final_MPa_sqrt_m": round(dk(a_f), 12),
         "Kmax_final_MPa_sqrt_m": round(kmax(a_f), 9),
         "law": law, "beta": beta_name, "grows": 1.0,
+        "leak_before_break": 1.0 if leak else 0.0,
     }
+    if wall > 0:
+        values["thickness_m"] = wall
     # the size an inspection must find to leave a given fraction of the life
     frac = _f(inp.get("inspection_life_fraction", 0.5))
     if 0.0 < frac < 1.0:
@@ -408,16 +429,25 @@ def _run_crack(inp: Dict[str, Any], work: Path) -> Dict[str, Any]:
                 break
         values["inspection_crack_m"] = round(0.5 * (lo2 + hi2), 9)
         values["inspection_life_fraction"] = frac
-    return result(values, inp.get("limits"),
-                  f"{cycles:.0f} cycles from {a_i * 1000:.2f} mm to {a_f * 1000:.2f} mm "
-                  f"(critical {a_c * 1000:.2f} mm)",
+    head = (f"{cycles:.0f} cycles from {a_i * 1000:.2f} mm to {a_f * 1000:.2f} mm")
+    if leak:
+        head += (f": the crack goes THROUGH the {wall * 1000:.2f} mm wall first and it leaks, "
+                 f"long before K reaches Kc (which would need {a_c * 1000:.0f} mm)")
+    else:
+        head += f" (critical {a_c * 1000:.2f} mm)"
+        if wall > 0:
+            head += f", reached before the {wall * 1000:.2f} mm wall: it breaks, it does not leak"
+    return result(values, inp.get("limits"), head,
                   notes=["constant amplitude, long crack, linear elastic fracture mechanics: no "
                          "overload retardation, no short-crack regime, no corrosion, no mixed mode",
                          f"geometry factor `{beta_name}`: {BETAS[beta_name][1]}",
                          "C and m come from a table for THAT material, orientation and "
                          "environment; using a generic pair is the biggest error source here",
                          "an inspection interval is half of this life at most, and that is a "
-                         "convention, not a calculation"])
+                         "convention, not a calculation",
+                         "give `thickness_m` for a wall: a surface crack usually goes through it "
+                         "and leaks long before K reaches Kc, and a critical crack longer than "
+                         "the wall is arithmetic, not engineering"])
 
 
 def run(kind: str, inp: Dict[str, Any], work: Path) -> Dict[str, Any]:
@@ -509,6 +539,16 @@ REFERENCES = [
                    "Kmax_final_MPa_sqrt_m": [_KC, 1e-6],
                    "cycles_to_failure": [((_AC ** _P - _AI ** _P)
                                           / (_C * (_DS * math.sqrt(math.pi)) ** _M * _P)), 1e-6]},
+    },
+    {   # leak before break: the same case with a 3 mm wall stops at the wall, and the life
+        # is the closed-form integral up to the wall rather than up to the critical crack
+        "name": "leak_before_break", "kind": "crack_growth",
+        "inp": {"delta_sigma_MPa": _DS, "C": _C, "m": _M, "Kc_MPa_sqrt_m": _KC,
+                "a_initial_m": _AI, "R": 0.0, "thickness_m": 0.003},
+        "expect": {"leak_before_break": [1.0, 1e-9], "a_final_m": [0.003, 1e-12],
+                   "cycles_to_failure": [((0.003 ** _P - _AI ** _P)
+                                          / (_C * (_DS * math.sqrt(math.pi)) ** _M * _P)), 1e-6],
+                   "critical_crack_m": [_AC, 1e-6]},
     },
     {   # below the threshold, a long crack does not grow: the answer must say so, not integrate
         "name": "below_threshold_no_growth", "kind": "crack_growth",
