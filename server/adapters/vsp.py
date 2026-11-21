@@ -231,6 +231,12 @@ def _model_script(inp: Dict[str, Any], work: Path) -> Tuple[str, float, float, f
     if name is None:
         raise ValueError("no .vsp3 file in the job folder: pass it with "
                          "`params.files = [\"path/to/model.vsp3\"]`")
+    # the name is interpolated into the generated AngelScript, so it is checked rather than
+    # trusted: no quote can close the string literal, no backslash can escape it. Windows
+    # already forbids `"` in a file name; this is the second lock on the same door.
+    if not re.fullmatch(r"[A-Za-z0-9_.\- ]{1,120}\.vsp3", name):
+        raise ValueError(f"unusable model name {name!r}: letters, digits, space, dot, dash "
+                         f"and underscore only")
     sref = _pos(inp, "sref_m2")
     bref = _pos(inp, "bref_m")
     cref = _pos(inp, "cref_m")

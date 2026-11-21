@@ -11,7 +11,8 @@
   "archive": "zip",
   "dest": "pixi/bin",
   "bin": "pixi.exe",
-  "size": 33542762
+  "size": 33542762,
+  "sha_source": "recomputed 2026-11-21 from the archive in the workshop download cache, the one that installed the copy in use; the publisher's GitHub release carries no checksum file"
  },
  "freecad": {
   "version": "1.1.4",
@@ -26,7 +27,8 @@
   "strip": 1,
   "bin": "bin/freecadcmd.exe",
   "note": "fixes the 1.1.1 advisories (code execution / file write when opening a crafted FCStd)",
-  "size": 418088341
+  "size": 418088341,
+  "sha_source": "recomputed 2026-11-21 from the archive in the workshop download cache, the one that installed the copy in use; the publisher's GitHub release carries no checksum file"
  },
  "elmer": {
   "version": "26.1",

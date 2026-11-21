@@ -37,6 +37,8 @@ FREECADCMD = resolve_freecadcmd()
 # (script, success sentinel) — run under the system Python, no FreeCAD needed
 PURE_TESTS = [
     ("security_scan.py", "SECURITY_SCAN_OK"),
+    # structural cyber gate: the rules every adapter and the pinned supply chain must obey
+    ("cyber_scan.py", "CYBER_SCAN_OK"),
     ("state_test.py", "STATE_OK"),
     ("projects_test.py", "PROJECTS_OK"),
     ("optimize_test.py", "OPTIMIZE_OK"),
