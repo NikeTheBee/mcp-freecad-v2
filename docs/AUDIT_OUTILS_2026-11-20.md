@@ -228,6 +228,17 @@ Revue des domaines visés par le projet : aéronautique, spatial, drone, sous-ma
   rien d'exécuté depuis Internet ». Ce qui reste : extraire une fois pour relever l'arborescence
   réelle du dossier OpenFOAM, finir l'entrée `bluecfd` du lock (son chemin `bin` doit être vrai et
   non deviné), créer le pack `fluides-plus` et écrire l'adaptateur `foam`.
+  **La commande qui manque** (2026-11-21, à lancer une seule fois par le propriétaire : le
+  garde-fou de permissions refuse à l'IA de lancer un binaire fraîchement téléchargé, et ce
+  refus ne doit pas être contourné) :
+
+  ```
+  D:\Atelier	ools\innoextract-1.9\innoextract.exe -d D:\Atelier	oolslueCFD-Core-2024-1 -e D:\Atelier\downloadsluecfdlueCFD-Core-2024-1-win64-setup.exe
+  ```
+
+  Après quoi : relever l'arborescence, finir l'entrée `bluecfd` du lock avec son vrai chemin
+  `bin`, créer le pack `fluides-plus` et écrire l'adaptateur `foam`.
+
   Cas de référence prévus pour `foam`, tous à réponse exacte ou publiée : Poiseuille laminaire
   (profil exact), cylindre de Schäfer-Turek 2D-1 (Cd 5,5795 et Cl 0,0106, déjà utilisés pour Elmer
   et SU2, donc un troisième solveur sur la même référence), colonne d'eau au repos (pression

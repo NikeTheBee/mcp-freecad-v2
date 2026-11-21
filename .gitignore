@@ -42,3 +42,4 @@ secrets.*
 
 # Workshop environments (detached to MCPFC_HOME by install/atelier_install.py)
 /.pixi/
+sbom.cdx.json

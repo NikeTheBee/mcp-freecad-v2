@@ -39,6 +39,9 @@ PURE_TESTS = [
     ("security_scan.py", "SECURITY_SCAN_OK"),
     # structural cyber gate: the rules every adapter and the pinned supply chain must obey
     ("cyber_scan.py", "CYBER_SCAN_OK"),
+    # the bill of materials is generated from the lock files: running it keeps them
+    # parseable and keeps the SBOM a real capability rather than a script nobody calls
+    ("sbom.py", "SBOM_OK"),
     ("state_test.py", "STATE_OK"),
     ("projects_test.py", "PROJECTS_OK"),
     ("optimize_test.py", "OPTIMIZE_OK"),

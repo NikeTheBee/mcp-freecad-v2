@@ -24,7 +24,6 @@ from __future__ import annotations
 import os
 import re
 import shutil
-import tempfile
 import time
 from pathlib import Path
 from typing import Any, Dict, List
@@ -168,9 +167,13 @@ def _audit(pid: int) -> List[str]:
     return bad
 
 
-def _emulate(elf: Path, run_s: float, timeout: float) -> Dict[str, Any]:
+def _emulate(elf: Path, run_s: float, timeout: float, work: Path) -> Dict[str, Any]:
     import subprocess
-    root = Path(tempfile.mkdtemp(prefix="mcpfc_renode_"))
+    # Renode's scratch folder lives INSIDE the job folder: the runner gives every run its own
+    # and removes it afterwards, so nothing is left in the system temp. Renode cannot take a
+    # path with a space in it, which is checked below rather than assumed.
+    root = work / "renode"
+    root.mkdir(parents=True, exist_ok=True)
     try:
         if " " in str(root):
             raise RuntimeError(f"Renode needs a scratch folder without spaces (got {root})")
@@ -214,7 +217,7 @@ def run(kind: str, inp: Dict[str, Any], work: Path) -> Dict[str, Any]:
     run_s = float(inp.get("run_s", 1.0))
     if not 0 < run_s <= 60:
         raise ValueError("run_s: 0..60 virtual seconds")
-    em = _emulate(b["elf"], run_s, float(inp.get("timeout_s", 300)))
+    em = _emulate(b["elf"], run_s, float(inp.get("timeout_s", 300)), work)
     uart = em["uart"]
     (work / "uart.txt").write_text(uart, encoding="utf-8")
     (work / "renode.log").write_text(re.sub(r"\x1b\[[0-9;]*m", "", em["log"]), encoding="utf-8")

@@ -648,7 +648,7 @@ l'accord, et une demande en langage naturel conduite d'un seul tenant (`skill-at
   - lanceur d'adaptateurs : `python -I`, sans shell, délai, plafond mémoire, cache, tâches longues,
     fichiers d'entrée du projet, audit des sockets (boucle locale seulement) ;
   - un type de calcul ne tourne que si ses cas de référence passent.
-- **20 adaptateurs, 131 cas de référence**, relancés à chaque installation :
+- **21 adaptateurs, 139 cas de référence**, relancés à chaque installation :
 
   | Adaptateur | Domaine | Cas |
   |---|---|---|
@@ -672,8 +672,10 @@ l'accord, et une demande en langage naturel conduite d'un seul tenant (`skill-at
   | `draw` | croquis, photo ou SVG vers contours cotés (SVG + DXF), planche à dessin locale | 6 |
   | `mdo` | disciplines couplées (MDA), optimisation multidisciplinaire et plans d'expériences (OpenMDAO + pyOptSparse) | 6 |
   | `vsp` | géométrie conceptuelle d'aéronef et aérodynamique VSPAERO (OpenVSP), export STEP vers FreeCAD | 2 |
+  | `structure` | stratifiés composites (théorie classique, Tsai-Wu) et propagation de fissure (Paris, Forman, tolérance aux dommages) | 8 |
   | `mdo` | disciplines couplées (MDA), optimisation multidisciplinaire et plans d'expériences (OpenMDAO + pyOptSparse) | 6 |
   | `vsp` | géométrie conceptuelle d'aéronef et aérodynamique VSPAERO (OpenVSP), export STEP vers FreeCAD | 2 |
+  | `structure` | stratifiés composites (théorie classique, Tsai-Wu) et propagation de fissure (Paris, Forman, tolérance aux dommages) | 8 |
 
 - **Du modèle au réel :**
   - `study` : critères, itérations, **optimisation automatique** des cotes du tableur, plan
@@ -700,9 +702,10 @@ l'accord, et une demande en langage naturel conduite d'un seul tenant (`skill-at
     faire une fois l'extraction autorisée : relever l'arborescence réelle, finir l'entrée
     `bluecfd` du lock (le chemin `bin` doit être vrai, pas deviné), créer le pack
     `fluides-plus` et l'adaptateur `foam` (VOF, cavitation, MRF, 6-DOF).
-  - Vague 3 : SHARPy, MBDyn/DUST (whirl flutter), stratifiés composites, propagation de fissure,
-    flambage de coque raidie, hélice marine, openEMS, couplage FSI par fichiers, binaire BELLHOP
-    pour `arlpy`, et un SPH librement installable (PySPH ou SPlisHSPlasH) si le besoin revient.
+  - Vague 3, commencée : **stratifiés composites et propagation de fissure faits**
+    (adaptateur `structure`, 8 cas en forme fermée). Restent : SHARPy, MBDyn/DUST (whirl flutter),
+    hélice marine, openEMS, couplage FSI par fichiers, binaire BELLHOP pour `arlpy`
+    (le flambage de coque est déjà couvert par `marine pressure_hull`), et un SPH librement installable (PySPH ou SPlisHSPlasH) si le besoin revient.
 - **KiCad et CAMotics :** pas de version portable ; leurs installeurs écrivent hors du dossier
   choisi. Installation manuelle par le propriétaire, puis adaptateur `kicad_gate`.
 - **Ateliers FreeCAD tiers (Fasteners, SheetMetal) :** exécuter leur code exige une revue et

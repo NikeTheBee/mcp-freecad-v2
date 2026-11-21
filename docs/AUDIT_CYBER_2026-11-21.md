@@ -44,12 +44,20 @@ fichier suivi (elle n'est que dans la paternité des commits, à sa place).
 
 ## 3. Trouvailles
 
-**F1 — `firmware.py` écrit dans le temp du système (FAIBLE, hygiène).**
-`tempfile.mkdtemp(prefix="mcpfc_renode_")` au lieu du dossier du job. Contenu : le runner
-redirige `TEMP` et `TMP` vers `MCPFC_HOME`, donc rien ne va sur `C:`. Mais ce dossier n'est pas
-nettoyé à chaque run, et le projet a déjà connu une fuite de 3,8 Go de dossiers temporaires.
-*Correctif proposé* : utiliser le dossier du job. Non appliqué ici : `firmware` a trois cas de
-référence à repasser et Renode peut exiger un chemin court — à faire avec le test, pas à la hâte.
+**F1 — `firmware.py` écrivait dans le temp du système (FAIBLE, hygiène — CORRIGÉ).**
+`tempfile.mkdtemp(prefix="mcpfc_renode_")` au lieu du dossier du job. À la relecture, le code
+nettoyait déjà son dossier (`rmtree` en `finally`), donc ce n'était pas une fuite ; mais le temp
+du système n'est pas le bon endroit, et le projet a déjà connu une accumulation de 3,8 Go de
+dossiers temporaires. **Corrigé** : le dossier de travail de Renode est maintenant `work/renode`,
+dans le dossier que le runner crée et supprime pour chaque exécution ; le contrôle « pas d'espace
+dans le chemin », qu'exige Renode, est conservé. Les trois cas de référence de `firmware`
+repassent (Renode tourne vraiment : 18,8 s sur le premier). **Et l'exception correspondante a été
+retirée du portail** : la règle A6 interdit désormais `tempfile` à *tous* les adaptateurs, et
+l'arbre passe quand même.
+
+*Observation en passant* : Renode crée **son propre** dossier temporaire (`renode-<pid>`). Le
+runner redirige `TEMP` et `TMP` vers `MCPFC_HOME`, donc il reste à l'intérieur de l'atelier. Rien
+à corriger de notre côté, mais c'est le genre de chose qu'il faut avoir regardée pour le dire.
 
 **F2 — URDF/SDF analysés avec l'ElementTree de la bibliothèque standard (FAIBLE, informatif).**
 `dynamics.py` et `gazebo.py`. Pas de XXE : l'ElementTree standard ne résout pas les entités
@@ -107,8 +115,12 @@ qu'un audit doit attraper sur lui-même avant de le publier.
 
 - Appliquer F1 (dossier du job pour Renode) avec son test.
 - `defusedxml` dans `robot` et `ros` si l'occasion se présente (F2).
-- Un SBOM (CycloneDX) dérivé de `pixi.lock` et `tools.lock.json` : faisable hors ligne, utile le
-  jour où il faut répondre « qu'est-ce qui tourne ici, sous quelle licence ».
+- ~~Un SBOM (CycloneDX)~~ **fait** : `install/sbom.py` le produit hors ligne depuis les deux
+  fichiers de verrouillage, sans aucun appel réseau et sans rien importer. 1321 composants, dont
+  **1320 avec leur SHA-256** (le seul sans empreinte est la base vendorisée, qui n'est pas un
+  téléchargement) et 25 avec une licence enregistrée. Il ne devine rien : un paquet conda ne
+  porte pas sa licence dans le lock, donc ces champs restent vides et c'est dit. Le fichier
+  produit n'est pas versionné (il est reproductible depuis les locks, qui le sont).
 - Une tâche de CI qui lance `cyber_scan.py` seul sur une machine propre (il tourne déjà dans la
   suite, donc dans les quatre tâches existantes).
 - Le portail ne lit pas le sous-arbre vendorisé `server/freecad-mcp/` : il a sa propre

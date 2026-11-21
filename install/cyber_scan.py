@@ -97,10 +97,6 @@ ACCEPTED = {
         "the residual risk is entity expansion, i.e. a slow parse of the user's own file.",
     ("gazebo.py", "xml.etree.ElementTree"):
         "same: URDF / SDF / MJCF conversion checks, stdlib ElementTree, no external entities.",
-    ("firmware.py", "tempfile"):
-        "Renode is given a short path of its own; the runner redirects TEMP and TMP into the "
-        "workshop folder, so this stays inside MCPFC_HOME. Hygiene item, not an escape: "
-        "see docs/AUDIT_CYBER_2026-11-21.md finding 2.",
 }
 # Section E: layers whose writes were checked and do not need the path gates, with the reason.
 ACCEPTED_LAYERS = {

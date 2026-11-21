@@ -5,7 +5,8 @@ normally happen at install time or on first use; this test keeps the fast ones i
 change to the solvers, to the lock or to the runner is caught here rather than in a design run.
 
 Covered: `aeroelastic` (flutter, divergence, gust, fin flutter, AIC), `pogo` (feedline, closed
-loop, accumulator), `draw` (image and SVG tracing), `mdo` (coupled disciplines, optimisation,
+loop, accumulator), `draw` (image and SVG tracing), `structure`
+(composite laminates and crack growth), `mdo` (coupled disciplines, optimisation,
 experiments) and `vsp` (OpenVSP geometry and VSPAERO). All of them answer in seconds. The heavy
 adapters (space, gazebo, sitl, cfd, foam...) stay out of the suite on purpose: the installer runs
 their reference cases, and `tools_status()` reruns any that went stale.
@@ -24,7 +25,7 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
 # (adapter, environment); an adapter whose environment or tool is missing is skipped, not failed
-ADAPTERS = (("aeroelastic", "sim"), ("pogo", "sim"), ("draw", "sim"),
+ADAPTERS = (("aeroelastic", "sim"), ("pogo", "sim"), ("draw", "sim"), ("structure", "sim"),
             ("mdo", "opt"), ("vsp", "aero"))
 
 
