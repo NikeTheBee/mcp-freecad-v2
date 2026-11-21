@@ -201,7 +201,7 @@ Revue des domaines visés par le projet : aéronautique, spatial, drone, sous-ma
    l'échelle par cote de référence.
 4. Ajouts d'environnement : `panelaero`, `fluids`, `thermo`, `ht`, plus BELLHOP au lock.
 
-**Vague 2 (faite le 2026-11-20, sauf OpenFOAM)**
+**Vague 2 (faite ; OpenFOAM installé et validé le 2026-11-21 : Couette exact, Poiseuille à 0,5 % — u_max/U 1,4925 et dp/dx −0,01194 contre −0,012 —, et refus d'un cas cachant `#codeStream`)**
 
 - `mdo` : OpenMDAO 3.45 et pyOptSparse 2.17 dans l'environnement `opt`. MDA, optimisation sous
   contraintes avec dérivées exactes, plans d'expériences. Validé sur le problème de Sellar (racine

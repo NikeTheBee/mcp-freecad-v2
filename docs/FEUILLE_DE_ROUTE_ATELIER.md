@@ -648,7 +648,7 @@ l'accord, et une demande en langage naturel conduite d'un seul tenant (`skill-at
   - lanceur d'adaptateurs : `python -I`, sans shell, délai, plafond mémoire, cache, tâches longues,
     fichiers d'entrée du projet, audit des sockets (boucle locale seulement) ;
   - un type de calcul ne tourne que si ses cas de référence passent.
-- **21 adaptateurs, 140 cas de référence**, relancés à chaque installation :
+- **22 adaptateurs, 143 cas de référence**, relancés à chaque installation :
 
   | Adaptateur | Domaine | Cas |
   |---|---|---|
@@ -673,9 +673,11 @@ l'accord, et une demande en langage naturel conduite d'un seul tenant (`skill-at
   | `mdo` | disciplines couplées (MDA), optimisation multidisciplinaire et plans d'expériences (OpenMDAO + pyOptSparse) | 6 |
   | `vsp` | géométrie conceptuelle d'aéronef et aérodynamique VSPAERO (OpenVSP), export STEP vers FreeCAD | 2 |
   | `structure` | stratifiés composites (théorie classique, Tsai-Wu) et propagation de fissure (Paris, Forman, fuite avant rupture) | 9 |
+  | `foam` | OpenFOAM 12 (blueCFD-Core, Windows natif) : Couette et Poiseuille exacts, cas fournis avec refus des dictionnaires qui compilent du code | 3 |
   | `mdo` | disciplines couplées (MDA), optimisation multidisciplinaire et plans d'expériences (OpenMDAO + pyOptSparse) | 6 |
   | `vsp` | géométrie conceptuelle d'aéronef et aérodynamique VSPAERO (OpenVSP), export STEP vers FreeCAD | 2 |
   | `structure` | stratifiés composites (théorie classique, Tsai-Wu) et propagation de fissure (Paris, Forman, fuite avant rupture) | 9 |
+  | `foam` | OpenFOAM 12 (blueCFD-Core, Windows natif) : Couette et Poiseuille exacts, cas fournis avec refus des dictionnaires qui compilent du code | 3 |
 
 - **Du modèle au réel :**
   - `study` : critères, itérations, **optimisation automatique** des cotes du tableur, plan
@@ -690,7 +692,7 @@ l'accord, et une demande en langage naturel conduite d'un seul tenant (`skill-at
   fonction avec ANSYS Fluent, l'aéroélasticité Nastran, l'analyse POGO et un outil de dessin, puis
   les trous et les remplaçants libres.
   - Vague 1 **faite** : `aeroelastic`, `pogo`, `draw`.
-  - Vague 2 **faite sauf OpenFOAM** : `mdo` (OpenMDAO + pyOptSparse) et `vsp` (OpenVSP 3.56,
+  - Vague 2 **faite**, OpenFOAM compris : `mdo` (OpenMDAO + pyOptSparse) et `vsp` (OpenVSP 3.56,
     épinglé au lock) sont en place et validés. **DualSPHysics est écarté** : son dépôt ne
     contient que les outils annexes, le solveur est derrière la page de téléchargement du projet
     (leur `README` le dit), donc pas d'installation épinglée sans formulaire ; `interFoam`

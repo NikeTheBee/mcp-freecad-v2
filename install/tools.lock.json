@@ -376,5 +376,21 @@
   "bin": "innoextract.exe",
   "size": 520705,
   "note": "unpacks the blueCFD-Core Inno Setup installer WITHOUT running it: no admin rights, no registry entry, no Start Menu shortcut, nothing executed from the download. Supports Inno Setup 1.2.10 to 6.0.5; blueCFD-Core 2024-1 was built with 5.4.2."
+ },
+ "bluecfd": {
+  "version": "2024-1 (OpenFOAM 12, ParaView 5.11.2, MS-MPI 10.1.2, MSYS2)",
+  "license": "GPL-3.0-or-later (OpenFOAM); build scripts published by FS Dynamics Portugal",
+  "packs": [
+   "fluides-plus"
+  ],
+  "url": "https://github.com/blueCFD/Core/releases/download/blueCFD-Core-2024-1/blueCFD-Core-2024-1-win64-setup.exe",
+  "sha256": "7f2d036698dc6a5385bda665a71feef9e81b065abf7d013571a6e9afaf585baa",
+  "sha_source": "computed 2026-11-20 from the official GitHub release; the project publishes SHA1 87a16cd49ba891c9a5ff24d6c24b832e44f6cee7, which this download matched",
+  "archive": "inno",
+  "dest": "tools/blueCFD-Core-2024-1",
+  "strip": 0,
+  "bin": "OpenFOAM-12/platforms/mingw_w64Gcc122DPInt32Opt/bin/foamRun.exe",
+  "size": 1230349717,
+  "note": "the only native Windows build of OpenFOAM; unpacked with innoextract, never run. 7.2 GB unpacked. Runs serial (Pstream dummy library): parallel runs would need the MS-MPI runtime, which this does NOT install."
  }
 }

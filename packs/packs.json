@@ -131,5 +131,17 @@
    "ros"
   ],
   "tools": []
+ },
+ "fluides-plus": {
+  "envs": [
+   "post"
+  ],
+  "tools": [
+   "innoextract",
+   "bluecfd"
+  ],
+  "skills": [
+   "skill-foam"
+  ]
  }
 }
