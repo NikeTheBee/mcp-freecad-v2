@@ -137,6 +137,20 @@ stable-baselines3 = "2.*"
 [feature.ai.pypi-dependencies]
 mujoco = ">=3.3"
 
+# Same, on an NVIDIA GPU (CUDA 12.x build of PyTorch). Installed only when the hardware scan
+# finds an NVIDIA driver recent enough (install/hw_scan.py), or with -Packs ia-gpu.
+[feature.ai-gpu]
+system-requirements = { cuda = "12" }
+[feature.ai-gpu.dependencies]
+pytorch-gpu = "2.*"
+onnx = "1.*"
+onnxruntime = "1.*"
+onnxscript = "*"
+gymnasium = "1.*"
+stable-baselines3 = "2.*"
+[feature.ai-gpu.pypi-dependencies]
+mujoco = ">=3.3"
+
 # ---------------------------------------------------------------- post-processing
 [feature.post.dependencies]
 paraview = "6.*"
@@ -169,6 +183,7 @@ opt = { features = ["py312", "socle", "opt"] }
 robot = { features = ["py312", "socle", "robot"] }
 elec = { features = ["py312", "elec"] }
 ai = { features = ["py312", "ai"], no-default-feature = true }
+ai-gpu = { features = ["py312", "ai-gpu"], no-default-feature = true }
 geo = { features = ["py312", "geo"], no-default-feature = true }
 space = { features = ["py312", "space"], no-default-feature = true }
 pde = { features = ["py312", "pde"], no-default-feature = true }

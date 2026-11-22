@@ -161,5 +161,15 @@
   "skills": [
    "skill-ai"
   ]
+ },
+ "ia-gpu": {
+  "envs": [
+   "ai-gpu"
+  ],
+  "tools": [],
+  "skills": [
+   "skill-ai"
+  ],
+  "hardware": "nvidia-cuda12"
  }
 }

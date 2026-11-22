@@ -42,7 +42,7 @@ Then set parametric properties on `obj` (e.g. `obj.Diameter`, `obj.Thickness`, `
 
 ## Stability — centre of pressure (§4.3, no CFD)
 CP and static margin come from the analytical **Barrowman** method (subsonic) — no OpenFOAM needed.
-Use `barrowman_cp(rocket)` + `stability_calibers(cp, cg, d_ref)` from `install/rocket_cp_test.py`:
+Use `barrowman_cp(rocket)` + `stability_calibers(cp, cg, d_ref)` from `tests/rocket_cp_test.py`:
 nose (CN=2; CP at 0.466 L ogive, 2/3 L cone, 1/2 L parabola / Von Karman, 1/3 L elliptical — an unknown
 shape name is refused, never computed as an ogive), conical transitions (a boat-tail has a **negative**
 CN and pulls the CP forward) and ≥3 fins are summed → CP from the tip; a total CN ≤ 0 is refused.
@@ -57,4 +57,4 @@ or precise drag, that's the CFD path (CfdOF/OpenFOAM, external — see `docs/CAH
 ## Verify
 After building, confirm the solid is sane (token-minimal text check, no screenshot):
 `obj.Shape.isValid()`, `len(obj.Shape.Solids)`, `obj.Shape.Volume`, `obj.Shape.BoundBox`.
-See `install/rocket_graft_test.py` for a runnable end-to-end example.
+See `tests/rocket_graft_test.py` for a runnable end-to-end example.

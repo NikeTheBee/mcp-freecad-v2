@@ -30,4 +30,4 @@ solids = sum(len(o.Shape.Solids) for o in doc.Objects if hasattr(o, "Shape"))
 - STEP is the safe default for solids (keeps B-rep topology); IGES is surface-oriented and lossier.
 - Units are mm. Verify after import with `skill-verify` (`verify.verdict`) before continuing.
 
-Runnable example (export + round-trip): `install/exchange_test.py`.
+Runnable example (export + round-trip): `tests/exchange_test.py`.

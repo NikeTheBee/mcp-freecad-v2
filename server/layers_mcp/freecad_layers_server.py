@@ -830,11 +830,15 @@ def tools_status(refresh: bool = False) -> str:
         return "workshop not installed: powershell -ExecutionPolicy Bypass -File install\\install.ps1"
     lines = [f"home {st['home']}",
              "envs: " + ", ".join(f"{k}{'' if v else ' (missing)'}" for k, v in st["envs"].items())]
+    cp = st.get("compute") or {}
+    lines.append(f"compute: {cp.get('device', 'cpu')}, {cp.get('cpu_workers')} CPU workers"
+                 + (f", GPU {cp['gpu']['name']}" if cp.get("gpu") else "") + " (simulate params.device: cpu|gpu|both)")
     if st["tools"]:
         lines.append("tools: " + ", ".join(f"{k}{'' if v else ' (missing)'}" for k, v in st["tools"].items()))
     for name, a in sorted(st["adapters"].items()):
         lines.append(f"{name} [{a['env']}] {a.get('state')}: {', '.join(a['kinds'])}"
-                     + (f" — {a['reference']}" if a.get("reference") else ""))
+                     + (f" — {a['reference']}" if a.get("reference") else "")
+                     + (f" | GPU: {a['gpu']}" if a.get("gpu") else ""))
     return "\n".join(lines)
 
 

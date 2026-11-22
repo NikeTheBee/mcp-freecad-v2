@@ -1,6 +1,6 @@
 """Automatic design correction (server/atelier/optimize.py) against closed-form optima.
 
-Run with: py -3 install/optimize_test.py   (no FreeCAD needed). Sentinel: OPTIMIZE_OK
+Run with: py -3 tests/optimize_test.py   (no FreeCAD needed). Sentinel: OPTIMIZE_OK
 """
 import math
 import sys

@@ -23,6 +23,13 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent
+TESTS = REPO / "tests"
+
+
+def _script(name: str) -> Path:
+    """Tests live in tests/; the install-time checks (cyber_scan, security_scan, sbom) here."""
+    t = TESTS / name
+    return t if t.is_file() else HERE / name
 
 
 def resolve_freecadcmd() -> str:
@@ -46,6 +53,11 @@ PURE_TESTS = [
     # skills as tool / resources / prompt
     ("mcp_clients_test.py", "MCP_CLIENTS_TEST_OK"),
     ("universal_mcp_test.py", "UNIVERSAL_MCP_OK"),
+    # hardware scan only with consent; downloads and the CPU/GPU profile follow it
+    ("hw_scan_test.py", "HWSCAN_TEST_OK"),
+    ("compute_test.py", "COMPUTE_OK"),
+    # nothing downloaded twice: copies already on any drive found first
+    ("dedupe_test.py", "DEDUPE_TEST_OK"),
     ("state_test.py", "STATE_OK"),
     ("projects_test.py", "PROJECTS_OK"),
     ("optimize_test.py", "OPTIMIZE_OK"),
@@ -105,6 +117,8 @@ LIVE_TESTS = [
     ("phase1_smoke_test.py", "PHASE1_OK"),
     ("mcp_loop_test.py", "MCP_LOOP_OK"),
     ("layers_mcp_test.py", "LAYERS_MCP_OK"),
+    # what ANY MCP client pays at session start (both servers), kept under its budget
+    ("tool_budget.py", "TOOL_BUDGET_OK"),
     ("base_fixes_test.py", "BASE_FIXES_OK"),
     ("base_exactness_test.py", "BASE_EXACT_OK"),
     ("scenario_test.py", "SCENARIO_OK"),
@@ -193,7 +207,7 @@ def _main() -> int:
 
     # Pure-Python tests (no FreeCAD needed) — also run in CI.
     for script, sentinel in PURE_TESTS:
-        ok, out = _run([sys.executable, str(HERE / script)])
+        ok, out = _run([sys.executable, str(_script(script))])
         _record(results, script, ok, out, sentinel)
 
     if not Path(FREECADCMD).exists():
@@ -202,7 +216,7 @@ def _main() -> int:
         return 2
 
     for script, sentinel in FREECAD_TESTS:
-        ok, out = _run([FREECADCMD, str(HERE / script)])
+        ok, out = _run([FREECADCMD, str(_script(script))])
         _record(results, script, ok, out, sentinel)
 
     # End-to-end tests: launcher -> isolated FreeCAD (test port, private home)
@@ -215,7 +229,7 @@ def _main() -> int:
             _skip(results, script, f"bridge venv missing at {VENV_PY} — run install/bootstrap.py")
         else:
             env = dict(os.environ, FREECAD_MCP_FREECAD_BIN=FREECADCMD)
-            ok, out = _run([str(VENV_PY), str(HERE / script)], env=env)
+            ok, out = _run([str(VENV_PY), str(_script(script))], env=env)
             _record(results, script, ok, out, sentinel)
 
     failed = [n for n, s in results if s == "FAIL"]

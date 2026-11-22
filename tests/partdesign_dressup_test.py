@@ -1,6 +1,6 @@
 """Validate PartDesign dress-up features headless (cahier §4.1: fillet/chamfer/holes/patterns).
 
-Run with:  A:\FreeCAD\bin\freecadcmd.exe install\partdesign_dressup_test.py
+Run with:  A:\FreeCAD\bin\freecadcmd.exe tests\partdesign_dressup_test.py
 Closes the "documented but untested" gap for fillet, chamfer, hole and pattern.
 Prints DRESSUP_OK on success.
 """

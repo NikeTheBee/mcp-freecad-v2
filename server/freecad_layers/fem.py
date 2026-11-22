@@ -12,7 +12,7 @@ Faces are named "Face3", or by a side of the part's bounding box: "xmin",
 Loads are forces in newtons with a direction vector.
 
 Exactness: a cantilever matches delta = F*L^3 / (3*E*I) within 1 %
-(install/fem_test.py).
+(tests/fem_test.py).
 
 Scope: linear elastic, small displacements. NOT for buckling, plasticity,
 contact or fatigue. The peak stress at a fixed face is usually a mesh

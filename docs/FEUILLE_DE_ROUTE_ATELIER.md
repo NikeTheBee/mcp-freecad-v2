@@ -785,6 +785,44 @@ KiCad.KiCad`), l'adaptateur trouve `kicad-cli` et ne s'active qu'après ses cas 
 - un compilateur hôte pour le microprogramme : le binaire réel dans Renode est plus fidèle et
   reste isolé.
 
+### Calcul : CPU, GPU ou les deux (2026-11-22)
+
+- **Scanner matériel** (`install\install.ps1 -Scan`, `install/hw_scan.py`) :
+  - il **demande avant** de lire quoi que ce soit ; sans accord, ou dans un shell non
+    interactif, rien n'est lu et le profil reste CPU ;
+  - il relève le processeur (cœurs), la RAM, la ou les cartes graphiques (nom, mémoire, pilote
+    via `nvidia-smi`) et le disque libre ;
+  - rien ne quitte la machine : le résultat va dans `hardware.json` et dans le profil `compute`
+    d'`atelier.json`.
+- **Téléchargements selon le matériel :**
+  - le pack `ia-gpu` (PyTorch CUDA 12) n'est ajouté que pour une carte NVIDIA avec un pilote
+    ≥ 570 et au moins 6 Go de mémoire ; `tout` ne l'inclut pas d'office ;
+  - avec un vieux pilote, une carte AMD ou une carte Intel : profil CPU, plus un conseil ;
+  - le pré-vol affiche la taille et demande confirmation avant de télécharger.
+- **Aucun doublon** (`install/dedupe.py`) : avant chaque téléchargement, l'installeur regarde si
+  l'élément est déjà là. Dans l'ordre :
+  1. installé dans l'atelier et vérifié par son empreinte ;
+  2. archive déjà téléchargée et vérifiée : elle est seulement décompressée ;
+  3. copie ailleurs sur le PC, sur **tous les disques** : PATH, Program Files, programmes de
+     l'utilisateur, dossier utilisateur, trois niveaux sous la racine de chaque disque (noms de
+     dossiers seulement : rien n'est ouvert ni exécuté) :
+     - même version : réutilisation proposée, refusée par défaut, car elle ne peut pas être
+       vérifiée par l'empreinte figée ;
+     - autre version : signalée seulement.
+
+  Les paquets conda sont stockés une seule fois : un cache pixi commun, lié en dur dans chaque
+  environnement, et l'installeur vérifie que cache et environnements sont sur le même disque.
+  Sur cette machine : A:, C:, D: et E: parcourus en 7 s ; deux autres versions trouvées (FreeCAD
+  1.1.1, git-lfs de Git), aucun doublon ; pré-vol à 0,0 Go quand tout est déjà là.
+- **Choix à chaque calcul :** `params.device` vaut `cpu`, `gpu` ou `both` ; `both` met le réseau
+  sur le GPU et la physique sur les cœurs.
+  - L'environnement jumeau GPU est validé à part, sur ses propres cas de référence.
+  - Sans jumeau installé, le calcul retombe sur le CPU et le résultat le dit.
+- **CPU parallèle :**
+  - OpenFOAM via MS-MPI (`cpus`) : processus surveillés, et sur 2 rangs le canal de Poiseuille
+    donne exactement le même résultat qu'en série ;
+  - CalculiX et BLAS : threads du profil (cœurs physiques − 1).
+
 **Test d'acceptation :** un exercice réel d'école d'ingénieur, l'exercice de la Sorbonne fourni
 par le propriétaire, traité de bout en bout : modèle, simulations, vérifications, rapport.
 

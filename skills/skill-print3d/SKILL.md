@@ -37,11 +37,11 @@ assert not m.hasNonUniformOrientedFacets()        # and consistently oriented
 ```
 Checks: `hasNonManifolds()`, `hasSelfIntersections()`, `isSolid()`, `hasNonUniformOrientedFacets()`.
 `Mesh.Volume` is always positive, even inside out: the base's `mesh_operations validate_mesh`
-(with `auto_repair`) checks the orientation with the signed volume and turns the mesh outward. Example: `install/mesh_repair_test.py`.
+(with `auto_repair`) checks the orientation with the signed volume and turns the mesh outward. Example: `tests/mesh_repair_test.py`.
 
 ## Only without the tools (execute_python)
 `export` is the same code with the checks: `from freecad_layers import export;
 export.export(obj_name, "part.3mf")`. A bare `Shape.exportStl("out.stl")` checks nothing and its
 default triangles are coarse; never hand such a file over unverified.
 
-Runnable example: `install/print3d_test.py`.
+Runnable example: `tests/print3d_test.py`.

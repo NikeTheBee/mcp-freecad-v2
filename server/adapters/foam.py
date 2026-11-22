@@ -3,7 +3,10 @@
 The workshop's SU2 and Elmer cover external aerodynamics, compressible flow and conjugate heat.
 OpenFOAM brings the rest of what Fluent is bought for: free surface (VOF), cavitation, rotating
 zones (MRF), six-degree-of-freedom bodies, turbulence models by the dozen. It runs here as the
-native Windows build of blueCFD-Core, serial (Pstream dummy library, no MPI).
+native Windows build of blueCFD-Core: serial, or parallel on the CPU cores with the MS-MPI
+10.1.2 bundled in blueCFD (params.cpus = N, or "auto" = the compute profile's MPI ranks):
+decomposePar (scotch), mpiexec -n N foamRun -parallel, reconstructPar. Every MPI process is
+audited: a socket outside the loopback stops the run.
 
 Kinds:
 - foam_couette   plane Couette flow between a fixed and a sliding wall (cyclic in x): the exact
@@ -24,7 +27,7 @@ almost every case people actually run; the ones it refuses need a human to read 
 Units: SI. Kinematic viscosity in m^2/s, kinematic pressure p/rho in m^2/s^2 (incompressible
 OpenFOAM convention), velocities m/s.
 
-Limits, restated in every result: serial only; the generated cases are laminar and 2-D (one cell
+Limits, restated in every result: one machine (no cluster); the generated cases are laminar and 2-D (one cell
 deep, `empty` front and back); a supplied case is run as given, so its physics, mesh quality and
 convergence are its own -- the answer reports the residuals so you can judge, and says UNKNOWN
 rather than OK when nothing was asked of it.
@@ -98,8 +101,9 @@ def _pos(d: Dict[str, Any], key: str, default=None) -> float:
 
 
 # --------------------------------------------------------------------------- the environment
-def _foam_env() -> Tuple[Path, Dict[str, str]]:
-    """Paths and variables that blueCFD's own setvars_OF12.bat would set, for a serial run."""
+def _foam_env(parallel: bool = False) -> Tuple[Path, Dict[str, str]]:
+    """Paths and variables that blueCFD's own setvars_OF12.bat would set (serial: the dummy
+    Pstream; parallel: the MS-MPI Pstream and mpiexec)."""
     exe = Path(tool("bluecfd"))
     proj = exe.parents[3]                     # .../OpenFOAM-12
     root = proj.parent                        # blueCFD home
@@ -109,25 +113,87 @@ def _foam_env() -> Tuple[Path, Dict[str, str]]:
     extlib = third / "mingw_w64Gcc122DPInt32" / "lib"
     gccbin = third / "mingw_w64x86_64-w64-mingw32" / "gcc-12.2.0" / "bin"
     win = os.environ.get("SYSTEMROOT", r"C:\Windows")
+    mpi = "MS-MPI-10.1.2"
+    mpibin = third / "mingw_w64Gcc122" / mpi / "bin"
     path = os.pathsep.join(str(p) for p in (
         appbin, proj / "bin", gccbin, root / "msys64" / "mingw64" / "bin",
-        libbin / "dummy", libbin, extlib, win, Path(win) / "System32"))
+        libbin / (mpi if parallel else "dummy"), libbin, extlib,
+        *([mpibin] if parallel else []), win, Path(win) / "System32"))
     env = {
         "PATH": path, "WM_PROJECT": "OpenFOAM", "WM_PROJECT_VERSION": "12",
         "WM_PROJECT_DIR": str(proj), "WM_PROJECT_INST_DIR": str(root),
         "FOAM_INST_DIR": str(root), "WM_THIRD_PARTY_DIR": str(root / "ThirdParty-12"),
         "WM_OPTIONS": PLATFORM, "WM_ARCH": "mingw_w64", "WM_COMPILER": "Gcc122",
         "WM_PRECISION_OPTION": "DP", "WM_LABEL_SIZE": "32", "WM_LABEL_OPTION": "Int32",
-        "WM_COMPILE_OPTION": "Opt", "WM_OSTYPE": "MSwindows", "WM_MPLIB": "dummy",
+        "WM_COMPILE_OPTION": "Opt", "WM_OSTYPE": "MSwindows", "WM_MPLIB": "MSMPI" if parallel else "dummy",
         "FOAM_ETC": str(proj / "etc"), "FOAM_APPBIN": str(appbin), "FOAM_LIBBIN": str(libbin),
-        "FOAM_EXT_LIBBIN": str(extlib), "FOAM_SIGFPE": "1", "FOAM_MPI": "dummy",
+        "FOAM_EXT_LIBBIN": str(extlib), "FOAM_SIGFPE": "1", "FOAM_MPI": mpi if parallel else "dummy",
+        "MCPFC_MPIEXEC": str(mpibin / "mpiexec.exe"), "MPI_BUFFER_SIZE": "20000000",
         "USER": "ofuser", "USERNAME": "ofuser",
     }
     return appbin, env
 
 
-def _run_case(case: Path, solver: str, timeout: float, mesh: bool = True) -> Dict[str, Any]:
-    appbin, env = _foam_env()
+def _ranks(inp: Dict[str, Any]) -> int:
+    c = inp.get("cpus", 1)
+    if str(c).lower() == "auto":
+        c = os.environ.get("MCPFC_MPI_RANKS", "1")
+    n = int(c)
+    if not 1 <= n <= 64:
+        raise ValueError("cpus: 1..64 or 'auto'")
+    return n
+
+
+def _foreign_sockets(names=("mpiexec.exe", "smpd.exe", "foamrun.exe", "msmpilaunchsvc.exe")) -> List[str]:
+    """Sockets outside the loopback held by the MPI processes (tasklist + netstat, no package)."""
+    import shutil as _sh
+    tl, ns = _sh.which("tasklist"), _sh.which("netstat")
+    if not tl or not ns:
+        return ["tasklist/netstat not found: the MPI socket audit cannot run"]
+    pids = set()
+    for ln in (run_exe([tl, "/FO", "CSV", "/NH"], Path.cwd(), 30).stdout or "").splitlines():
+        f = [x.strip('"') for x in ln.split('","')]
+        if len(f) > 1 and f[0].lower() in names:
+            pids.add(f[1])
+    bad = []
+    for ln in (run_exe([ns, "-ano"], Path.cwd(), 30).stdout or "").splitlines():
+        f = ln.split()
+        if len(f) >= 4 and f[0] in ("TCP", "UDP") and f[-1] in pids:
+            if not (f[1].startswith("127.0.0.1:") or f[1].startswith("[::1]:")):
+                bad.append(f[1])
+    return bad
+
+
+def _mpi_run(args: List[str], case: Path, timeout: float, env: Dict[str, str]) -> str:
+    import subprocess
+    import time as _t
+    full = dict(os.environ)
+    full.update(env)
+    log = case / "log.foamRun"
+    with open(log, "w", encoding="utf-8") as fh:
+        proc = subprocess.Popen(args, cwd=str(case), stdout=fh, stderr=subprocess.STDOUT,
+                                stdin=subprocess.DEVNULL, env=full,
+                                creationflags=0x08000000 if os.name == "nt" else 0)
+        t0, bad = _t.time(), []
+        try:
+            while proc.poll() is None:
+                bad = _foreign_sockets()
+                if bad or _t.time() - t0 > timeout:
+                    break
+                _t.sleep(1.0)
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait(15)
+    if bad:
+        raise PermissionError(f"an MPI process opened {', '.join(bad)} outside the loopback: stopped")
+    if _t.time() - t0 > timeout:
+        raise TimeoutError(f"parallel run did not finish within {timeout:.0f} s")
+    return log.read_text(encoding="utf-8", errors="replace")
+
+
+def _run_case(case: Path, solver: str, timeout: float, mesh: bool = True, ranks: int = 1) -> Dict[str, Any]:
+    appbin, env = _foam_env(parallel=ranks > 1)
     env.update(HOME=str(case), WM_PROJECT_USER_DIR=str(case))
     logs = []
     if mesh and (case / "system" / "blockMeshDict").is_file():
@@ -136,13 +202,33 @@ def _run_case(case: Path, solver: str, timeout: float, mesh: bool = True) -> Dic
         logs.append("log.blockMesh")
         if p.returncode != 0:
             raise ValueError(f"blockMesh failed: {((p.stdout or '') + (p.stderr or ''))[-500:]}")
+    if ranks > 1:
+        if not (case / "system" / "decomposeParDict").is_file():
+            _w(case, "system/decomposeParDict", "dictionary",
+               f"\nnumberOfSubdomains {ranks};\nmethod scotch;\n")
+        p = run_exe([str(appbin / "decomposePar.exe"), "-force"], case, timeout, env_extra=env)
+        (case / "log.decomposePar").write_text((p.stdout or "") + (p.stderr or ""), encoding="utf-8")
+        logs.append("log.decomposePar")
+        if p.returncode != 0:
+            raise ValueError(f"decomposePar failed: {((p.stdout or '') + (p.stderr or ''))[-500:]}")
+        out = _mpi_run([env["MCPFC_MPIEXEC"], "-n", str(ranks), str(appbin / "foamRun.exe"),
+                        "-solver", solver, "-parallel"], case, timeout, env)
+        logs.append("log.foamRun")
+        if "FOAM FATAL" in out or "End" not in out:
+            raise ValueError(f"parallel foamRun failed: {out[-700:]}")
+        p = run_exe([str(appbin / "reconstructPar.exe"), "-latestTime"], case, timeout, env_extra=env)
+        (case / "log.reconstructPar").write_text((p.stdout or "") + (p.stderr or ""), encoding="utf-8")
+        logs.append("log.reconstructPar")
+        if p.returncode != 0:
+            raise ValueError(f"reconstructPar failed: {((p.stdout or '') + (p.stderr or ''))[-500:]}")
+        return {"log": out, "logs": logs, "ranks": ranks}
     p = run_exe([str(appbin / "foamRun.exe"), "-solver", solver], case, timeout, env_extra=env)
     out = (p.stdout or "") + (p.stderr or "")
     (case / "log.foamRun").write_text(out, encoding="utf-8")
     logs.append("log.foamRun")
     if p.returncode != 0 or "FOAM FATAL" in out:
         raise ValueError(f"foamRun failed: {out[-700:]}")
-    return {"log": out, "logs": logs}
+    return {"log": out, "logs": logs, "ranks": 1}
 
 
 def _residuals(log: str) -> Dict[str, float]:
@@ -315,7 +401,7 @@ boundaryField
     #includeEtc "caseDicts/setConstraintTypes"
 }
 """)
-    run = _run_case(case, "incompressibleFluid", float(KINDS["foam_couette"]["timeout"]))
+    run = _run_case(case, "incompressibleFluid", float(KINDS["foam_couette"]["timeout"]), ranks=_ranks(inp))
     u = _read_internal(_latest_time(case) / "U")
     cs = _centres(lx, h, nx, ny)
     err = max(abs(ux[0] - uw * y / h) for ux, (_x, y) in zip(u, cs)) / uw
@@ -384,7 +470,7 @@ boundaryField
     #includeEtc "caseDicts/setConstraintTypes"
 }
 """)
-    run = _run_case(case, "incompressibleFluid", float(KINDS["foam_channel"]["timeout"]))
+    run = _run_case(case, "incompressibleFluid", float(KINDS["foam_channel"]["timeout"]), ranks=_ranks(inp))
     last = _latest_time(case)
     u = _read_internal(last / "U")
     p = _read_internal(last / "p")
@@ -405,13 +491,13 @@ boundaryField
         "profile_max_error_rel": round(prof_err, 9),
         "dpdx_kinematic": round(dpdx, 12), "dpdx_exact_kinematic": dpdx_exact,
         "dpdx_error_rel": round(abs(dpdx - dpdx_exact) / abs(dpdx_exact), 9),
-        "residuals": _residuals(run["log"]),
+        "residuals": _residuals(run["log"]), "cpus": run["ranks"],
     }
     return result(values, inp.get("limits"),
                   f"laminar channel Re {re_:.1f}: u_max/U {max(col) / ub:.4f} (exact 1.5), dp/dx "
                   f"within {values['dpdx_error_rel'] * 100:.2f} % of 12 nu U / h^2",
                   files=[str(case / x) for x in run["logs"]],
-                  notes=["laminar 2-D, serial; the cell-centre maximum sits half a cell from the "
+                  notes=["laminar 2-D; the cell-centre maximum sits half a cell from the "
                          "axis, so u_max reads a touch below 1.5 U on a coarse mesh",
                          "kinematic pressure (p / rho), the incompressible OpenFOAM convention"])
 
@@ -462,7 +548,7 @@ def _run_user_case(inp: Dict[str, Any], work: Path) -> Dict[str, Any]:
                       f"compile code, load a library, run a command or read outside the case",
                       notes=bad[:5] + ["a human must read such a case; the workshop will not "
                                        "run it"])
-    run = _run_case(case, solver, float(inp.get("timeout_s", KINDS["foam_case"]["timeout"])))
+    run = _run_case(case, solver, float(inp.get("timeout_s", KINDS["foam_case"]["timeout"])), ranks=_ranks(inp))
     res = _residuals(run["log"])
     last = _latest_time(case)
     values = {"refused": 0.0, "solver": solver, "last_time": last.name,
@@ -507,6 +593,14 @@ REFERENCES = [
         "inp": {"height_m": _H, "mean_velocity_m_s": _UB, "nu_m2_s": _NU,
                 "length_to_height": 20.0, "cells_across": 20, "cells_along": 100},
         "expect": {"u_max_over_mean": [1.5, 0.01],
+                   "dpdx_kinematic": [-12.0 * _NU * _UB / _H ** 2, 0.02],
+                   "profile_max_error_rel": [0.0, 0.01]},
+    },
+    {   # the same channel decomposed on 2 MPI ranks: the same exact answers, and 2 ranks used
+        "name": "poiseuille_channel_parallel_2", "kind": "foam_channel",
+        "inp": {"height_m": _H, "mean_velocity_m_s": _UB, "nu_m2_s": _NU, "cpus": 2,
+                "length_to_height": 20.0, "cells_across": 20, "cells_along": 100},
+        "expect": {"u_max_over_mean": [1.5, 0.01], "cpus": [2, 0],
                    "dpdx_kinematic": [-12.0 * _NU * _UB / _H ** 2, 0.02],
                    "profile_max_error_rel": [0.0, 0.01]},
     },

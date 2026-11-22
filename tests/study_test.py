@@ -1,6 +1,6 @@
 """The study loop (server/atelier/study.py) without FreeCAD: states, history, measurements.
 
-Run with: py -3 install/study_test.py      Sentinel: STUDY_OK
+Run with: py -3 tests/study_test.py      Sentinel: STUDY_OK
 """
 import json
 import shutil

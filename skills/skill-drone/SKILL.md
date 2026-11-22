@@ -60,4 +60,4 @@ Say plainly that prototype CFD is not engineering-grade aerodynamics.
 
 ## Verify
 `obj.Shape.isValid()`, `len(obj.Shape.Edges)`, `obj.Shape.Length`, `obj.Shape.BoundBox`.
-Runnable end-to-end examples: `install/drone_graft_test.py`, `install/drone_aero_test.py`.
+Runnable end-to-end examples: `tests/drone_graft_test.py`, `tests/drone_aero_test.py`.

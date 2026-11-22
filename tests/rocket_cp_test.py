@@ -1,6 +1,6 @@
 """Rocket centre-of-pressure & stability via the Barrowman method (cahier §4.3).
 
-Run with:  A:/FreeCAD/bin/freecadcmd.exe install/rocket_cp_test.py
+Run with:  A:/FreeCAD/bin/freecadcmd.exe tests/rocket_cp_test.py
 
 Analytical (subsonic) aerodynamics — NO CFD/OpenFOAM needed. Computes the centre
 of pressure (CP) from nose + body-transitions + fins, and the static stability

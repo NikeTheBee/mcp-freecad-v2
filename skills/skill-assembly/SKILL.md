@@ -42,7 +42,7 @@ The base's `assembly_operations add_component` puts an `App::Link` to the part i
 interference, measure and render the links (`Top001`), not the sources. Hide the sources if the
 scene should show only the assembly.
 
-Verified headless against known landings (`install/assembly_ops_test.py`, link bbox exact to 1e-6):
+Verified headless against known landings (`tests/assembly_ops_test.py`, link bbox exact to 1e-6):
 | joint | verified | note |
 |---|---|---|
 | Fixed, Revolute, Cylindrical, Slider | yes | face-to-face / circle-to-circle seat on the element centre; Slider keeps the part on the axis |
@@ -70,7 +70,7 @@ Document joints as design decisions via `skill-verify` (`state.add_decision`).
 
 ## Fits, tolerances & functional clearances (§4.4)
 For mating parts, size the hole from the shaft by fit class (helper `hole_for_shaft` in
-`install/tolerances_test.py`):
+`tests/tolerances_test.py`):
 ```python
 FITS = {"loose":(0.20,0.50), "clearance":(0.05,0.20), "close":(0.01,0.06),
         "transition":(-0.02,0.02), "press":(-0.06,-0.02)}   # diametral allowance (mm)
@@ -81,4 +81,4 @@ fit shows interference. For exact ISO 286 limits use deviation tables; these are
 
 ## Verify
 Combine and check the assembled envelope / interference with `Part.makeCompound` + `skill-verify`
-(`verify.verdict`). Runnable examples: `install/assembly_test.py`, `install/tolerances_test.py`.
+(`verify.verdict`). Runnable examples: `tests/assembly_test.py`, `tests/tolerances_test.py`.

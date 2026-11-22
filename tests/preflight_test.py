@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "install"))
 import atelier_install as ai  # noqa: E402
 
 HOME = Path(__file__).resolve().parent.parent / "install"  # any existing dir; nothing is written

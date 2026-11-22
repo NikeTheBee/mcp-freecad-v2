@@ -1,6 +1,6 @@
 """Standard parts (server/freecad_layers/stdparts.py) against exact volumes, and the BOM.
 
-Run with:  <freecadcmd> install/stdparts_test.py      Sentinel: STDPARTS_OK
+Run with:  <freecadcmd> tests/stdparts_test.py      Sentinel: STDPARTS_OK
 """
 import math
 import sys

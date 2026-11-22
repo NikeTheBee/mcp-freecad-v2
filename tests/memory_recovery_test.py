@@ -1,6 +1,6 @@
 """Demonstrate multi-session memory + crash recovery (cahier des charges §14).
 
-Run with:  A:\FreeCAD\bin\freecadcmd.exe install\memory_recovery_test.py
+Run with:  A:\FreeCAD\bin\freecadcmd.exe tests\memory_recovery_test.py
 
 - Multi-session: write project state + a checkpoint in THIS process, then spawn a
   SECOND freecadcmd process that reads the state from disk — proving continuity

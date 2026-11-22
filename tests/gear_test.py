@@ -1,6 +1,6 @@
 """Validate a parametric involute spur-gear generator (missing-domain: train/gears).
 
-Run with:  A:\FreeCAD\bin\freecadcmd.exe install\gear_test.py
+Run with:  A:\FreeCAD\bin\freecadcmd.exe tests\gear_test.py
 
 Pure FreeCAD Part (no third-party workbench). Generates a true involute spur gear
 from module/teeth/pressure-angle, extrudes to a solid, and checks tip diameter and

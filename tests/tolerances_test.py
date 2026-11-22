@@ -1,6 +1,6 @@
 """Validate functional fits / clearances (cahier §4.4: tolérances, ajustements, jeux).
 
-Run with:  A:\FreeCAD\bin\freecadcmd.exe install\tolerances_test.py
+Run with:  A:\FreeCAD\bin\freecadcmd.exe tests\tolerances_test.py
 
 Provides a small fit helper (recommended diametral clearance/interference per fit
 class) and proves a shaft mates into a hole with the intended functional gap.

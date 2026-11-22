@@ -70,7 +70,7 @@ Limits are radians (revolute) or metres (prismatic).
 
 ## Full ROS2 package (not just the URDF string)
 To hand off to a ROS2 workspace, emit an `ament_cmake` package
-(`write_ros2_package` in `install/urdf_package_test.py`): `package.xml` (format 3, `ament_cmake`,
+(`write_ros2_package` in `tests/urdf_package_test.py`): `package.xml` (format 3, `ament_cmake`,
 `robot_state_publisher`/`rviz2` deps) + `CMakeLists.txt` (installs `urdf/` + `launch/`) +
 `urdf/<pkg>.urdf`. No ROS2 runtime needed to *generate* it; `colcon build` it later in a workspace.
 
@@ -101,5 +101,5 @@ sim still needs a ROS2+Gazebo install â€” we generate, the workspace consumes (Â
 ## Verify
 Assert the output contains `<robot`, each `<link>`, `<visual>/<collision>`, and the expected `<box size=>`
 / `<joint>`; and that the package files are valid XML. Runnable examples:
-`install/robotics_urdf_test.py` (URDF), `install/urdf_package_test.py` (full package),
-`install/urdf_control_test.py` (ros2_control/sensors/Gazebo augmentation).
+`tests/robotics_urdf_test.py` (URDF), `tests/urdf_package_test.py` (full package),
+`tests/urdf_control_test.py` (ros2_control/sensors/Gazebo augmentation).

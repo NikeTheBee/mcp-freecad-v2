@@ -1,6 +1,6 @@
 """Design-for-manufacturing checks (server/freecad_layers/dfm.py) on parts with known answers.
 
-Run with:  <freecadcmd> install/dfm_test.py      Sentinel: DFM_OK
+Run with:  <freecadcmd> tests/dfm_test.py      Sentinel: DFM_OK
 """
 import sys
 from pathlib import Path

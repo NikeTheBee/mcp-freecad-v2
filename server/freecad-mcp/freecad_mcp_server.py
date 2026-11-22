@@ -104,6 +104,13 @@ _UNIX_ONLY = ("Not available on Windows: MCP FREECAD runs one FreeCAD there, sta
               "or restart_freecad to restart it.")
 
 
+import mcpfc_compact  # noqa: E402  (MCP FREECAD v2: compact tool schemas)
+
+
+def hidden_now() -> set:
+    return set(_hidden_tools())
+
+
 def _hidden_tools() -> dict[str, str]:
     """Tool name -> why it is refused, for this platform and settings."""
     hidden = {} if _cam_enabled() else dict.fromkeys(_CAM_TOOLS, _CAM_DISABLED)
@@ -1310,9 +1317,9 @@ async def main():
                 "properties": {
                     "operation": {
                         "type": "string",
-                        "enum": ["strategy", "tactics", "find"],
+                        "enum": ["strategy", "tactics", "find", "schema"],
                         "default": "strategy",
-                        "description": "Which query to run: strategy (default), tactics, or find.",
+                        "description": "strategy (default), tactics, find, or schema (topic=tool name: its full documentation).",
                     },
                     "topic": {
                         "type": "string",
@@ -3084,7 +3091,9 @@ async def main():
     async def handle_list_tools() -> list[types.Tool]:
         """List available Phase 1 smart dispatcher tools"""
         hidden = _hidden_tools()
-        return [t for t in _base_tools + _smart_dispatcher_tools if t.name not in hidden]
+        listed = [t for t in _base_tools + _smart_dispatcher_tools if t.name not in hidden]
+        # MCP FREECAD v2: compact schemas by default (mcpfc_compact.py), same tools, fewer tokens
+        return mcpfc_compact.compact_tools(listed) if mcpfc_compact.compact_mode() else listed
 
     async def handle_call_tool(
         name: str, arguments: dict[str, Any] | None
@@ -3132,6 +3141,11 @@ async def main():
 
         elif name == "get_usage_guidance":
             args = arguments or {}
+            if args.get("operation") == "schema":
+                # MCP FREECAD v2: the full, uncompacted documentation of one tool
+                return [types.TextContent(type="text", text=mcpfc_compact.full_schema(
+                    [t for t in _base_tools + _smart_dispatcher_tools if t.name not in hidden_now()],
+                    str(args.get("topic") or "")))]
             return [types.TextContent(
                 type="text",
                 text=usage_guidance.query(

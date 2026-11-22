@@ -47,7 +47,7 @@ fem_static(target="Bracket", fixed=["xmin"],
   bigger margin.
 
 ## Exactness (why you can trust it)
-`install/fem_test.py` checks CalculiX against closed-form results:
+`tests/fem_test.py` checks CalculiX against closed-form results:
 
 | Case | Error |
 |---|---|

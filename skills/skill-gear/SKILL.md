@@ -8,7 +8,7 @@ Parametric on module, teeth, width, pressure angle. Produces a valid, exportable
 
 ## Use
 The reusable function is `make_spur_gear(doc, module, teeth, width, pressure_angle, name)` in
-`install/gear_test.py`. Import it (add `install/` to `sys.path`) or inline the algorithm:
+`tests/gear_test.py`. Import it (add `install/` to `sys.path`) or inline the algorithm:
 ```python
 gear, tip_d = make_spur_gear(doc, module=2.0, teeth=20, width=8.0, pressure_angle=20.0)
 doc.recompute()
@@ -35,4 +35,4 @@ usually more, ~0.2–0.3 mm). Then `require(..., "no_interference", objects=[...
 
 ## Verify
 `verify.verdict` (valid solid), tip diameter ≈ `m·(z+2)`, width = extrude length.
-Runnable example: `install/gear_test.py`.
+Runnable example: `tests/gear_test.py`.

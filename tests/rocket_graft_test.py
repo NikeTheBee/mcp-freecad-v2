@@ -1,6 +1,6 @@
 """Controlled, on-demand validation of the Rocket workbench (Phase 2 graft #1).
 
-Run with:  A:\FreeCAD\bin\freecadcmd.exe install\rocket_graft_test.py
+Run with:  A:\FreeCAD\bin\freecadcmd.exe tests\rocket_graft_test.py
 
 Loads the workbench from the in-project clone at addons/Rocket (NOT the auto-load
 Mod dir), builds a body tube via the headless-safe Feature proxy (bypassing the

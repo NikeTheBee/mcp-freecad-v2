@@ -43,5 +43,5 @@ author joints in the Assembly GUI, then drive/solve headless. For fully-scripted
 analytical solver above.
 
 ## Verify
-`install/kinematics_test.py` (`KINEMATICS_OK`) — reproduces the gripper law (~4.5°/mm, toggle at
+`tests/kinematics_test.py` (`KINEMATICS_OK`) — reproduces the gripper law (~4.5°/mm, toggle at
 ≈−2.2 mm), a crank-rocker four-bar, and the native-solver passthrough.

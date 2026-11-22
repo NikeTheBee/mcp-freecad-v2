@@ -1,6 +1,6 @@
 """Validate the 3D-printing / STL-export path (Part B1).
 
-Run with:  A:\FreeCAD\bin\freecadcmd.exe install\print3d_test.py
+Run with:  A:\FreeCAD\bin\freecadcmd.exe tests\print3d_test.py
 
 Uses only bundled FreeCAD (Part/Mesh) — no external install. Builds a solid,
 gates export on the home-grown watertight check (reuse of freecad_layers.verify),

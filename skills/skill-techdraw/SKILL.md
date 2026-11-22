@@ -41,5 +41,5 @@ print(res["verdict"])   # must start with OK
 out; `UNKNOWN` if an extent could not be computed. `sheet_for` returns it in `res["verdict"]`.
 
 ## Verify
-`install/techdraw_test.py` (sentinel `TECHDRAW_OK`) — includes the secure-by-design refusal
+`tests/techdraw_test.py` (sentinel `TECHDRAW_OK`) — includes the secure-by-design refusal
 paths (clobber/extension/traversal).

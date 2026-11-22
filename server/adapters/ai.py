@@ -13,6 +13,10 @@ Kinds:
 - onnx_check an ONNX file of the study folder: inputs/outputs, operators, parameters, size,
              a test inference, latency, and operators outside the microcontroller-friendly set
 
+Device: params.device cpu | gpu | both (default: the workshop's compute profile). gpu/both train
+the network on CUDA in the `ai-gpu` environment; RL physics always steps on the CPU; export,
+ONNX checks and latency are on the CPU, as on a target. `device_used` says what ran.
+
 Security: models leave as ONNX only. Nothing is saved or loaded with pickle (`.pt`, `.pth`, `.pkl`,
 `.zip` of Stable-Baselines3 are refused), an ONNX file with external data or a custom operator
 domain is refused, and a declared function goes through the whitelist of `mdo` and an AST walker
@@ -93,6 +97,19 @@ def _inside(work: Path, name: str, exts: Tuple[str, ...]) -> Path:
     if p.suffix.lower() not in exts:
         raise ValueError(f"{p.name}: expected {exts}")
     return p
+
+
+def _device(inp: Dict[str, Any]):
+    """(torch device, label): params.device, else the runner's MCPFC_DEVICE (cpu/gpu/both).
+    gpu and both train the network on CUDA when this environment has it; the physics of RL
+    environments always steps on the CPU (that is what `both` means)."""
+    import torch
+    want = str(inp.get("device") or os.environ.get("MCPFC_DEVICE", "cpu")).lower()
+    workers = int(os.environ.get("MCPFC_CPU_WORKERS", "0") or 0) or max(1, min(4, os.cpu_count() or 1))
+    torch.set_num_threads(max(1, workers))
+    if want in ("gpu", "both") and torch.cuda.is_available():
+        return torch.device("cuda"), want, torch.cuda.get_device_name(0)
+    return torch.device("cpu"), "cpu", ""
 
 
 # ---------------------------------------------------------------- safe declared function
@@ -217,7 +234,7 @@ def _nn_fit(inp: Dict[str, Any], work: Path) -> Dict[str, Any]:
     import torch
     seed = int(inp.get("seed", 0))
     torch.manual_seed(seed)
-    torch.set_num_threads(max(1, min(4, os.cpu_count() or 1)))
+    dev, dev_label, gpu_name = _device(inp)
     X, Y, task = _dataset(inp, work)
     n = len(X)
     rng = np.random.default_rng(seed)
@@ -230,7 +247,7 @@ def _nn_fit(inp: Dict[str, Any], work: Path) -> Dict[str, Any]:
     if any(not 1 <= h <= 4096 for h in hidden):
         raise ValueError("hidden layer sizes in [1, 4096], at most 8 layers")
     act = str(inp.get("activation", "tanh"))
-    core = _mlp(X.shape[1], Y.shape[1], hidden, act)
+    core = _mlp(X.shape[1], Y.shape[1], hidden, act).to(dev)
     epochs = int(inp.get("epochs", 2000))
     if not 1 <= epochs <= 100000:
         raise ValueError("epochs in [1, 1e5]")
@@ -239,10 +256,10 @@ def _nn_fit(inp: Dict[str, Any], work: Path) -> Dict[str, Any]:
     opt = torch.optim.Adam(core.parameters(), lr=lr)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=epochs)
     lossf = torch.nn.BCEWithLogitsLoss() if task == "classification" else torch.nn.MSELoss()
-    xt, yt = torch.from_numpy(Xn[tr]), torch.from_numpy(Y[tr])
+    xt, yt = torch.from_numpy(Xn[tr]).to(dev), torch.from_numpy(Y[tr]).to(dev)
     t0 = time.time()
     for ep in range(epochs):
-        perm = torch.randperm(len(tr))
+        perm = torch.randperm(len(tr), device=dev)
         for k in range(0, len(tr), batch):
             b = perm[k:k + batch]
             opt.zero_grad()
@@ -251,6 +268,7 @@ def _nn_fit(inp: Dict[str, Any], work: Path) -> Dict[str, Any]:
             opt.step()
         sched.step()
     train_s = time.time() - t0
+    core = core.cpu()                       # export, checks and latency on the CPU, like a target
 
     class Wrapped(torch.nn.Module):            # normalisation (and sigmoid) inside the exported graph
         def __init__(self):
@@ -267,7 +285,10 @@ def _nn_fit(inp: Dict[str, Any], work: Path) -> Dict[str, Any]:
     with torch.no_grad():
         pv = model(torch.from_numpy(X[va])).numpy()
     vals: Dict[str, Any] = {"task_classification": 1.0 if task == "classification" else 0.0,
-                            "samples": int(n), "train_s": round(train_s, 2), "seed": seed}
+                            "samples": int(n), "train_s": round(train_s, 2), "seed": seed,
+                            "device_used": dev_label}
+    if gpu_name:
+        vals["gpu"] = gpu_name
     if task == "classification":
         acc = float(((pv > 0.5) == (Y[va] > 0.5)).mean())
         vals["val_accuracy"] = round(acc, 5)
@@ -395,7 +416,7 @@ def _rl_train(inp: Dict[str, Any], work: Path) -> Dict[str, Any]:
         raise ValueError("timesteps in [1e3, 5e6]")
     seed = int(inp.get("seed", 0))
     torch.manual_seed(seed)
-    torch.set_num_threads(1)
+    dev, dev_label, gpu_name = _device(inp)
     hp = dict(inp.get("hyperparams") or {})
     allowed = {"learning_rate", "n_steps", "batch_size", "n_epochs", "gamma", "gae_lambda",
                "ent_coef", "clip_range", "buffer_size", "learning_starts", "tau", "train_freq",
@@ -407,7 +428,7 @@ def _rl_train(inp: Dict[str, Any], work: Path) -> Dict[str, Any]:
     n_envs = int(inp.get("n_envs", 8 if algo in ("PPO", "A2C") else 1))
     venv = make_vec_env(factory or env_id, n_envs=max(1, min(n_envs, 16)), seed=seed)
     cls = getattr(sb3, algo)
-    model = cls("MlpPolicy", venv, seed=seed, verbose=0, device="cpu",
+    model = cls("MlpPolicy", venv, seed=seed, verbose=0, device=dev.type,
                 policy_kwargs={"net_arch": net}, **hp)
     t0 = time.time()
     model.learn(total_timesteps=steps)
@@ -448,6 +469,8 @@ def _rl_train(inp: Dict[str, Any], work: Path) -> Dict[str, Any]:
                 act = torch.clamp(act, low, high)
             return act
 
+    model.policy.to("cpu")                  # export and the agreement check on the CPU
+    model.device = torch.device("cpu")
     pol = Policy(model.policy).eval()
     onnx_path = work / "policy.onnx"
     obs_arr = np.stack(obs_bank).astype(np.float32)
@@ -466,9 +489,11 @@ def _rl_train(inp: Dict[str, Any], work: Path) -> Dict[str, Any]:
     vals: Dict[str, Any] = {"mean_return": round(mean, 3), "std_return": round(float(np.std(rets)), 3),
                             "min_return": round(float(np.min(rets)), 3), "episodes": len(rets),
                             "train_s": round(train_s, 1), "timesteps": steps, "seed": seed,
-                            "onnx_action_agreement": round(agree, 5),
+                            "onnx_action_agreement": round(agree, 5), "device_used": dev_label,
                             "params": int(sum(p.numel() for p in model.policy.parameters())),
                             "latency_us_pc": round(_latency_us(sess, obs_arr[:1]), 2)}
+    if gpu_name:
+        vals["gpu"] = gpu_name
     if threshold is not None:
         vals["reward_threshold"] = float(threshold)
         vals["solved"] = 1.0 if mean >= float(threshold) else 0.0
@@ -572,7 +597,7 @@ REFERENCES = [
              "terminate": "maximum(abs(pitch) - 0.2, abs(x) - 2.4)", "control_hz": 50,
              "episode_s": 10, "success_return": 475,
              "randomize": {"mass_pct": 10, "initial": {"pitch": [-0.05, 0.05], "x": [-0.05, 0.05]}},
-             "algo": "PPO", "timesteps": 200000, "seed": 0, "n_envs": 8,
+             "algo": "PPO", "timesteps": 300000, "seed": 0, "n_envs": 8,
              "hyperparams": {"n_steps": 256, "batch_size": 256, "n_epochs": 10, "gamma": 0.99,
                              "gae_lambda": 0.95, "learning_rate": 0.0003, "ent_coef": 0.0},
              "eval_episodes": 10},

@@ -1,6 +1,6 @@
 """Validate full ROS2 package generation (cahier §4.2: package URDF/xacro pour ROS2).
 
-Run with:  A:/FreeCAD/bin/freecadcmd.exe install/urdf_package_test.py
+Run with:  A:/FreeCAD/bin/freecadcmd.exe tests/urdf_package_test.py
 
 Beyond a bare URDF string (skill-robotics-ros), produce an installable ament_cmake
 package directory: package.xml + CMakeLists.txt + urdf/ + launch/. No ROS2 runtime

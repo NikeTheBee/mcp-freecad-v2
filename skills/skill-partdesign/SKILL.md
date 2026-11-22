@@ -85,4 +85,4 @@ sheet.set("B1", "60"); doc.recompute()            # -> the part rebuilds at the 
 ## Verify
 After each feature: `check(target)` (freecad-layers) must be `OK`, then `record_step(...)`
 (records + autosaves). Python fallback: `verify.verdict(obj)` (see `skill-verify`).
-Runnable examples: `install/partdesign_test.py`, `install/spreadsheet_variants_test.py`.
+Runnable examples: `tests/partdesign_test.py`, `tests/spreadsheet_variants_test.py`.

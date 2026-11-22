@@ -1,6 +1,6 @@
 """Validate robotics URDF export via the CROSS workbench, headless (cahier §4.2).
 
-Run with:  A:\FreeCAD\bin\freecadcmd.exe install\robotics_urdf_test.py
+Run with:  A:\FreeCAD\bin\freecadcmd.exe tests\robotics_urdf_test.py
 
 CROSS (galou/freecad.cross, cloned in addons/) generates URDF/xacro from FreeCAD
 geometry. This needs NO ROS2 runtime. CROSS lives under the `freecad` namespace

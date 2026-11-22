@@ -12,7 +12,8 @@ param(
     [switch]$Register,
     [switch]$SkipValidate,
     [switch]$DryRun,
-    [switch]$Yes
+    [switch]$Yes,
+    [switch]$Scan
 )
 $ErrorActionPreference = "Stop"
 $py = $null
@@ -29,5 +30,6 @@ if ($Register) { $a += "--register" }
 if ($SkipValidate) { $a += "--skip-validate" }
 if ($DryRun) { $a += "--dry-run" }
 if ($Yes) { $a += "--yes" }
+if ($Scan) { $a += "--scan" }
 & $py[0] $py[1] @a
 exit $LASTEXITCODE

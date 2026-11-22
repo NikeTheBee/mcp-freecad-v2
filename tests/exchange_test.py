@@ -1,6 +1,6 @@
 """Validate STEP / IGES exchange export (missing-domain: CAD interchange).
 
-Run with:  A:\FreeCAD\bin\freecadcmd.exe install\exchange_test.py
+Run with:  A:\FreeCAD\bin\freecadcmd.exe tests\exchange_test.py
 Bundled FreeCAD only. Prints EXCHANGE_OK on success.
 """
 import os

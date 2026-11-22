@@ -88,7 +88,7 @@ def _kill_tree(pid: int) -> None:
         pass
 
 
-def _clean_env(env: str) -> Dict[str, str]:
+def _clean_env(env: str, device: str = "cpu") -> Dict[str, str]:
     """Environment of an adapter: the pixi env first on PATH, no proxies, temp inside home."""
     from . import env_prefix
     prefix = env_prefix(env)
@@ -118,6 +118,8 @@ def _clean_env(env: str) -> Dict[str, str]:
                 # solver needs threaded BLAS.
                 MKL_THREADING_LAYER=os.environ.get("MKL_THREADING_LAYER", "SEQUENTIAL"),
                 NO_PROXY="*", HTTP_PROXY="http://127.0.0.1:9", HTTPS_PROXY="http://127.0.0.1:9")
+    from .compute import env_vars
+    keep.update(env_vars(device))            # threads from the compute profile, the device
     if prefix:
         keep["CONDA_PREFIX"] = str(prefix)
     # tools installed outside conda (tools.lock.json) and the other envs' prefixes: an adapter
@@ -127,7 +129,7 @@ def _clean_env(env: str) -> Dict[str, str]:
     return keep
 
 
-def _launch(env: str, args: List[str], cwd: Path) -> subprocess.Popen:
+def _launch(env: str, args: List[str], cwd: Path, device: str = "cpu") -> subprocess.Popen:
     py = env_python(env)
     if py is None:
         raise RuntimeError(f"environment {env!r} is not installed: run install\\install.ps1 "
@@ -135,7 +137,7 @@ def _launch(env: str, args: List[str], cwd: Path) -> subprocess.Popen:
     flags = 0x08000000 if os.name == "nt" else 0          # CREATE_NO_WINDOW
     log = open(cwd / "adapter.log", "w", encoding="utf-8")  # noqa: SIM115 — closed by watcher
     proc = subprocess.Popen([str(py), "-I", str(ADAPTERS / "_entry.py"), *args], cwd=str(cwd),
-                            env=_clean_env(env), stdin=subprocess.DEVNULL, stdout=log,
+                            env=_clean_env(env, device), stdin=subprocess.DEVNULL, stdout=log,
                             stderr=subprocess.STDOUT, creationflags=flags)
     proc._mcpfc_log = log  # type: ignore[attr-defined]
     return proc
@@ -195,32 +197,47 @@ def validation_dir() -> Path:
     return d
 
 
-def validation(adapter: str) -> Dict[str, Any]:
+def _vkey(adapter: str, env: Optional[str]) -> str:
+    own = (registry_adapters().get(adapter) or {}).get("env")
+    return adapter if env in (None, own) else f"{adapter}@{env}"
+
+
+def registry_adapters() -> Dict[str, Dict[str, Any]]:
+    out: Dict[str, Dict[str, Any]] = {}
+    for meta in registry().values():
+        out.setdefault(meta["adapter"], {"env": meta["env"]})
+    return out
+
+
+def validation(adapter: str, env: Optional[str] = None) -> Dict[str, Any]:
     """Stored reference-case result, with 'stale' when the code or the lock changed since."""
     try:
-        v = json.loads((validation_dir() / f"{adapter}.json").read_text(encoding="utf-8"))
+        v = json.loads((validation_dir() / f"{_vkey(adapter, env)}.json").read_text(encoding="utf-8"))
     except (OSError, ValueError, RuntimeError):
         return {"verdict": "NOT_RUN"}
     v["stale"] = (v.get("adapter_hash") != adapter_hash(adapter) or v.get("lock_hash") != lock_hash())
     return v
 
 
-def validate(adapter: str, env: str, timeout: float = 1800) -> Dict[str, Any]:
-    d = validation_dir() / f"run_{adapter}"
+def validate(adapter: str, env: str, timeout: float = 1800, device: str = "cpu") -> Dict[str, Any]:
+    key = _vkey(adapter, env)
+    if key != adapter and device == "cpu":
+        device = "gpu"                     # a GPU twin is validated on its GPU
+    d = validation_dir() / f"run_{key.replace('@', '_at_')}"
     d.mkdir(parents=True, exist_ok=True)
     out = d / "reference.json"
     out.unlink(missing_ok=True)
-    proc = _launch(env, [adapter, "--reference", str(out)], d)
+    proc = _launch(env, [adapter, "--reference", str(out)], d, device)
     res = _read_output(out, _watch(proc, timeout), d)
     res.update(adapter_hash=adapter_hash(adapter), lock_hash=lock_hash(), env=env,
                when=time.strftime("%Y-%m-%d %H:%M:%S"))
-    (validation_dir() / f"{adapter}.json").write_text(json.dumps(res, indent=1, default=str),
-                                                      encoding="utf-8")
+    (validation_dir() / f"{key}.json").write_text(json.dumps(res, indent=1, default=str),
+                                                  encoding="utf-8")
     return res
 
 
 def ensure_validated(adapter: str, env: str) -> Tuple[bool, str]:
-    v = validation(adapter)
+    v = validation(adapter, env)
     if v.get("verdict") != "OK" or v.get("stale"):
         v = validate(adapter, env)
     if v.get("verdict") == "OK":
@@ -292,11 +309,13 @@ def run(kind: str, params: Dict[str, Any], project_dir: Path, study: str = "defa
     meta = reg[kind]
     if meta["geometry"] and geometry is None:
         raise ValueError(f"{kind} needs a geometry: pass target=<FreeCAD object>")
-    ok, why = ensure_validated(meta["adapter"], meta["env"])
+    from .compute import resolve
+    run_env, device, dev_note = resolve(meta["env"], params.get("device"))
+    ok, why = ensure_validated(meta["adapter"], run_env)
     if not ok:
         return {"verdict": "UNKNOWN", "summary": why}
     files = input_files(params, project_dir)
-    ih = inputs_hash(kind, params, geometry, meta["adapter"], files)
+    ih = inputs_hash(kind, dict(params, device=device), geometry, meta["adapter"], files)
     work = project_dir / "studies" / study / f"{kind}-{ih[:10]}"
     out = work / "output.json"
     if out.is_file():
@@ -312,7 +331,7 @@ def run(kind: str, params: Dict[str, Any], project_dir: Path, study: str = "defa
         dst = work / rel
         dst.parent.mkdir(parents=True, exist_ok=True)
         dst.write_bytes(src.read_bytes())
-    inp = dict(params, kind=kind)
+    inp = dict(params, kind=kind, device=device)
     if geometry is not None:
         target = work / ("geometry" + geometry.suffix.lower())
         if geometry.resolve() != target.resolve():
@@ -323,8 +342,10 @@ def run(kind: str, params: Dict[str, Any], project_dir: Path, study: str = "defa
 
     def finish(proc) -> Dict[str, Any]:
         res = _read_output(out, _watch(proc, limit), work)
-        res.update(inputs_hash=ih, kind=kind, tool_env=meta["env"], work=str(work),
-                   reference=validation(meta["adapter"]).get("summary", ""))
+        res.update(inputs_hash=ih, kind=kind, tool_env=run_env, device=device, work=str(work),
+                   reference=validation(meta["adapter"], run_env).get("summary", ""))
+        if dev_note:
+            res["summary"] = f"{res.get('summary', '')}; {dev_note}"
         res["files"] = [str(Path(f)) if Path(f).is_absolute() else str(work / f)
                         for f in res.get("files", [])]
         if res.get("verdict") in ("OK", "FAIL"):         # only real answers are cached
@@ -336,7 +357,7 @@ def run(kind: str, params: Dict[str, Any], project_dir: Path, study: str = "defa
         return res
 
     out.unlink(missing_ok=True)
-    proc = _launch(meta["env"], [meta["adapter"], str(work / "input.json"), str(out)], work)
+    proc = _launch(run_env, [meta["adapter"], str(work / "input.json"), str(out)], work, device)
     jid = uuid.uuid4().hex[:8]
     rec = {"id": jid, "kind": kind, "study": study, "work": str(work), "pid": proc.pid,
            "started": time.time(), "timeout": limit, "state": "running"}
@@ -398,6 +419,7 @@ def job(project_dir: Path, jid: str, action: str = "status") -> Dict[str, Any]:
 
 
 def status(refresh: bool = False) -> Dict[str, Any]:
+    from .compute import profile
     """What is installed and validated, per environment and adapter."""
     cfg = config()
     reg = registry()
@@ -414,7 +436,12 @@ def status(refresh: bool = False) -> Dict[str, Any]:
                       else "stale" if v.get("stale") else v.get("verdict", "NOT_RUN").lower())
         a["reference"] = v.get("summary", "")
         a["versions"] = v.get("versions", {})
-    return {"home": str(home()) if home() else None,
+        twin = profile()["gpu_envs"].get(a["env"])
+        if twin and env_python(twin) is not None:
+            g = validate(name, twin) if refresh else validation(name, twin)
+            a["gpu"] = (f"{twin} " + ("validated" if g.get("verdict") == "OK" and not g.get("stale")
+                                      else "stale" if g.get("stale") else g.get("verdict", "NOT_RUN").lower()))
+    return {"home": str(home()) if home() else None, "compute": profile(),
             "envs": {k: bool(env_python(k)) for k in (cfg.get("envs") or {})},
             "tools": {k: Path(v).exists() for k, v in (cfg.get("tools") or {}).items()},
             "adapters": adapters}

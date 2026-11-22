@@ -1,6 +1,6 @@
 """End-to-end test of the home-grown layers (Phase 4): state, verify, checkpoint.
 
-Run with:  A:\FreeCAD\bin\freecadcmd.exe install\layers_test.py
+Run with:  A:\FreeCAD\bin\freecadcmd.exe tests\layers_test.py
 Uses a temp MCP_FREECAD_PROJECT_DIR so it never touches the repo's real
 project_state/ or checkpoints/. Prints LAYERS_TEST_OK on success.
 """

@@ -1,6 +1,6 @@
 """Validate mesh repair for 3D-print prep (cahier §4.6: réparation géométrie externe).
 
-Run with:  A:\FreeCAD\bin\freecadcmd.exe install\mesh_repair_test.py
+Run with:  A:\FreeCAD\bin\freecadcmd.exe tests\mesh_repair_test.py
 Bundled Mesh/MeshPart. Meshes a solid, runs the standard repair passes
 (harmonize normals, remove non-manifolds, fill holes) and checks the result is a
 clean, manifold, solid-bounding mesh. Prints MESH_REPAIR_OK on success.

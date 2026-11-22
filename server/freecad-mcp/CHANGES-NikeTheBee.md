@@ -221,3 +221,16 @@ known values: booleans, move, scale, spreadsheet-driven parameters, measurements
 distance and clearance. It is the guard to run after every upstream update: since 2026-10-14 it also checks volumes of
 PartDesign holes, dress-ups, loft, sweep, helix, rib, Part extrude/section against exact values
 (37/37 project tests, including the Windows CI job `windows-full`).
+
+## 2026-11-22: compact tool schemas (token budget for any MCP client)
+- `mcpfc_compact.py` (new) + `freecad_mcp_server.py` `handle_list_tools`: with `MCPFC_TOOLS`
+  unset or `compact`:
+  - tool descriptions are cut to their first sentences (~240 chars) and parameter descriptions
+    to their first sentence (~90 chars); types, enums, defaults, required and annotations are
+    unchanged;
+  - developer tools (test_echo, reload_modules, manage_connection, get_debug_logs,
+    run_inspector, list_freecad_instances) are not listed but stay callable.
+  - `MCPFC_TOOLS=full` restores the original list.
+- `get_usage_guidance(operation="schema", topic=<tool>)` returns a tool's full original
+  documentation.
+

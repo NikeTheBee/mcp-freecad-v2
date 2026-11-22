@@ -1,6 +1,6 @@
 """Validate spreadsheet-driven parametric variants (cahier des charges §4.1).
 
-Run with:  A:\FreeCAD\bin\freecadcmd.exe install\spreadsheet_variants_test.py
+Run with:  A:\FreeCAD\bin\freecadcmd.exe tests\spreadsheet_variants_test.py
 
 A Spreadsheet with named aliases drives object dimensions via expressions, so a
 whole design family comes from editing one cell. Bundled FreeCAD. Prints

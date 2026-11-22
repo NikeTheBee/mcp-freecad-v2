@@ -1,6 +1,6 @@
 """Validate the core PartDesign workflow headless (cahier des charges §4.1 core).
 
-Run with:  A:\FreeCAD\bin\freecadcmd.exe install\partdesign_test.py
+Run with:  A:\FreeCAD\bin\freecadcmd.exe tests\partdesign_test.py
 
 Body -> Sketch -> Pad (additive) -> Sketch -> Pocket through-all (subtractive),
 the parametric-modeling backbone. Bundled FreeCAD only. Prints PARTDESIGN_OK.

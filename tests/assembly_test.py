@@ -1,6 +1,6 @@
 """Validate multi-part assembly structure headless (missing-domain: assemblies).
 
-Run with:  A:\FreeCAD\bin\freecadcmd.exe install\assembly_test.py
+Run with:  A:\FreeCAD\bin\freecadcmd.exe tests\assembly_test.py
 
 Uses the native Assembly workbench (FreeCAD 1.1). Builds an assembly container with
 two positioned parts (placement-based assembly). Joint/constraint *solving* is

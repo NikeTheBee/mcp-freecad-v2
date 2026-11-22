@@ -26,6 +26,14 @@ PyTorch CPU, Gymnasium, Stable-Baselines3, ONNX Runtime).
 The ONNX policy outputs actions in [-1, 1]; the command is ctrl = lo + (a + 1)/2 (hi - lo).
 To check the firmware port, run the same law in `sil`.
 
+**Device:** `device` is cpu, gpu or both; the default is the workshop's compute profile.
+- `gpu` and `both` train the network on CUDA. They need the `ai-gpu` environment (pack `ia-gpu`,
+  installed when the hardware scan finds an NVIDIA driver >= 570).
+- In RL, the physics always steps on the CPU.
+- Export, ONNX checks and latency always run on the CPU.
+- `device_used` and `gpu` say what actually ran. A small MLP is often faster on the CPU; the GPU
+  pays off on large networks and big batches.
+
 **Rules:**
 - Models are exported as ONNX only. `.pt`, `.pth`, `.pkl` and SB3 `.zip` files are refused,
   because they are pickles that run code when loaded.

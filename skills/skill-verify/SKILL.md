@@ -83,4 +83,4 @@ state.add_decision("450mm wheelbase chosen for 10in props")
 2. Build a feature. 3. `verify.verdict(obj)` — `OK` only; `FAIL`/`UNKNOWN` → fix or ask.
 4. `state.record_feature(...)` + `recovery.autosave()`. 5. `checkpoint.save(...)` before the next risky step.
 
-Runnable examples: `install/layers_test.py`, `install/verify_test.py` (the traps that used to pass).
+Runnable examples: `tests/layers_test.py`, `tests/verify_test.py` (the traps that used to pass).

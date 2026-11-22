@@ -11,6 +11,7 @@ import tomllib
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "install"))
 import mcp_clients as mc  # noqa: E402
 
 

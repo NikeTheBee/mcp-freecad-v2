@@ -1,6 +1,6 @@
 """Controlled, on-demand validation of the AirPlaneDesign workbench (Phase 3 graft #2).
 
-Run with:  A:\FreeCAD\bin\freecadcmd.exe install\drone_graft_test.py
+Run with:  A:\FreeCAD\bin\freecadcmd.exe tests\drone_graft_test.py
 
 The workbench's higher-level builders (wing/rib/panel) import FreeCADGui and are
 GUI-only. The reusable headless core is libAeroShapes.py (pure FreeCAD/Part/math):

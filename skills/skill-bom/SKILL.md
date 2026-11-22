@@ -38,5 +38,5 @@ Model screws as simple cylinders named after the standard (`ISO4762_M5x20`) or a
 STEP files from a supplier; size clearance holes with `skill-assembly`'s fit helpers.
 
 ## Verify
-`install/bom_test.py` (`BOM_OK`) — includes the audit traps: Body features, boolean inputs,
+`tests/bom_test.py` (`BOM_OK`) — includes the audit traps: Body features, boolean inputs,
 links, equal-volume different parts.

@@ -34,7 +34,7 @@ Done on this machine:
 
 ## Phase 1 validation — DONE
 The full MCP→FreeCAD pipeline was validated by talking directly to the headless socket server on
-`localhost:23456` with the project's own framing protocol (`install/phase1_smoke_test.py`):
+`localhost:23456` with the project's own framing protocol (`tests/phase1_smoke_test.py`):
 create_document → create_box(10×20×30) → get_volume (6000 mm³ ✓) → get_bounding_box (✓). Compact text
 feedback, no screenshots — the token-minimal behaviour the spec requires.
 
@@ -49,7 +49,7 @@ pipeline those tools call.
 - Vetted: `Init.py` is clean (registers materials + `.ork`/`.rkt` import-export + a migration meta_path hook;
   no network/shell-out). Bundled FreeCAD Python already has numpy/scipy/matplotlib/shapely; only `python-docx`
   is missing (affects `.docx` report export only).
-- Validated headless on-demand via `install/rocket_graft_test.py` (builds a valid body-tube solid). See
+- Validated headless on-demand via `tests/rocket_graft_test.py` (builds a valid body-tube solid). See
   `skills/skill-rocket/SKILL.md` for the headless invocation pattern (use `Rocket.Feature*` proxies directly;
   the `Ui/Commands/Cmd*.py` wrappers `import FreeCADGui` unconditionally and break under `freecadcmd`).
 - **ACTIVATED**: installed into FreeCAD 1.1's **versioned** user Mod dir
@@ -71,7 +71,7 @@ pipeline those tools call.
 - GUI-only workbench (`InitGui.py`, no `Init.py`); wing/rib/panel builders need FreeCADGui. The
   headless-usable core is `libAeroShapes.py` (pure aero-coordinate math) — but it does
   `import DraftTools` at load, so stub `DraftTools` before importing (see skill-drone / the test).
-- Validated headless on-demand via `install/drone_graft_test.py` (builds a valid NACA-4 airfoil wire).
+- Validated headless on-demand via `tests/drone_graft_test.py` (builds a valid NACA-4 airfoil wire).
 - See `skills/skill-drone/SKILL.md` for usage.
 
 ### Re-clone the grafts (since `addons/` is gitignored)
@@ -87,5 +87,5 @@ First-party Python package `server/freecad_layers/` (tracked), the spec's §7 ro
   `checkpoint` — named `.FCStd` saves under `checkpoints/` + rollback.
 - Import inside FreeCAD / execute_python: `sys.path.insert(0, "<repo>\\server")` then
   `from freecad_layers import state, verify, checkpoint`. See `skills/skill-verify/SKILL.md`.
-- Validated headless: `A:\FreeCAD\bin\freecadcmd.exe install\layers_test.py` → `LAYERS_TEST_OK`.
+- Validated headless: `A:\FreeCAD\bin\freecadcmd.exe tests\layers_test.py` → `LAYERS_TEST_OK`.
 - Runtime artifacts (`project_state/*.json`, `checkpoints/*.FCStd`) are gitignored; dirs kept via `.gitkeep`.

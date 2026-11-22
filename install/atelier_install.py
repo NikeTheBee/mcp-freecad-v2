@@ -194,8 +194,60 @@ def install_envs(pixi: Path, home: Path, envs, dry: bool) -> dict:
 # updates, so the preflight total stays an "approximately".
 ENV_SIZE_GB = {
     "sim": 3.2, "pde": 1.3, "opt": 3.7, "aero": 1.3, "robot": 4.3, "elec": 2.2, "geo": 1.8,
-    "space": 1.5, "post": 2.5, "ros": 9.5, "ai": 2.6,
+    "space": 1.5, "post": 2.5, "ros": 9.5, "ai": 2.6, "ai-gpu": 6.0,
 }
+
+
+def tool_status(name: str, home: Path) -> "str | None":
+    """None = must be downloaded; else why not (installed and verified / archive already here)."""
+    info = LOCK.get(name, {})
+    if not info:
+        return None
+    single = info.get("archive") == "file"
+    mark = home / info["dest"] / (f"{MARK}.{name}" if single else MARK)
+    if mark.is_file() and mark.read_text(encoding="utf-8").strip() == info.get("sha256"):
+        return "already installed, verified"
+    f = home / "downloads" / name / info["url"].rsplit("/", 1)[1]
+    if f.is_file() and f.stat().st_size == info.get("size", f.stat().st_size) and sha256(f) == info["sha256"]:
+        return "archive already downloaded, verified: unpacked only"
+    return None
+
+
+def check_existing(tools: list, home: Path, assume_no: bool) -> dict:
+    """Look on every drive for copies of the tools before downloading them (install/dedupe.py).
+    A copy of the SAME version is offered for reuse (default no: it cannot be checked against the
+    pinned SHA256); another version is only reported. Returns {tool: path} of the reused ones."""
+    import dedupe
+    todo = [t for t in tools if t != "pixi" and tool_status(t, home) is None]
+    if not todo:
+        return {}
+    say("looking on every drive for tools already on this PC (folder names only, nothing is run)...")
+    roots = dedupe.search_roots()
+    reused = {}
+    for t in todo:
+        found = dedupe.find_existing(LOCK[t], home, roots)
+        for f in found:
+            if f["match"] == "other":
+                say(f"  {t}: another version at {f['path']} (kept as is; the pinned {LOCK[t]['version']} "
+                    "is installed, it is the one the reference cases check)")
+        same = [f for f in found if f["match"] == "same"]
+        if not same:
+            continue
+        path = same[0]["path"]
+        mb = LOCK[t].get("size", 0) / 1e6
+        say(f"  {t} {LOCK[t]['version']} is already at {path}")
+        if assume_no or not sys.stdin.isatty():
+            say("    -> not reused (non-interactive); it will be downloaded and verified")
+            continue
+        try:
+            ans = input(f"    reuse it instead of downloading {mb:.0f} MB? It cannot be checked "
+                        "against the pinned SHA256 [o/N] ").strip().lower()
+        except EOFError:
+            ans = ""
+        if ans in ("o", "oui", "y", "yes"):
+            reused[t] = path
+            say(f"    -> reused (recorded as external, not hash-verified)")
+    return reused
 
 
 def preflight(packs: list, envs: list, tools: list, home: Path, assume_yes: bool, dry: bool) -> None:
@@ -206,13 +258,10 @@ def preflight(packs: list, envs: list, tools: list, home: Path, assume_yes: bool
     tool_total = 0
     for t in tools:
         sz = LOCK.get(t, {}).get("size")
-        if sz:
+        status = tool_status(t, home)
+        if sz and status is None:
             tool_total += sz
-        info = LOCK.get(t, {})
-        single = info.get("archive") == "file"
-        mark = (home / info["dest"] / (f"{MARK}.{t}" if single else MARK)) if info else None
-        done = mark and mark.is_file() and mark.read_text(encoding="utf-8").strip() == info.get("sha256")
-        rows.append((t, sz, "already installed" if done else None))
+        rows.append((t, sz, status))
     env_total_gb = sum(ENV_SIZE_GB.get(e, 0.0) for e in envs
                        if not (home / "envs").exists() or not any((home / "envs").glob(f"*/envs/{e}")))
     say("about to download, for packs " + ", ".join(packs) + ":")
@@ -249,10 +298,29 @@ def main() -> int:
     ap.add_argument("--skip-validate", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--yes", action="store_true", help="skip the download-size confirmation")
+    ap.add_argument("--scan", action="store_true",
+                    help="ask, then scan CPU/RAM/GPU/disk: downloads and compute profile follow the hardware")
+    ap.add_argument("--scan-consent", action="store_true", help="consent to the scan given here (no question)")
     a = ap.parse_args()
     home = (a.home or default_home()).resolve()
-    packs = list(PACKS) if a.packs.strip() == "tout" else ["socle", *[p.strip() for p in a.packs.split(",")]]
+    # 'tout' = every pack that runs on any machine; hardware-specific ones (the CUDA build) only
+    # when asked by name or added by the hardware scan
+    packs = ([k for k, v in PACKS.items() if not k.startswith("_") and not v.get("hardware")]
+             if a.packs.strip() == "tout" else ["socle", *[p.strip() for p in a.packs.split(",")]])
     packs = [p for p in dict.fromkeys(packs) if not p.startswith("_")]
+    compute = None
+    if a.scan or a.scan_consent:
+        import hw_scan
+        if hw_scan.ask(yes=a.scan_consent):
+            hw = hw_scan.scan(home_hint := (a.home or default_home()).resolve())
+            pl = hw_scan.plan(hw, packs)
+            say(hw_scan.describe(hw, pl).replace("\n", "\n[atelier] "))
+            packs += [x for x in pl["add_packs"] if x not in packs]
+            compute = pl["compute"]
+            home_hint.mkdir(parents=True, exist_ok=True)
+            (home_hint / "hardware.json").write_text(json.dumps(hw, indent=1), encoding="utf-8")
+        else:
+            say("hardware scan declined: nothing was read; CPU profile")
     unknown = [p for p in packs if p not in PACKS]
     if unknown:
         raise SystemExit(f"unknown pack(s) {unknown}; known: {[k for k in PACKS if not k.startswith('_')]}")
@@ -263,9 +331,17 @@ def main() -> int:
     free = shutil.disk_usage(home).free / 2**30
     if free < 40:
         say(f"WARNING only {free:.0f} GB free on {home.anchor}: the full workshop needs ~40 GB")
+    reused = check_existing(tools, home, a.dry_run)
+    tools = [t for t in tools if t not in reused]
+    import dedupe
+    if not dedupe.same_volume(home / "cache", home / "envs"):
+        say("WARNING the pixi cache and the environments are on different drives: shared packages "
+            "are copied instead of hard-linked")
+    else:
+        say("conda packages: one shared pixi cache, hard-linked into each environment (no duplicate)")
     preflight(packs, envs, tools, home, a.yes, a.dry_run)
     pixi = install_tool("pixi", home, a.dry_run)
-    tool_paths = {}
+    tool_paths = dict(reused)
     for t in tools:
         if t == "pixi":
             continue
@@ -287,6 +363,10 @@ def main() -> int:
     cfg = {"home": str(home), "packs": sorted(set(old.get("packs", [])) | set(packs)),
            "envs": {**old.get("envs", {}), **env_paths},
            "tools": {**old.get("tools", {}), **tool_paths, "pixi": str(pixi)}}
+    if reused or old.get("external_tools"):
+        cfg["external_tools"] = sorted(set(old.get("external_tools", [])) | set(reused))
+    if compute or old.get("compute"):
+        cfg["compute"] = compute or old["compute"]
     if "freecad" in cfg["tools"]:
         cfg["tools"]["freecadcmd"] = cfg["tools"].pop("freecad")
     (home / "atelier.json").write_text(json.dumps(cfg, indent=1), encoding="utf-8")

@@ -31,21 +31,21 @@ grafts). That is powerful **by design** (it's how natural-language CAD works) an
   Since 2026-10-14 the file is written only once the exclusive bind of the port succeeded, and
   before `listen()`, through a restricted temp file then an atomic replace: a FreeCAD that loses
   the port can no longer overwrite the running one's secret (which locked every client out), and
-  no reader sees the file empty or half written. Test: `install/launcher_test.py` (2c, 3b).
+  no reader sees the file empty or half written. Test: `tests/launcher_test.py` (2c, 3b).
 - **The client side is protected too (anti-squatting).** A token only proves the *client* to the
   server. If another process grabs port 23456 first, a bare bridge would send it the token and
   every command, and relay its answers to the AI. The launcher
   (`server/launcher/mcp_freecad_launch.py`) therefore checks, before starting the bridge and every
   second afterwards, that **every** listener on the port is a FreeCAD binary from the configured
   install, run by the current user; otherwise it refuses to start or stops the bridge (fail closed).
-  Regression test: `install/launcher_test.py` (no/wrong token rejected, squatter refused with
+  Regression test: `tests/launcher_test.py` (no/wrong token rejected, squatter refused with
   nothing sent, crash restart).
   One exception, for upgrades: when `install/bootstrap.py` registers a FreeCAD in another folder,
   it records the one it replaces (`~/.freecad-mcp/previous_freecad.json`). If EVERY listener is
   that recorded FreeCAD, run by the current user, the launcher asks it to save its documents and
   exit, then starts the configured one. The request goes through the mutual authentication below,
   so the listener must prove it holds the token first; anything else is still refused. Regression
-  test: `install/handover_test.py`.
+  test: `tests/handover_test.py`.
 - **Mutual authentication (v2, in the vendored base): the listener proves itself first.** On every
   connection the client sends a random nonce (`{"auth_challenge": ...}`); FreeCAD answers with
   HMAC-SHA256(token, nonce). Only if that proof matches does the client send the token and the
@@ -54,7 +54,7 @@ grafts). That is powerful **by design** (it's how natural-language CAD works) an
   FreeCAD side `auth_challenge_reply` in `freecad_mcp_handler.py`). This closes the race the
   launcher's check alone left open (a squatter grabbing the port in the ~1 s after a FreeCAD crash).
   Regression tests: base unit tests `TestListenerProof` / `TestVerifyListener`, live
-  `install/base_fixes_test.py` (real FreeCAD accepted, fake listener refused, token never sent).
+  `tests/base_fixes_test.py` (real FreeCAD accepted, fake listener refused, token never sent).
 - **Never** change the bind to `0.0.0.0` / a LAN IP without putting an **IP allowlist** (and ideally
   TLS) in front — NF5. The token protects against local callers, not network eavesdropping.
 - For remote/multi-machine use, tunnel over SSH rather than exposing the port.
