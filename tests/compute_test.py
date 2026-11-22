@@ -18,8 +18,14 @@ def main() -> int:
     old = os.environ.get("MCPFC_HOME")
     try:
         os.environ["MCPFC_HOME"] = str(home)
-        py_dir = str(Path(sys.executable).parent)
-        cfg = {"envs": {"ai": py_dir, "sim": py_dir}}
+        # fake environment prefixes: env_python() only checks that the interpreter file exists
+        def prefix(name):
+            d = home / "envs" / name
+            exe = d / ("python.exe" if os.name == "nt" else "bin/python")
+            exe.parent.mkdir(parents=True, exist_ok=True)
+            exe.write_bytes(b"")
+            return str(d)
+        cfg = {"envs": {"ai": prefix("ai"), "sim": prefix("sim")}}
         (home / "atelier.json").write_text(json.dumps(cfg), encoding="utf-8")
         import atelier
         from atelier import compute
@@ -28,7 +34,7 @@ def main() -> int:
         env, dev, note = compute.resolve("ai", "gpu")
         assert (env, dev) == ("ai", "cpu") and "not installed" in note, (env, dev, note)
         print("no twin installed: gpu asked -> CPU, with a note OK")
-        cfg["envs"]["ai-gpu"] = py_dir
+        cfg["envs"]["ai-gpu"] = prefix("ai-gpu")
         cfg["compute"] = {"device": "both", "cpu_workers": 7, "omp_threads": 7, "mpi_ranks": 8,
                           "gpu": {"name": "RTX"}, "gpu_envs": {"ai": "ai-gpu"}}
         (home / "atelier.json").write_text(json.dumps(cfg), encoding="utf-8")

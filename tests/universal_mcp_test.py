@@ -8,8 +8,12 @@ import json
 import sys
 from pathlib import Path
 
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
+try:
+    from mcp import ClientSession, StdioServerParameters
+    from mcp.client.stdio import stdio_client
+except ImportError:                      # a job without the bridge venv (CI core job)
+    print("UNIVERSAL_MCP_SKIP the mcp package is not installed here: run with the bridge venv")
+    sys.exit(0)
 
 REPO = Path(__file__).resolve().parent.parent
 SERVER = REPO / "server" / "layers_mcp" / "freecad_layers_server.py"
@@ -20,7 +24,9 @@ def _t(r) -> str:
 
 
 async def main() -> None:
-    params = StdioServerParameters(command=sys.executable, args=[str(SERVER)])
+    # the server runs with the bridge venv, as every registered client starts it
+    venv = Path.home() / ".freecad-mcp" / "venv" / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
+    params = StdioServerParameters(command=str(venv if venv.is_file() else sys.executable), args=[str(SERVER)])
     async with stdio_client(params) as (read, write):
         async with ClientSession(read, write) as s:
             await s.initialize()
