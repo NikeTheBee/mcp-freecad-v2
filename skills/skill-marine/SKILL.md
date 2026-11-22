@@ -4,8 +4,8 @@
 propeller/thruster, cavitation, pressure housing/hull, depth rating, O-ring seal.
 
 ## Use the tool
-`freecad-layers` → **`simulate(kind, target, params)`** with the adapter `marine` (env `sim`).
-Every answer is OK / FAIL / UNKNOWN + numbers. No `limits` → UNKNOWN ("computed, nothing judged"),
+`freecad-layers` -> **`simulate(kind, target, params)`** with the adapter `marine` (env `sim`).
+Every answer is OK / FAIL / UNKNOWN + numbers. No `limits` -> UNKNOWN ("computed, nothing judged"),
 except `oring_gland` (Parker ranges built in) and `pressure_hull` with `safety_factor`.
 
 Frame of the CAD: **x forward, y port (transverse), z up**, mm. The target must be the closed
@@ -43,7 +43,7 @@ simulate("pressure_hull", params={"shape": "cylinder", "outer_diameter_mm": 110,
   ROV damping needs drag coefficients (tests or CFD) on top.
 - **Thruster**: Wageningen B open-water polynomials (Rn 2e6, no scale correction), uniform inflow,
   open propeller (no duct, no hull wake). Outside the series (Z 2..7, P/D 0.5..1.4, Ae/A0 range of
-  each Z, J beyond zero thrust) → UNKNOWN. A hobby thruster's real blades are not B-series: use it
+  each Z, J beyond zero thrust) -> UNKNOWN. A hobby thruster's real blades are not B-series: use it
   for sizing, then a bollard test. Cavitation = Keller blade-area criterion only (Burrill not
   implemented).
 - **Pressure hull**: hand formulas: shell between rigid frames/end caps; frames, penetrations,
@@ -60,5 +60,5 @@ simulate("pressure_hull", params={"shape": "cylinder", "outer_diameter_mm": 110,
 Floating box (draft, KB, BM_T, BM_L, GM_T, reserve: exact), floating vertical cylinder through the
 mesh (draft 0.5 %, BM 1 %), submerged sphere (Archimedes, BG), sphere added mass = ½ρV in infinite
 fluid (3 %), floating hemisphere heave at infinite frequency = 0.5·ρ·(2/3)πa³ (3 %), Kuiper's
-B4-55 example (KT 0.1823, KQ 0.03124, η0 0.6509), long tube → Bresse, Zoelly sphere × knockdown,
+B4-55 example (KT 0.1823, KQ 0.03124, η0 0.6509), long tube -> Bresse, Zoelly sphere × knockdown,
 Lamé thick cylinder, O-ring squeeze/fill/stretch (Parker Fig. 3-3 formula).

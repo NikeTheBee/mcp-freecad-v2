@@ -1,4 +1,4 @@
-"""Register the workshop's two MCP servers with any MCP client, not only Claude.
+"""Register the workshop's two MCP servers with any MCP client, not only one harness.
 
 The servers speak standard MCP over stdio; only the file each client reads differs. This prints
 the configuration for a client, or with --write merges it into that client's user config: other
@@ -9,7 +9,7 @@ touched.
     python install/mcp_clients.py --client all --write       # write every client found
     python install/mcp_clients.py --client vscode --home D:/x --write   (tests: another home)
 
-Clients: claude-desktop, cursor, vscode, windsurf, gemini, lmstudio, continue, codex (TOML),
+Clients: desktop-harness, cursor, vscode, windsurf, gemini, lmstudio, continue, codex (TOML),
 generic (the common `mcpServers` JSON for anything else).
 Sentinel for the test: prints MCP_CLIENTS_OK on success.
 """
@@ -29,7 +29,7 @@ SERVERS = {"freecad": REPO / "server" / "launcher" / "mcp_freecad_launch.py",
 
 # (relative path under the home folder, top-level key, entry style)
 CLIENTS = {
-    "claude-desktop": ("AppData/Roaming/Claude/claude_desktop_config.json", "mcpServers", "plain"),
+    "desktop-harness": ("AppData/Roaming/Claude/claude_desktop_config.json", "mcpServers", "plain"),
     "cursor": (".cursor/mcp.json", "mcpServers", "plain"),
     "vscode": ("AppData/Roaming/Code/User/mcp.json", "servers", "typed"),
     "windsurf": (".codeium/windsurf/mcp_config.json", "mcpServers", "plain"),

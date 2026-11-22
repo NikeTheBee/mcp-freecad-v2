@@ -32,7 +32,7 @@ SECRET_RES = [
 # This is a fast local guard; CI also runs Gitleaks (.github/workflows/tests.yml).
 # Files that legitimately contain the *patterns themselves* (this scanner + the policy).
 SELF = {"install/security_scan.py", "SECURITY.md", ".gitleaks.toml"}
-# Known FAKE secrets used as test inputs, by (file, exact match) — never a whole-file skip.
+# Known FAKE secrets used as test inputs, by (file, exact match) - never a whole-file skip.
 # The vendored base tests its crash-report redaction with these (.gitleaks.toml mirrors it).
 FAKE_FIXTURES = {
     ("server/freecad-mcp/tests/unit/test_crash_watcher.py", "AKIAABCDEFGHIJKLMNOP"),
@@ -65,13 +65,13 @@ def bind_problems(source: str) -> list:
     for h in hosts:
         m = re.fullmatch(r"(['\"])(.*)\1", h)
         if not m or m.group(2) not in _LOOPBACK:
-            out.append(f"WINDOWS_HOST = {h} (must be a loopback literal) — NF5")
+            out.append(f"WINDOWS_HOST = {h} (must be a loopback literal) - NF5")
     if not hosts:
-        out.append("WINDOWS_HOST not found in the handler: bind address not verifiable — NF5")
+        out.append("WINDOWS_HOST not found in the handler: bind address not verifiable - NF5")
     for arg in re.findall(r"\.bind\(\(\s*([^,()]+?)\s*,", source):   # (host, port) tuples = TCP
         m = re.fullmatch(r"(['\"])(.*)\1", arg)
         if arg != "WINDOWS_HOST" and not (m and m.group(2) in _LOOPBACK):
-            out.append(f"socket bound to {arg} (must be loopback) — NF5")
+            out.append(f"socket bound to {arg} (must be loopback) - NF5")
     return out
 
 
@@ -139,7 +139,7 @@ def main() -> int:
         for p in problems:
             print("  -", p)
         return 1
-    print(f"scanned {len(files)} tracked files — no secrets, no sensitive files, bind local")
+    print(f"scanned {len(files)} tracked files - no secrets, no sensitive files, bind local")
     print("SECURITY_SCAN_OK")
     return 0
 

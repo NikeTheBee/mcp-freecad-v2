@@ -1,4 +1,4 @@
-"""Analytical drone aero/sizing — the drone counterpart of the rocket's
+"""Analytical drone aero/sizing - the drone counterpart of the rocket's
 Barrowman stability check (cahier des charges §4.3, no CFD required).
 
 Pure Python (no FreeCAD import): usable under freecadcmd, the bridge's
@@ -51,7 +51,7 @@ def disk_area(prop_diameter_m: float, n_motors: int) -> float:
 
 
 def disk_loading(mass_kg: float, prop_diameter_m: float, n_motors: int) -> float:
-    """Weight per rotor area [N/m²]. Hover-efficient multirotors: ~50–250 N/m²."""
+    """Weight per rotor area [N/m²]. Hover-efficient multirotors: ~50-250 N/m²."""
     return mass_kg * G / disk_area(prop_diameter_m, n_motors)
 
 

@@ -1,4 +1,4 @@
-"""`freecad-layers` MCP server end to end — bridge venv Python, isolated instance.
+"""`freecad-layers` MCP server end to end - bridge venv Python, isolated instance.
 
 Replays the audit's "plate with a centred Ø6 through-hole" scenario through
 the new tools: the contract FAILs while the hole is missing, pd_hole puts a

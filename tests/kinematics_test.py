@@ -1,8 +1,8 @@
-"""Planar kinematics test (GAP G2) — runs under freecadcmd or system Python.
+"""Planar kinematics test (GAP G2) - runs under freecadcmd or system Python.
 
 Validates the analytical linkage solver against (a) the real gripper geometry
-from the pince test — must reproduce the ~4.5 deg/mm law and the toggle dead
-point — and (b) a textbook crank-rocker four-bar. Also checks native_solve on
+from the pince test - must reproduce the ~4.5 deg/mm law and the toggle dead
+point - and (b) a textbook crank-rocker four-bar. Also checks native_solve on
 a real AssemblyObject when FreeCAD is present. Sentinel: KINEMATICS_OK
 """
 import math
@@ -99,7 +99,7 @@ def main() -> int:
         assert not kin.native_solve(box)["ok"]
         print("native_solve refuses non-assembly: OK")
     except ImportError:
-        print("FreeCAD not importable here — native_solve path skipped")
+        print("FreeCAD not importable here - native_solve path skipped")
 
     print("KINEMATICS_OK")
     return 0

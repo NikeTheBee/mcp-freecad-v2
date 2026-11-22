@@ -20,7 +20,7 @@ grand industriel exige réellement, et ce qu'on peut livrer :
 1. **Zéro défaut critique ou majeur connu** au moment de chaque version (*release gate* bloquante).
 2. **Comportement sûr en cas de doute** : le système répond « INCONNU / à vérifier par un humain »,
    **jamais** « OK » par défaut. C'est l'inverse exact de l'actuel `verify` (audit §3.4).
-3. **Preuve par le processus** : exigences → tests → résultats traçables, vérification indépendante,
+3. **Preuve par le processus** : exigences -> tests -> résultats traçables, vérification indépendante,
    revue, audit de sécurité externe.
 
 ### 0.2 Avec cet objectif, le verdict de l'audit change
@@ -40,7 +40,7 @@ architecture.
 | B1 | **Exécution de code arbitraire** (`execute_python`) au cœur du système | Un RSSI refuse un outil où un modèle de langage, ou un fichier piégé, peut exécuter n'importe quel code sur un poste ou un serveur. |
 | B2 | **Mono-utilisateur, mono-processus, poste Windows, socket local** | Pas d'isolation entre utilisateurs, pas de montée en charge, pas de haute disponibilité. Un crash bloque tout (audit §2.3). |
 | B3 | **Dépendance à un upstream à un seul mainteneur** (~20 000 lignes, 300 commits par trimestre) | Non maîtrisable, non qualifiable, *bus factor* = 1. Un industriel veut posséder ou contrôler le cœur. |
-| B4 | **IA dans le cloud** (Claude) | Les données de conception défense ne peuvent pas sortir : souveraineté, classification, contrôle export (ITAR/EAR, biens à double usage). Il faut un **LLM hébergé sur site**, donc des outils conçus pour des modèles plus petits. |
+| B4 | **IA dans le cloud** | Les données de conception défense ne peuvent pas sortir : souveraineté, classification, contrôle export (ITAR/EAR, biens à double usage). Il faut un **LLM hébergé sur site**, donc des outils conçus pour des modèles plus petits. |
 | B5 | **Licence CC BY-NC 4.0** | L'usage commercial est interdit sans autorisation écrite : juridiquement, un industriel **ne peut pas** l'utiliser en l'état. |
 
 ### 0.3 Réalité commerciale
@@ -108,7 +108,7 @@ sensibilité). Ce document décrit le **produit** ; ces éléments sont des pré
         │  file (NATS / RabbitMQ)
         ▼
  ┌──────────────────────────────────────────────────────────────┐
- │ Pool de workers FreeCAD headless — 1 job = 1 conteneur        │
+ │ Pool de workers FreeCAD headless - 1 job = 1 conteneur        │
  │ éphémère : sans réseau, FS lecture seule, cgroups, seccomp    │
  └──────────────────────────────────────────────────────────────┘
         │                                   │
@@ -184,11 +184,11 @@ via `execute_python`, CAM actuelle, licence CC BY-NC.
 
 | Phase | Durée | Contenu | Critère de sortie |
 |---|---|---|---|
-| **0 — Cadrage** | 2 à 4 semaines | Exigences validées avec un client pilote réel (sécurité, PLM, volumes) ; choix du LLM sur site ; banc d'essai du noyau ; licence ; preuve de concept bout en bout sur 3 opérations | Document d'exigences signé, PoC qui passe 3 pièges de l'audit |
-| **1 — Cœur** | 2 à 3 mois | Vocabulaire d'environ 30 opérations Part/PartDesign, workers conteneurisés, journal d'opérations, vérificateur indépendant, API, corpus doré initial (100 pièces) | Toutes les portes du §3 au vert sur ce périmètre |
-| **2 — Entreprise** | 2 à 3 mois | SSO/RBAC, audit, déploiement Kubernetes, observabilité, STEP AP242, paquet air-gap, LLM sur site + banc d'évaluation | Installation hors ligne réussie chez le pilote |
-| **3 — Durcissement** | 2 à 3 mois | Test d'intrusion externe, charge, chaos, documentation, support, pilote en conditions réelles | Rapport de pilote favorable, 0 défaut critique |
-| **4 — Domaines** | En continu | Assemblages, plans 2D, FEM, robotique… **un par un**, chacun avec son corpus doré | Chaque domaine passe les portes avant d'être activé |
+| **0 - Cadrage** | 2 à 4 semaines | Exigences validées avec un client pilote réel (sécurité, PLM, volumes) ; choix du LLM sur site ; banc d'essai du noyau ; licence ; preuve de concept bout en bout sur 3 opérations | Document d'exigences signé, PoC qui passe 3 pièges de l'audit |
+| **1 - Cœur** | 2 à 3 mois | Vocabulaire d'environ 30 opérations Part/PartDesign, workers conteneurisés, journal d'opérations, vérificateur indépendant, API, corpus doré initial (100 pièces) | Toutes les portes du §3 au vert sur ce périmètre |
+| **2 - Entreprise** | 2 à 3 mois | SSO/RBAC, audit, déploiement Kubernetes, observabilité, STEP AP242, paquet air-gap, LLM sur site + banc d'évaluation | Installation hors ligne réussie chez le pilote |
+| **3 - Durcissement** | 2 à 3 mois | Test d'intrusion externe, charge, chaos, documentation, support, pilote en conditions réelles | Rapport de pilote favorable, 0 défaut critique |
+| **4 - Domaines** | En continu | Assemblages, plans 2D, FEM, robotique… **un par un**, chacun avec son corpus doré | Chaque domaine passe les portes avant d'être activé |
 
 **Total réaliste : 9 à 12 mois avec une équipe de 4 à 6 personnes** (2 développeurs back-end / CAO,
 1 sécurité et exploitation, 1 qualité / V&V, 1 spécialiste LLM, plus un ingénieur mécanique à temps
@@ -205,7 +205,7 @@ garanties d'indépendance de vérification qu'un industriel exigera.
    d'outils et la qualité de l'expérience.
 3. **Client pilote** : un premier utilisateur industriel réel pour fixer les volumes, le PLM cible et
    le niveau de sensibilité des données.
-4. **Structure** : entreprise, support, assurance — prérequis d'achat d'un grand groupe.
+4. **Structure** : entreprise, support, assurance - prérequis d'achat d'un grand groupe.
 
 ---
 

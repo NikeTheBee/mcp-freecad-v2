@@ -5,14 +5,14 @@ screenshot or an SVG and wants it as CAD; "I'll draw it for you", "trace this", 
 picture into a part", laser-cut outline from a drawing.
 
 ## Use the tool
-`freecad-layers` → **`simulate(kind, target, params)`**, adapter `draw` (env `sim`). No image
+`freecad-layers` -> **`simulate(kind, target, params)`**, adapter `draw` (env `sim`). No image
 editor is installed and none is driven through its windows: everything is files, so every step can
 be re-run and checked.
 
 | kind | params | main values / files |
 |---|---|---|
 | `trace_image` | `image` (a file name, put it in the project and pass it via `params.files`), `mm_per_pixel` **or** (`reference_length_mm` + `reference_pixels`), `threshold` (0-1), `dark_is_ink`, `simplify_mm`, `min_area_mm2` | `outlines`, `largest_width_mm`, `largest_height_mm`, `largest_area_mm2`, `largest_perimeter_mm`; files `trace.svg`, `trace.dxf` |
-| `sketch_board` | none | file `sketch_board.html` — one offline page, draw with mouse/pen/finger, Save writes an SVG in real millimetres |
+| `sketch_board` | none | file `sketch_board.html`: one offline page, draw with mouse/pen/finger, Save writes an SVG in real millimetres |
 | `trace_svg` | `svg` (file name), `scale`, `simplify_mm` | `outlines`, `width_mm`, `height_mm`; files `clean.svg`, `clean.dxf` |
 
 ## The workflow that works
@@ -37,7 +37,7 @@ be re-run and checked.
 - `simplify_mm` keeps the extent exactly but cuts corners: a 0.3 mm tolerance on a 20 mm
   rectangle cost 3 % of area in the reference case. State the tolerance you used.
 - `trace_svg` reads straight-segment paths (M/L/H/V/Z). Curves must be flattened on export, and
-  group transforms are ignored — export without them.
+  group transforms are ignored - export without them.
 
 ## Validated on
 Synthetic images whose geometry is countable by hand: a 40 x 25 pixel rectangle (exact size, area,
@@ -48,6 +48,6 @@ See `REFERENCES` in `server/adapters/draw.py`.
 
 ## Limits
 It does not recognise intent: you get the outline you drew, hand wobble included. No curve
-fitting (no arcs or splines are recovered — everything is polylines). No perspective correction.
+fitting (no arcs or splines are recovered - everything is polylines). No perspective correction.
 No text recognition. For a real technical drawing with dimensions, go the other way:
 model it, then `drawing_sheet` (skill-techdraw).

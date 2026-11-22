@@ -5,14 +5,14 @@ apart", gust loads, aileron reversal, control-surface effectiveness, whirl flutt
 a rocket, V-g / V-f diagram, Nastran SOL 145 / ZAERO work.
 
 ## Use the tool
-`freecad-layers` → **`simulate(kind, target, params)`**, adapter `aeroelastic` (env `sim`).
+`freecad-layers` -> **`simulate(kind, target, params)`**, adapter `aeroelastic` (env `sim`).
 No geometry: every input is a number. `target` is unused except to tie the run to a project.
-No `limits` → UNKNOWN ("computed, nothing judged"). Put the criterion in, e.g.
+No `limits` -> UNKNOWN ("computed, nothing judged"). Put the criterion in, e.g.
 `limits = {"flutter_speed_m_s": {"min": 1.15 * v_dive}}`.
 
 Unsteady aerodynamics come from **PanelAero** (DLR, BSD-3: Doublet Lattice, AICs validated against
 MSC.Nastran) or from **Theodorsen strip theory**. The structure is a uniform beam or your own
-modal basis — which is how `fem_modal` (CalculiX) results get in.
+modal basis - which is how `fem_modal` (CalculiX) results get in.
 
 ## Kinds
 | kind | params | main values |
@@ -26,7 +26,7 @@ modal basis — which is how `fem_modal` (CalculiX) results get in.
 ## Conventions that bite
 - `a_ea` is the elastic axis **in semichords from mid-chord, positive aft**: an axis at 33 % of
   the chord is `a_ea = -0.34`, at mid-chord `0.0`. Getting this wrong moves the flutter speed by
-  tens of per cent — it is the single most common error.
+  tens of per cent - it is the single most common error.
 - `S_alpha` is the static unbalance per unit span, **positive when the centre of gravity is aft
   of the elastic axis**. Mass ahead of the axis (a leading-edge balance mass) is the classic fix.
 - `k` in `aic_dlm` is the CLASSICAL reduced frequency omega/V (1/m), not Nastran's omega c/(2V).
@@ -49,7 +49,7 @@ modal basis — which is how `fem_modal` (CalculiX) results get in.
 
 ## Validated on
 Goland's cantilever wing (published 137.2 m/s, 70.7 rad/s; this solver gives 136.8 and
-70.0 — 0.3 % and 1 %), through both the beam and the modal input path; the closed-form divergence
+70.0 - 0.3 % and 1 %), through both the beam and the modal input path; the closed-form divergence
 of a uniform wing; DLM(k=0) identical to VLM; the Helmbold lift slope; and the algebraic identity
 of the fin-flutter and Pratt-Walker gust formulas. See `REFERENCES` in `server/adapters/aeroelastic.py`.
 

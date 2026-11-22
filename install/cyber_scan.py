@@ -27,7 +27,7 @@ C. `pixi.lock`: every package carries a SHA256, and every download host is one w
 
 D. `packs/packs.json`: every tool it names exists in the lock, every environment in pixi.toml.
 
-E. the FreeCAD-side rule of CLAUDE.md: a layer that writes files must go through the shared
+E. the FreeCAD-side rule of AGENTS.md: a layer that writes files must go through the shared
    gates (`safe_out_path` / `safe_under`), never build a path from caller text by itself.
 
 Offline, no dependency, reads only. Prints CYBER_SCAN_OK when clean; exit 1 and a precise list
@@ -306,7 +306,7 @@ def layer_problems() -> list:
         if writes.search(src) and not re.search(r"safe_out_path|safe_under", src) \
                 and p.name not in ACCEPTED_LAYERS:
             bad.append(f"{p.relative_to(REPO).as_posix()}: E writes files without going through "
-                       f"safe_out_path / safe_under (SECURITY.md, CLAUDE.md)")
+                       f"safe_out_path / safe_under (SECURITY.md, AGENTS.md)")
     return bad
 
 

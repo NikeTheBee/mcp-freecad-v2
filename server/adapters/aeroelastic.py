@@ -540,7 +540,7 @@ def _divergence_from_system(m, kk, zs, als, y, b, a, rho) -> Optional[float]:
     # generalized problem is solved rather than inverted: the infinite eigenvalues are discarded.
     try:
         lam = eig(kk, q1, right=False)
-    except Exception:  # noqa: BLE001 — a singular pair simply means "no divergence here"
+    except Exception:  # noqa: BLE001 - a singular pair simply means "no divergence here"
         return None
     pos = [float(x.real) for x in lam
            if np.isfinite(x) and abs(x.imag) < 1e-6 * max(1.0, abs(x.real)) and x.real > 0]

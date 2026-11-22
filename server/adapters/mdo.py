@@ -223,7 +223,7 @@ def _set_values(prob, variables) -> None:
     for name, v in variables.items():
         try:
             prob.set_val(name, v["val"])
-        except Exception:  # noqa: BLE001 — a variable no expression mentions is simply unused
+        except Exception:  # noqa: BLE001 - a variable no expression mentions is simply unused
             pass
 
 

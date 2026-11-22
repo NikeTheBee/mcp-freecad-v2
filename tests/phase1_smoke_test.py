@@ -1,4 +1,4 @@
-"""Phase 1 validation probe — raw socket, isolated instance (bridge venv Python).
+"""Phase 1 validation probe - raw socket, isolated instance (bridge venv Python).
 
 Talks directly to a headless FreeCAD started by the launcher on the test port,
 with the upstream framing + auth token: create a document and a box, read its

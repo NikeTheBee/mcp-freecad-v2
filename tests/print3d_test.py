@@ -2,7 +2,7 @@
 
 Run with:  A:\FreeCAD\bin\freecadcmd.exe tests\print3d_test.py
 
-Uses only bundled FreeCAD (Part/Mesh) — no external install. Builds a solid,
+Uses only bundled FreeCAD (Part/Mesh) - no external install. Builds a solid,
 gates export on the home-grown watertight check (reuse of freecad_layers.verify),
 exports STL, and asserts a non-empty file. Then the `export` layer: STL/3MF
 only for a part `check` passes, the file read back and compared with the solid,

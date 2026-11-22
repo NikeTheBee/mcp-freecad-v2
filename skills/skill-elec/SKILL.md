@@ -7,7 +7,7 @@ gauge / voltage drop / fuse, power budget / autonomy of a battery-powered device
 `simulate(kind=..., params=...)` runs `server/adapters/elec.py` in the pixi env `elec`
 (ngspice 41, PyBaMM, Magpylib). Each result has a verdict (OK / FAIL / UNKNOWN), a short summary
 and `values`. Put the user's criteria in `params.limits` = `{"value_key": {"max": x} | {"min": x}}`.
-No criteria → UNKNOWN ("computed, nothing judged"). Never treat UNKNOWN as OK.
+No criteria -> UNKNOWN ("computed, nothing judged"). Never treat UNKNOWN as OK.
 
 | kind | what | main params |
 |---|---|---|
@@ -39,10 +39,10 @@ Units: SI (SPICE suffixes accepted in SPICE), wire section in mm², temperatures
   `suggested_area_mm2` / `suggested_awg` (drop only, not current rating), `ampacity_A`,
   `derated_current_ratio` (1.25·I/Iz ≤ 1), `fuse_to_ampacity` (In/Iz ≤ 1), `current_to_fuse`.
   Resistivity: IEC 60028 (Cu 1/58 Ω·mm²/m, α 0.00393). Ampacity only from the caller's datasheet
-  or IEC 60364-5-52 Table B.52.2 (Cu, PVC, 2 loaded, A1/B1/C, 1.5–35 mm²); otherwise UNKNOWN.
+  or IEC 60364-5-52 Table B.52.2 (Cu, PVC, 2 loaded, A1/B1/C, 1.5-35 mm²); otherwise UNKNOWN.
 - **power_budget:** `battery_mean_A`, `battery_peak_A` (all peaks together, at `voltage_min_V`),
   `battery_rms_bound_A` (upper bound), `c_rate_*`, `autonomy_h`, `autonomy_margin`,
-  `c_rate_cont_ratio` / `c_rate_peak_ratio` ≤ 1 vs the datasheet (absent → UNKNOWN).
+  `c_rate_cont_ratio` / `c_rate_peak_ratio` ≤ 1 vs the datasheet (absent -> UNKNOWN).
 
 ## Electrical safety rules (§10.2, applied as requirements)
 - > 50 V AC or > 120 V DC: "qualified person required", verdict never OK; no mains-side design,

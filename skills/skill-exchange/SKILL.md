@@ -1,13 +1,13 @@
 # skill-exchange
 
-**Load when:** exporting/importing CAD interchange formats — STEP, IGES, BREP (for sending parts to
+**Load when:** exporting/importing CAD interchange formats - STEP, IGES, BREP (for sending parts to
 other CAD, suppliers, or simulation tools).
 
 ## What this is
-CAD interchange via **bundled FreeCAD** (`Part`, `Import`) — no install. STL is separate (`skill-print3d`).
+CAD interchange via **bundled FreeCAD** (`Part`, `Import`) - no install. STL is separate (`skill-print3d`).
 
 ## Export
-Via the MCP tools: **`export(target, format="step")`** (`stp`, `brep`, `iges` too) — refused unless
+Via the MCP tools: **`export(target, format="step")`** (`stp`, `brep`, `iges` too) - refused unless
 `check` is OK, then the file is read back: same solids, same volume, same place. The Python below is
 for `execute_python` only.
 ```python

@@ -55,7 +55,7 @@ def main() -> int:
     assert "joint_state_broadcaster" in yaml_text and "- shoulder" in yaml_text
     assert "position_controllers/JointGroupPositionController" in yaml_text
 
-    # secure-by-design: names from external documents must be validated —
+    # secure-by-design: names from external documents must be validated - 
     # a newline-bearing name would restructure the generated YAML.
     try:
         urdf_aug.controllers_yaml(["ok_name", "evil:\n  injected: true"])

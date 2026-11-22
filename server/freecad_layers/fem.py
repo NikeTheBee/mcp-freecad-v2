@@ -143,7 +143,7 @@ def _drop_gmsh_dir(path: str) -> None:
         p = Path(path).resolve()
         if p.name.startswith("fcfem_") and p.parent == Path(tempfile.gettempdir()).resolve():
             shutil.rmtree(p, ignore_errors=True)
-    except Exception:  # noqa: BLE001 — cleanup must never fail a solve
+    except Exception:  # noqa: BLE001 - cleanup must never fail a solve
         pass
 
 

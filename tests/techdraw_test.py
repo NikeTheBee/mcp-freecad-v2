@@ -1,4 +1,4 @@
-"""TechDraw 2D drawing test (GAP G1) — runs under freecadcmd.
+"""TechDraw 2D drawing test (GAP G1) - runs under freecadcmd.
 
 Builds a dimensioned multi-view sheet for a part via freecad_layers.drawing
 and exports DXF headless. Also exercises the secure-by-design refusal paths
@@ -20,7 +20,7 @@ def _techdraw_ready():
     """TechDraw is an optional-at-build module and its headless HLR backend
     varies by platform. Gate the geometry-dependent asserts on real capability
     so a build without it (some conda-forge headless builds) skips instead of
-    false-failing — the feature is validated on the Windows 1.1.1 target."""
+    false-failing - the feature is validated on the Windows 1.1.1 target."""
     try:
         import TechDraw
     except ImportError as e:
@@ -36,17 +36,17 @@ def _techdraw_ready():
 
 def main() -> int:
     # conda-forge Linux headless TechDraw SEGFAULTS during view/dimension
-    # recompute (native crash, no traceback possible) — see COMPATIBILITY.md
+    # recompute (native crash, no traceback possible) - see COMPATIBILITY.md
     # R11. CI sets this env; the feature is fully validated on the Windows
     # 1.1.1 target and on any build where this test runs.
     if os.environ.get("MCPFC_SKIP_TECHDRAW"):
         print("TECHDRAW_SKIP: MCPFC_SKIP_TECHDRAW set (headless TechDraw "
-              "segfaults on this build — R11)")
+              "segfaults on this build - R11)")
         return 0
 
     td_mod, why = _techdraw_ready()
     if td_mod is None:
-        print(f"TECHDRAW_SKIP: {why} — validated on the Windows 1.1.1 target")
+        print(f"TECHDRAW_SKIP: {why} - validated on the Windows 1.1.1 target")
         return 0
 
     doc = App.newDocument("TDTest")
@@ -125,7 +125,7 @@ def main() -> int:
         svg = drawing.view_svg(view)
         assert svg.strip().startswith("<") and len(svg) > 50
 
-        # --- audit D1–D3: no silent fallbacks -----------------------------
+        # --- audit D1 - D3: no silent fallbacks -----------------------------
         try:
             drawing.add_view(page, b, "isometric")
             print("FAIL: unknown direction silently accepted"); return 1

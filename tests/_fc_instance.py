@@ -1,4 +1,4 @@
-"""Isolated FreeCAD test instance — tests never touch the live :23456 one.
+"""Isolated FreeCAD test instance - tests never touch the live :23456 one.
 
 Dedicated port (23499) and a private USERPROFILE/HOME, so the instance's
 rotating auth token (~/.freecad-mcp/windows_auth_token) and the launcher logs

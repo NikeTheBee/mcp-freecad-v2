@@ -1,4 +1,4 @@
-# Adversarial tests of first-party layers — run under freecadcmd. Prints RESULT lines.
+# Adversarial tests of first-party layers - run under freecadcmd. Prints RESULT lines.
 import os, sys, tempfile, json, traceback
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "server"))
 _tmp = tempfile.mkdtemp(prefix="adv_layers_")

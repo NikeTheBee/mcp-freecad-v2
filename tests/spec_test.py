@@ -1,4 +1,4 @@
-"""Design contract (audit §9 F3) — runs under freecadcmd.
+"""Design contract (audit §9 F3) - runs under freecadcmd.
 
 Replays the audit's natural-language scenario "60x40x8 plate with one Ø6
 through-hole in the centre": the upstream `hole` tool left the PartDesign

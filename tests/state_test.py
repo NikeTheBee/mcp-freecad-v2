@@ -1,4 +1,4 @@
-"""Project-memory robustness (audit 2026-10-11, §2.2 S1/S2) — system Python.
+"""Project-memory robustness (audit 2026-10-11, §2.2 S1/S2) - system Python.
 
 Concurrent writers lose nothing, a corrupt state.json is recovered from its
 backup, old files are migrated, and the summary stays bounded.

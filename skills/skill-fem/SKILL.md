@@ -3,7 +3,7 @@
 **Load when:** structural analysis, stress, displacement, "will this part hold", FEM, CalculiX.
 
 ## Use the tool, not hand-written FEM code
-`freecad-layers` → **`fem_static`**. It meshes with Gmsh (2nd-order tets), solves with CalculiX
+`freecad-layers` -> **`fem_static`**. It meshes with Gmsh (2nd-order tets), solves with CalculiX
 (both ship with FreeCAD) and returns measured values plus an OK/FAIL/UNKNOWN verdict:
 
 ```

@@ -1228,7 +1228,7 @@ def _on_background_task_done(task: asyncio.Task) -> None:
 
 # Sent verbatim in the `initialize` handshake's InitializeResult.instructions
 # field -- the one channel that reaches EVERY MCP client regardless of which
-# assistant or editor is on the other end, unlike this repo's own CLAUDE.md
+# assistant or editor is on the other end, unlike this repo's own AGENTS.md
 # (auto-loaded only by Claude Code, and only for someone who has this exact
 # repo checked out) or a human operator's private notes (never shipped at
 # all). `usage_guidance.py` is the single authored source for this content

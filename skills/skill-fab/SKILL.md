@@ -10,7 +10,7 @@ is allowed; writing it is not.
 
 ## Use the tool
 First `printability` then `export` (3MF/STL, `skill-print3d`): the geometry checks live there.
-Then `freecad-layers` → **`simulate(kind, params)`** with the adapter `fab` (env `sim`, tool
+Then `freecad-layers` -> **`simulate(kind, params)`** with the adapter `fab` (env `sim`, tool
 PrusaSlicer 2.9.7 console). Model files come from the project with `params.files` (STL, 3MF,
 OBJ, STEP). Units: mm, mm³, degrees.
 
@@ -31,10 +31,10 @@ Then tell the person: open the 3MF in PrusaSlicer, check the profile, slice, ins
 
 ## Verdicts and refusals
 - `print_check`: FAIL when a mesh is open / not manifold or an object does not fit `bed_mm`;
-  without `bed_mm` (and no `limits`) → UNKNOWN.
+  without `bed_mm` (and no `limits`) -> UNKNOWN.
 - `print_project`: OK only when the parts fit the profile's bed and height, the 3MF holds no
   G-code (unzipped and searched), the profile re-read by PrusaSlicer equals the one given, and
-  every object is read back. Parts that do not fit → FAIL and **no file**.
+  every object is read back. Parts that do not fit -> FAIL and **no file**.
 - **Refused** (UNKNOWN, `refused: 1`, nothing written): no profile (the printer is never guessed);
   a profile with a non-empty `post_process` (or a config bundle with sections); any parameter
   asking to slice or for G-code / SLA output, any raw argument list, any value that looks like a

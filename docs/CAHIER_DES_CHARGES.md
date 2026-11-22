@@ -1,6 +1,6 @@
-# CAHIER DES CHARGES — Pilotage IA de FreeCAD pour conception mécanique & robotique
+# CAHIER DES CHARGES - Pilotage IA de FreeCAD pour conception mécanique & robotique
 
-> Projet : système permettant de concevoir en **langage naturel** (zéro code manuel) des projets mécaniques et robotiques (train, fusée, drone, robots) dans **FreeCAD 1.1.1**, via une IA (Claude Code / Claude Desktop et tout client MCP), avec **coût de tokens minimal** et **publication publique GitHub**.
+> Projet : système permettant de concevoir en **langage naturel** (zéro code manuel) des projets mécaniques et robotiques (train, fusée, drone, robots) dans **FreeCAD 1.1.1**, via une IA (CLI or desktop harness et tout client MCP), avec **coût de tokens minimal** et **publication publique GitHub**.
 > Version 1.0 · Statut : spécification initiale validée.
 >
 > **Suite (2026-11-14)** : la simulation multiphysique, les tests virtuels et la fabrication
@@ -19,7 +19,7 @@
 ## 0. Comment lire ce document
 
 - Ce fichier est la **référence longue**. Il n'est PAS chargé à chaque session IA (coûterait trop de tokens). Il vit dans `docs/`.
-- Ce qui est chargé à chaque session = le `CLAUDE.md` racine (court, voir §10).
+- Ce qui est chargé à chaque session = le `AGENTS.md` (court, voir §10).
 - La connaissance métier détaillée = **Skills** chargés à la demande (voir §9).
 - Convention : `MUST` = obligatoire, `SHOULD` = recommandé, `MAY` = optionnel.
 
@@ -47,11 +47,11 @@ Une IA agit comme **ingénieur CAO + roboticien**. L'utilisateur décrit une int
 | Aspect | Valeur |
 |---|---|
 | Compétence code | Aucune souhaitée ; pilotage 100% langage naturel |
-| But | Projet sérieux → partage public GitHub |
+| But | Projet sérieux -> partage public GitHub |
 | Périmètre voulu | « Tout faire » : méca + robotique + fusée/drone/train + fabrication |
 | Contrainte forte | **Minimiser la facture API (tokens)** |
 | Livrable attendu | Outils préfaits + canal de communication IA↔FreeCAD + push git public |
-| OS | À confirmer (Win/Linux/macOS) — impacte chemins & install |
+| OS | À confirmer (Win/Linux/macOS) - impacte chemins & install |
 | FreeCAD | 1.1.1 (stable actuelle) |
 
 ### 2.1 Tension assumée : zéro-code vs token-minimal
@@ -65,7 +65,7 @@ L'utilisateur ne code pas, mais **poser** le système (base MCP + workbenches) e
 ## 3. Réponse de faisabilité (synthèse technique)
 
 ### 3.1 Possible ? OUI pour conception/robotique/fabrication
-- **Robotique** : RobotCAD (`drfenixion/freecad.robotcad`) et CROSS (`galou/freecad.cross`) → génèrent URDF/xacro ROS2, cinématique directe/inverse, export Gazebo/RViz. RobotCAD recommande FreeCAD 1.1.x.
+- **Robotique** : RobotCAD (`drfenixion/freecad.robotcad`) et CROSS (`galou/freecad.cross`) -> génèrent URDF/xacro ROS2, cinématique directe/inverse, export Gazebo/RViz. RobotCAD recommande FreeCAD 1.1.x.
 - **Fusée** : Rocket Workbench (officiel addons, v5.1.x, MàJ 2026-01).
 - **Drone/avion** : workbench Airplane Design (v0.4.x) ; cas publiés d'optimisation VTOL sur FreeCAD.
 - **Train / méca générale** : PartDesign + Assembly natifs.
@@ -89,7 +89,7 @@ Conception + robotique + fabrication = **bien outillé**. Simulation physique po
 - Booléens (union/cut/common), patterns (linéaire/polaire/miroir), fillet/chamfer.
 - Trous paramétriques (counterbore, countersink), filetages.
 - Assemblages multi-pièces, contraintes d'assemblage.
-- Paramétrage piloté par feuille de calcul (spreadsheet) → variantes.
+- Paramétrage piloté par feuille de calcul (spreadsheet) -> variantes.
 
 ### 4.2 Robotique / ROS2
 - Définition structure robot : links, joints, collisions, visuals.
@@ -99,10 +99,10 @@ Conception + robotique + fabrication = **bien outillé**. Simulation physique po
 - Contrôleurs `ros2_control`, capteurs Gazebo.
 - Cas multicoptère : PX4 + Gazebo + ROS2 (via RobotCAD).
 
-### 4.3 Aéro — fusée / drone
+### 4.3 Aéro - fusée / drone
 - Fusée : nez, corps, ailerons, transition ; centre de pression, stabilité.
 - Drone : frame, bras, montage moteurs/hélices, logements électronique.
-- CFD prototype via CfdOF (RANS, incompressible, steady) — voir limites §3.2/§12.
+- CFD prototype via CfdOF (RANS, incompressible, steady) - voir limites §3.2/§12.
 
 ### 4.4 Train / mécanique
 - Châssis, bogies, liaisons, engrenages, transmissions.
@@ -114,7 +114,7 @@ Conception + robotique + fabrication = **bien outillé**. Simulation physique po
 - Export STEP/IGES pour échange.
 
 ### 4.6 Fonctions transverses
-- Captures d'écran isométriques (sur demande, pas par défaut — coût tokens).
+- Captures d'écran isométriques (sur demande, pas par défaut - coût tokens).
 - Mesures (distances, volumes, bounding box, masse).
 - Import/réparation géométrie externe (STL fournisseur, STEP).
 
@@ -127,7 +127,7 @@ Conception + robotique + fabrication = **bien outillé**. Simulation physique po
 | NF1 | Coût tokens / opération simple | Minimal ; feedback texte-seul par défaut |
 | NF2 | Robustesse crash OCCT | Capture + reprise sans perte |
 | NF3 | Reproductibilité install | Script/agent unique, multi-OS |
-| NF4 | Latence pilotage | Réponse IA → action FreeCAD < quelques s |
+| NF4 | Latence pilotage | Réponse IA -> action FreeCAD < quelques s |
 | NF5 | Sécurité exécution Python | Sandbox/confiance ; jamais exposer 0.0.0.0 sans IP allowlist |
 | NF6 | Portabilité | Win/Linux/macOS (fallback headless) |
 | NF7 | Traçabilité | Log opérations + crash reports |
@@ -141,7 +141,7 @@ Conception + robotique + fabrication = **bien outillé**. Simulation physique po
 ```
 Utilisateur (langage naturel)
       │
-   Client IA  (Claude Code / Desktop / tout client MCP)
+   Client MCP (CLI harnesses, Cursor, VS Code, Codex, LM Studio...)
       │  protocole MCP (JSON-RPC)
    Serveur MCP FreeCAD  (BASE robuste + greffes)
       │  RPC / socket / XML-RPC (localhost par défaut)
@@ -159,11 +159,11 @@ Utilisateur (langage naturel)
 | Robustesse / capture crash | base (blwfish) | native |
 | Largeur outils paramétriques (FEM/BIM/meshing) | `sergiudanstan` (165 outils) | porter via wrappers Python |
 | Boucle agentique + simu fluide/FEM | `sandraschi` (FastMCP, 46 outils) | greffe sélective |
-| Génération image→3D / texte→3D | `proximile` (TRELLIS/ComfyUI) | optionnel, GPU requis |
+| Génération image->3D / texte->3D | `proximile` (TRELLIS/ComfyUI) | optionnel, GPU requis |
 | PartDesign paramétrique propre | `contextform` | patterns d'outils |
 | Patterns communautaires / option texte-seul | `neka-nat` | inspiration token-saving |
 
-**Clé universelle** : tous ces serveurs exposent l'**exécution Python arbitraire** dans le contexte FreeCAD. Porter un « outil » d'un repo = copier la macro Python et l'envelopper dans le format d'outil de la base. → fusion abordable, pas une réécriture CAD.
+**Clé universelle** : tous ces serveurs exposent l'**exécution Python arbitraire** dans le contexte FreeCAD. Porter un « outil » d'un repo = copier la macro Python et l'envelopper dans le format d'outil de la base. -> fusion abordable, pas une réécriture CAD.
 
 ### 6.4 Couches maison à créer (voir §7)
 Mémoire projet · Vérification géométrique · Checkpoints/rollback.
@@ -199,7 +199,7 @@ Objectif NF1. Mécanismes cumulatifs :
 2. **Outils préfaits > Python ad hoc.** Chaque opération récurrente = un outil nommé. L'IA appelle l'outil (quelques tokens) au lieu de générer un script (beaucoup de tokens) à chaque fois.
 3. **Mémoire projet (§7.1).** Le contexte n'est pas re-décrit ; l'IA lit un state compact.
 4. **Skills à la demande (§9).** La connaissance métier lourde n'est chargée que quand le domaine est actif.
-5. **`CLAUDE.md` court (§10).** Chargé chaque session → doit rester < ~150 lignes.
+5. **`AGENTS.md` court (§10).** Chargé chaque session -> doit rester < ~150 lignes.
 6. **Réponses verbeuses interdites côté serveur.** Les outils renvoient des résultats compacts (IDs, statut), pas des dumps complets de scène sauf demande.
 7. **Batch d'opérations.** Regrouper les étapes liées en un appel quand possible.
 8. **Modèle adapté.** Tâches simples sur modèle léger ; planification sur modèle lourd (choix côté client IA).
@@ -228,9 +228,9 @@ Chaque SKILL.md : court, concret, avec invocations exactes ; détails lourds en 
 
 ---
 
-## 10. Fichier `CLAUDE.md` racine (à créer, court)
+## 10. Fichier `AGENTS.md` (à créer, court)
 
-Chargé **chaque** session → budget strict < ~150 lignes. Contenu cible :
+Chargé **chaque** session -> budget strict < ~150 lignes. Contenu cible :
 - 1 ligne : ce qu'est le repo.
 - Stack & versions (FreeCAD 1.1.1, base MCP, OS).
 - Commandes clés (démarrer serveur MCP, lancer FreeCAD headless, checkpoint, push git).
@@ -238,7 +238,7 @@ Chargé **chaque** session → budget strict < ~150 lignes. Contenu cible :
 - Règles d'or token-minimal (texte-seul par défaut, lire le state au start, MàJ state après étape).
 - Anti-patterns réels (« ne pas faire de screenshot auto », « ne pas re-décrire la scène »).
 - Imports `@docs/CAHIER_DES_CHARGES.md` et `@project_state/…` à la demande.
-> Règle : si retirer une ligne ne provoque pas d'erreur de l'IA → la supprimer.
+> Règle : si retirer une ligne ne provoque pas d'erreur de l'IA -> la supprimer.
 
 ---
 
@@ -246,14 +246,14 @@ Chargé **chaque** session → budget strict < ~150 lignes. Contenu cible :
 
 | Phase | Contenu | État final |
 |---|---|---|
-| **0 — Install assistée** | Agent installe base MCP + workbenches (RobotCAD, Rocket, CfdOF, Path…), pose `CLAUDE.md` + skills | Système opérationnel |
-| **1 — Base seule** | Faire tourner la base, vérifier pilotage FreeCAD 1.1.1, créer une pièce simple | Pilotage nominal validé |
-| **2 — Greffe #1** | Ajouter 1 bloc (ex. robotique ROS), tester, valider | 1 domaine métier actif |
-| **3 — Greffes itératives** | Ajouter domaines un par un (fusée, drone, CFD, CAM), tester à chaque fois | Couverture large |
-| **4 — Couches maison** | Mémoire projet, vérif, checkpoints | Pilotage long robuste |
-| **5 — Publication** | Doc, licence, install reproductible, push public | Repo partageable |
+| **0 - Install assistée** | Agent installe base MCP + workbenches (RobotCAD, Rocket, CfdOF, Path…), pose `AGENTS.md` + skills | Système opérationnel |
+| **1 - Base seule** | Faire tourner la base, vérifier pilotage FreeCAD 1.1.1, créer une pièce simple | Pilotage nominal validé |
+| **2 - Greffe #1** | Ajouter 1 bloc (ex. robotique ROS), tester, valider | 1 domaine métier actif |
+| **3 - Greffes itératives** | Ajouter domaines un par un (fusée, drone, CFD, CAM), tester à chaque fois | Couverture large |
+| **4 - Couches maison** | Mémoire projet, vérif, checkpoints | Pilotage long robuste |
+| **5 - Publication** | Doc, licence, install reproductible, push public | Repo partageable |
 
-**Règle d'or** : jamais tout intégrer d'un coup. Une greffe → un test → validation → greffe suivante.
+**Règle d'or** : jamais tout intégrer d'un coup. Une greffe -> un test -> validation -> greffe suivante.
 
 ---
 
@@ -264,7 +264,7 @@ Chargé **chaque** session → budget strict < ~150 lignes. Contenu cible :
 | CFD lourd (aéro précise) | Prototype CfdOF en interne ; export STL/STEP vers OpenFOAM standalone ou outil commercial pour étude sérieuse |
 | Lofting avancé (fuselages complexes) | Combiner Curves/Surface WB ; ou modélisation hybride, import STEP partiel |
 | CAM avancé (multi-axes) | CAM de base sur 1.1.x ; suivre 1.2-dev pour Path complet |
-| Génération 3D par IA (image→3D) | Optionnel, nécessite GPU (proximile/TRELLIS) ; hors MVP |
+| Génération 3D par IA (image->3D) | Optionnel, nécessite GPU (proximile/TRELLIS) ; hors MVP |
 | Simulation dynamique multicorps | Externaliser vers Gazebo (déjà dans pipeline ROS) |
 
 ---
@@ -274,7 +274,7 @@ Chargé **chaque** session → budget strict < ~150 lignes. Contenu cible :
 - **Licence** : choisir compatible avec dépendances (FreeCAD = LGPL ; workbenches variés LGPL/GPL). Vérifier compat avant choix final (probable LGPL-2.1+ ou GPL selon greffes).
 - **Structure repo** :
 ```
-/CLAUDE.md                 # court, chargé chaque session
+/AGENTS.md                 # court, chargé chaque session
 /docs/CAHIER_DES_CHARGES.md
 /skills/<domaine>/SKILL.md
 /server/                   # base MCP + greffes
@@ -295,7 +295,7 @@ Chargé **chaque** session → budget strict < ~150 lignes. Contenu cible :
 
 ### 14.1 Critères
 - [ ] Créer une pièce paramétrique simple en langage naturel, sans toucher au code.
-- [ ] Générer un robot basique → package URDF ROS2 exporté.
+- [ ] Générer un robot basique -> package URDF ROS2 exporté.
 - [ ] Modéliser un drone/fusée prototype + vérif géométrique passée.
 - [ ] Générer un G-code ou STL exploitable.
 - [ ] Reprendre un projet entre 2 sessions via la mémoire projet (sans re-décrire).
@@ -304,7 +304,7 @@ Chargé **chaque** session → budget strict < ~150 lignes. Contenu cible :
 - [ ] Repo public installable par un tiers en suivant le README.
 
 ### 14.2 Livrables
-1. `CLAUDE.md` racine court.
+1. `AGENTS.md` court.
 2. Ce cahier des charges (`docs/`).
 3. Serveur MCP (base + greffes) installé.
 4. Skills par domaine.
@@ -314,13 +314,13 @@ Chargé **chaque** session → budget strict < ~150 lignes. Contenu cible :
 
 ---
 
-## 15. Décisions ouvertes — TRANCHÉES (mise à jour 2026-07-03)
+## 15. Décisions ouvertes - TRANCHÉES (mise à jour 2026-07-03)
 
 | # | Décision | Choix retenu |
 |---|---|---|
 | D1 | OS principal | **Windows** (validé bout-en-bout ; architecture multi-OS, Linux/macOS non testés) |
-| D2 | Licence finale | **CC BY-NC 4.0** — libre de télécharger/modifier/partager, citation obligatoire (auteur + projets tiers de CREDITS.md), pas d'usage commercial. Possible car ni la base ni les workbenches (LGPL) ne sont vendorisés : ils sont clonés à l'install. **Remplacé en v2 (2026-10-12)** : PolyForm Noncommercial 1.0.0 (utiliser/modifier/partager librement, jamais vendre) ; la base `server/freecad-mcp/`, désormais intégrée et modifiée, reste LGPL-2.1-or-later |
-| D3 | Génération image→3D incluse ? | **Non** (hors MVP, GPU requis) |
+| D2 | Licence finale | **CC BY-NC 4.0**: libre de télécharger/modifier/partager, citation obligatoire (auteur + projets tiers de CREDITS.md), pas d'usage commercial. Possible car ni la base ni les workbenches (LGPL) ne sont vendorisés : ils sont clonés à l'install. **Remplacé en v2 (2026-10-12)** : PolyForm Noncommercial 1.0.0 (utiliser/modifier/partager librement, jamais vendre) ; la base `server/freecad-mcp/`, désormais intégrée et modifiée, reste LGPL-2.1-or-later |
+| D3 | Génération image->3D incluse ? | **Non** (hors MVP, GPU requis) |
 | D4 | `project_state` public ou privé | **Privé** (gitignoré ; contient les projets de l'utilisateur) |
 | D5 | Niveau CAM visé | **Différé à FreeCAD 1.2** ; en attendant, repli STEP/STL (`skill-cam` documente la conduite à tenir) |
 
@@ -334,19 +334,19 @@ Voir `docs/ROADMAP.md` (audit détaillé). Résumé :
 
 ---
 
-## Annexe A — Comparatif serveurs MCP FreeCAD
+## Annexe A - Comparatif serveurs MCP FreeCAD
 
 | Repo | Outils | Force | Usage ici |
 |---|---|---|---|
 | `blwfish/freecad-mcp` | ~32 | Robustesse, crash OCCT, ciblage 1.1.x, install agent | **BASE** |
 | `sergiudanstan/freecad-mcp` | 165 | Largeur (FEM/BIM/sketch/mesh), Node/TS | Source de greffes outils |
 | `sandraschi/freecad-mcp` | 46 | FastMCP, boucle agentique, CFD/FEM/print, dashboard | Greffes simu/agentique |
-| `proximile/FreeCAD-MCP` | 57 | Docker headless, image→3D, multi-IA | Génération 3D (optionnel) |
-| `contextform/freecad-mcp` | — | PartDesign propre, installeur npm | Patterns PartDesign |
-| `neka-nat/freecad-mcp` | — | Populaire, option texte-seul token-saving | Inspiration & patterns |
+| `proximile/FreeCAD-MCP` | 57 | Docker headless, image->3D, multi-IA | Génération 3D (optionnel) |
+| `contextform/freecad-mcp` | - | PartDesign propre, installeur npm | Patterns PartDesign |
+| `neka-nat/freecad-mcp` | - | Populaire, option texte-seul token-saving | Inspiration & patterns |
 | `spkane/...robust-mcp` | 150+ | Multi-mode, conteneurisable | Référence robustesse |
 
-## Annexe B — Workbenches métier retenus
+## Annexe B - Workbenches métier retenus
 
 | Workbench | Domaine | Note |
 |---|---|---|
@@ -359,7 +359,7 @@ Voir `docs/ROADMAP.md` (audit détaillé). Résumé :
 | FEM | contraintes | CalculiX |
 | Path / CAM | usinage | post-proc multi-contrôleurs, CAM complet en 1.2-dev |
 
-## Annexe C — Risques
+## Annexe C - Risques
 
 | Risque | Gravité | Mitigation |
 |---|---|---|

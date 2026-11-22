@@ -24,8 +24,8 @@ d'électronique ou de mécatronique, dans l'air, l'espace, sur terre, sous terre
   microprogramme.
 - **La finalité est l'objet réel.** Chaque projet doit pouvoir être fabriqué, monté, essayé, et
   comparé à sa simulation.
-- **Une boucle complète :** besoin → hypothèses → modèle → simulation → test virtuel → résultats →
-  correction. On recommence jusqu'à ce que tout passe, puis fabrication → essai réel → recalage du
+- **Une boucle complète :** besoin -> hypothèses -> modèle -> simulation -> test virtuel -> résultats ->
+  correction. On recommence jusqu'à ce que tout passe, puis fabrication -> essai réel -> recalage du
   modèle.
 - **Les contraintes :**
   - gratuit et libre, local, sécurisé ;
@@ -58,14 +58,14 @@ d'électronique ou de mécatronique, dans l'air, l'espace, sur terre, sous terre
 
 ```
 Utilisateur (langage naturel)
-   └─ Client IA compatible MCP (Claude Code ; aussi Claude Desktop, VS Code, LM Studio...)
+   └─ Client compatible MCP (CLI harnesses, Cursor, VS Code, Codex, LM Studio...)
         ├─ MCP freecad          (existant) modélisation dans FreeCAD
         └─ MCP freecad-layers   (existant) contrat, check, export, fem_static...
               + simulate / job / study / tools_status   (NOUVEAUX)
                     │  sous-processus, sans shell, délai maximal, limite mémoire, pas de réseau
                     ▼
               server/adapters/<outil>/run.py   (dans l'environnement pixi de l'outil)
-                    │  entrée JSON → outil → sortie JSON (verdict + chiffres + chemins)
+                    │  entrée JSON -> outil -> sortie JSON (verdict + chiffres + chemins)
                     ▼
               solveurs, simulateurs, chaînes électroniques et de fabrication (§4 à §7)
 ```
@@ -100,7 +100,7 @@ Le détail de chaque `kind` est dans le skill de son pack, chargé seulement qua
 {"kind": "fem_buckling", "geometry": "etude/coque.step", "params": {"pressure_MPa": 1.2, "material": "aluminium"},
  "limits": {"min_safety_factor": 3}, "timeout_s": 900}
 // sortie (résumée en 3 à 10 lignes pour l'IA)
-{"verdict": "OK", "summary": "flambage à 4.9 MPa (linéaire) ; facteur de réduction 0.5 → coef. de sécurité 2.04 … FAIL",
+{"verdict": "OK", "summary": "flambage à 4.9 MPa (linéaire) ; facteur de réduction 0.5 -> coef. de sécurité 2.04 … FAIL",
  "values": {"p_cr_MPa": 4.9}, "files": ["etude/fem_buckling/result.vtu"],
  "tool": "calculix 2.23", "reference_case": "Euler OK", "inputs_hash": "sha256:…"}
 ```
@@ -116,12 +116,12 @@ hypothèses ──────────┤   charges, matériau, courant mari
 paramètres ──────────┤   cellules du tableur FreeCAD : une seule source pour la CAO, la simulation,
                      │   l'URDF et les constantes du microprogramme
                      ▼
-   modèle → check (géométrie + contrat) → simulate × N → critères → verdict de l'itération
+   modèle -> check (géométrie + contrat) -> simulate × N -> critères -> verdict de l'itération
                      │                                        │
                      │  FAIL : correction                     │  tout OK : fabrication (§7)
                      │   - l'IA propose, ou                   ▼
-                     │   - balayage / optimisation locale   essai réel (benchtest) → mesures
-                     │     (Optuna, pymoo, BoTorch)            → recalage (calib) → nouvelle boucle
+                     │   - balayage / optimisation locale   essai réel (benchtest) -> mesures
+                     │     (Optuna, pymoo, BoTorch)            -> recalage (calib) -> nouvelle boucle
                      └── checkpoint avant chaque essai, restore si c'est pire
 ```
 - **Le journal :** une ligne par itération. Il produit un **dossier de justification** : exigences,
@@ -192,7 +192,7 @@ Un outil qui ne passe pas les étapes 1 à 5 n'est pas branché.
 
 | Physique | Outil principal (natif Windows) | Recoupement | État aujourd'hui |
 |---|---|---|---|
-| Statique : force, **pression, gravité, rotation** | CalculiX (fourni avec FreeCAD) | MYSTRAN, formules | forces seules → à étendre |
+| Statique : force, **pression, gravité, rotation** | CalculiX (fourni avec FreeCAD) | MYSTRAN, formules | forces seules -> à étendre |
 | Flambage (coques sous pression comprises) | CalculiX `buckling`, avec facteur de réduction, ou non linéaire avec défaut initial | Euler, NASA SP-8007 | à ajouter |
 | Vibrations, modes propres | CalculiX `frequency` | NAFEMS FV52 | à ajouter |
 | Thermique (conduction, convection, rayonnement, transitoire) | CalculiX `thermomech` | Elmer, NAFEMS T4 | à ajouter |
@@ -206,10 +206,10 @@ Un outil qui ne passe pas les étapes 1 à 5 n'est pas branché.
 | Acoustique, vibro-acoustique | Elmer (Helmholtz), NGSolve ; openCFS | formules | absent |
 | EDP sur mesure (n'importe quelle physique) | NGSolve (formes faibles en Python, natif) | solutions exactes | absent |
 | Dynamique multicorps | MuJoCo 4 ; PyChrono 10 | pendule, chute libre | absent |
-| Commande : PID, LQR, MPC, identification | python-control, CasADi, SysIdentPy | — | absent |
-| Optimisation, sensibilité, substituts | Optuna, pymoo, SALib, BoTorch, SMT, scikit-learn | — | absent |
-| Post-traitement numérique | PyVista / VTK (dans leur environnement) ; ParaView `pvbatch` | — | — |
-| **Animation** | FreeCAD : GIF d'un mécanisme sur sa course ; MuJoCo et Chrono : vidéo hors écran ; trajectoires | — | absente |
+| Commande : PID, LQR, MPC, identification | python-control, CasADi, SysIdentPy | - | absent |
+| Optimisation, sensibilité, substituts | Optuna, pymoo, SALib, BoTorch, SMT, scikit-learn | - | absent |
+| Post-traitement numérique | PyVista / VTK (dans leur environnement) ; ParaView `pvbatch` | - | - |
+| **Animation** | FreeCAD : GIF d'un mécanisme sur sa course ; MuJoCo et Chrono : vidéo hors écran ; trajectoires | - | absente |
 
 ---
 
@@ -268,7 +268,7 @@ tests virtuels et ce qu'il ne fait pas.
   - pré-dimensionnement sur sol (`terramech`, Bekker-Wong/Janosi) ;
   - équilibre ZMP et capture point, validé sur le modèle G1 de Menagerie ;
   - dimensionnement des actionneurs à partir de `mj_inverse` (couple efficace, échauffement) ;
-  - export FreeCAD → Chrono ;
+  - export FreeCAD -> Chrono ;
   - couverture des capteurs (`sensor_cov`).
 - **Tests virtuels :** pente limite, franchissement, tenir debout, poussée, marche.
 - **WSL2 :** OMPL en Python, crocoddyl, TSID, Placo, apprentissage JAX sur carte graphique.
@@ -326,7 +326,7 @@ tests virtuels et ce qu'il ne fait pas.
   - `kicad_gate` : ERC et DRC propres, isolement selon la tension ;
   - `motor_sizing` : couple, constante de vitesse, échauffement ;
   - `pack_model` : batterie complète.
-- **Conception carte et boîtier ensemble :** `kicad-cli pcb export step` → FreeCAD → `check` (la
+- **Conception carte et boîtier ensemble :** `kicad-cli pcb export step` -> FreeCAD -> `check` (la
   carte rentre dans le boîtier, pas de collision). KiCad StepUp viendra seulement après validation
   sur FreeCAD 1.1.
 - **Écartés :**
@@ -385,7 +385,7 @@ Ces besoins passent par WSL2 (scénario B) ou sont hors périmètre :
 | Procédé | Ce que fait l'IA | Ce que fait l'humain |
 |---|---|---|
 | Impression 3D | `printability` puis `export` 3MF vérifié. Option : projet PrusaSlicer (`--export-3mf`) avec **le profil de l'utilisateur**, sans G-code. | Découpe en tranches, vérifie l'aperçu, imprime. |
-| Usinage | Livre le STEP et le plan TechDraw. **Lit** le G-code de l'humain avec CAMotics (`camsim` → STL de la pièce usinée), puis le compare au modèle avec `verify`. | Programme les trajectoires (FreeCAD CAM, Kiri:Moto), puis les envoie (UGS, Candle). |
+| Usinage | Livre le STEP et le plan TechDraw. **Lit** le G-code de l'humain avec CAMotics (`camsim` -> STL de la pièce usinée), puis le compare au modèle avec `verify`. | Programme les trajectoires (FreeCAD CAM, Kiri:Moto), puis les envoie (UGS, Candle). |
 | Découpe laser, tôlerie | Déplie la pièce (SheetMetal) en DXF ; imbrication avec sparrow. | Découpe (LaserGRBL). |
 | Circuit imprimé | Fichiers Gerber, perçage, implantation et nomenclature (`kicad-cli`) ; aide au montage (InteractiveHtmlBom) ; rapport DRC/ERC. | Commande chez le fabricant, câble. |
 | Faisceau de câbles | Plan et nomenclature WireViz, sections vérifiées (`wire_sizing`). | Sertit et monte. |
@@ -433,7 +433,7 @@ powershell -ExecutionPolicy Bypass -File install\install.ps1 -Packs socle,marin,
 ```
 0. **Affiche ce qui va être téléchargé avant de télécharger quoi que ce soit** : chaque outil et
    chaque environnement pixi des packs choisis, avec sa taille, et le total (quelques Go pour un
-   seul pack, environ 33 Go pour `-Packs tout`). Déjà installé et intact → sauté, affiché comme
+   seul pack, environ 33 Go pour `-Packs tout`). Déjà installé et intact -> sauté, affiché comme
    tel. Lancé à la main dans un terminal, il demande confirmation ; lancé depuis un script ou une
    intégration continue (rien à répondre), ou avec `-Yes`, il continue sans poser la question.
 1. Télécharge une version figée de pixi et vérifie son SHA256.
@@ -491,7 +491,7 @@ OpenVSP ajoute 80 Mo à `air` depuis le 2026-11-20 ; le pack `fluides-plus` (Ope
 | Exigences | Doorstop (YAML dans git) | matrice de traçabilité |
 | Unités | SI partout entre outils, mm dans la CAO | pint 0.25 côté FreeCAD (0.26 exige Python 3.12) |
 
-### 8.5 Plug and play : plugin Claude Code
+### 8.5 Plug and play : plugin du harness
 Le dépôt devient aussi une *marketplace* :
 
 ```
@@ -503,7 +503,7 @@ claude plugin install freecad-atelier@mcp-freecad-v2
 - **Ce qu'il ne porte pas :** les binaires de plusieurs gigaoctets. `tools_status` dit ce qui manque et
   donne la commande `install.ps1` à lancer.
 - **Autres clients :** les serveurs MCP restent utilisables depuis les autres clients compatibles
-  (Claude Desktop, VS Code, LM Studio...).
+  (desktop harness, VS Code, LM Studio...).
 
 ---
 
@@ -632,7 +632,7 @@ qu'un exemple réel a fait tout le tour de la boucle.
 | **5. Packs suivants** | Un par un, chacun validé avant le suivant. | M chacun |
 | **6. Optimisation et traçabilité** | `study` complet : Optuna/pymoo/BoTorch, SALib, beso ; Doorstop ; dossier de justification. | M |
 | **7. Voies B et C** | WSL2, puis ROS 2, si choisis. | M |
-| **8. Plug and play** | Plugin et marketplace Claude Code, `-Packs tout`, documentation, CI. | S |
+| **8. Plug and play** | Plugin et marketplace du harness, `-Packs tout`, documentation, CI. | S |
 
 ### État au 2026-11-19
 
@@ -771,10 +771,10 @@ Outils retenus après recherche (libres, gratuits, locaux, natifs Windows) :
 
 | # | Manque | Outil retenu | Ce que l'adaptateur fera | Cas de référence |
 |---|---|---|---|---|
-| R2.1 | **Harnais universel** : l'atelier ne doit pas dépendre de Claude Code | protocole MCP standard (stdio) + `AGENTS.md` | les skills servis aussi comme ressources et prompts MCP ; configurations générées pour Claude Code/Desktop, Cursor, VS Code, Codex CLI, Gemini CLI, LM Studio, Continue, Windsurf | chaque configuration se relit ; un client MCP nu liste les outils et lit un skill |
-| R2.2 | **IA sur le robot de l'utilisateur** | MuJoCo + Gymnasium + Stable-Baselines3 (déjà là) | environnement sur mesure : modèle MJCF du projet ou gabarit paramétré (gyropode, chariot-pendule), récompense et fin d'épisode déclarées (liste blanche), bruit capteur, retard et variation de masse (randomisation de domaine) | taux d'instabilité égal à la forme fermée (0,06 % et 0,007 %) ; chariot-pendule sur mesure résolu par PPO (retour 499/500, masse ±10 %) — **fait** |
-| R2.3 | **Microprogramme et physique ensemble** (logiciel dans la boucle) | Renode 1.17 (déjà là) piloté en pas à pas par son moniteur sur la boucle locale, couplé à MuJoCo | le vrai binaire STM32 lit ses capteurs dans une boîte aux lettres en RAM et écrit sa commande ; Renode avance de 1 ms, MuJoCo aussi, à chaque pas | LQR compilé pour STM32 : chariot-pendule stabilisé dans Renode, écart 1,8e-8 avec la même loi en Python, aucune échéance manquée — **fait** (`sil`) |
-| R2.4 | **Carte réelle** | KiCad 10 (`kicad-cli` : ERC, DRC, Gerber, perçage, placement, nomenclature, STEP, IPC-2581) + Freerouting 2.x (routeur automatique, Java 17, DSN → SES) | ERC/DRC en verdict, fichiers de fabrication, STEP de la carte vers FreeCAD, routage automatique en option | carte générée : DRC propre, puis la même avec un défaut d'isolement que le DRC doit trouver ; STEP aux cotes de la carte |
+| R2.1 | **Harnais universel** : l'atelier ne doit pas dépendre d'un seul harness | protocole MCP standard (stdio) + `AGENTS.md` | les skills servis aussi comme ressources et prompts MCP ; configurations générées pour the CLI harness/Desktop, Cursor, VS Code, Codex CLI, Gemini CLI, LM Studio, Continue, Windsurf | chaque configuration se relit ; un client MCP nu liste les outils et lit un skill |
+| R2.2 | **IA sur le robot de l'utilisateur** | MuJoCo + Gymnasium + Stable-Baselines3 (déjà là) | environnement sur mesure : modèle MJCF du projet ou gabarit paramétré (gyropode, chariot-pendule), récompense et fin d'épisode déclarées (liste blanche), bruit capteur, retard et variation de masse (randomisation de domaine) | taux d'instabilité égal à la forme fermée (0,06 % et 0,007 %) ; chariot-pendule sur mesure résolu par PPO (retour 499/500, masse ±10 %) - **fait** |
+| R2.3 | **Microprogramme et physique ensemble** (logiciel dans la boucle) | Renode 1.17 (déjà là) piloté en pas à pas par son moniteur sur la boucle locale, couplé à MuJoCo | le vrai binaire STM32 lit ses capteurs dans une boîte aux lettres en RAM et écrit sa commande ; Renode avance de 1 ms, MuJoCo aussi, à chaque pas | LQR compilé pour STM32 : chariot-pendule stabilisé dans Renode, écart 1,8e-8 avec la même loi en Python, aucune échéance manquée - **fait** (`sil`) |
+| R2.4 | **Carte réelle** | KiCad 10 (`kicad-cli` : ERC, DRC, Gerber, perçage, placement, nomenclature, STEP, IPC-2581) + Freerouting 2.x (routeur automatique, Java 17, DSN -> SES) | ERC/DRC en verdict, fichiers de fabrication, STEP de la carte vers FreeCAD, routage automatique en option | carte générée : DRC propre, puis la même avec un défaut d'isolement que le DRC doit trouver ; STEP aux cotes de la carte |
 
 KiCad n'a pas de version portable : le propriétaire l'installe une fois (`winget install -e --id
 KiCad.KiCad`), l'adaptateur trouve `kicad-cli` et ne s'active qu'après ses cas de référence.

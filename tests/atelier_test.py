@@ -1,4 +1,4 @@
-"""Workshop end to end — bridge venv Python, isolated FreeCAD (port 23499), real pixi envs.
+"""Workshop end to end - bridge venv Python, isolated FreeCAD (port 23499), real pixi envs.
 
 A FreeCAD part goes through the whole loop with the MCP tools:
 tools_status -> study start (criteria + real-test acceptance) -> simulate fem_static on the part

@@ -3,7 +3,7 @@
 
 Registered as the MCP server command instead of the bare upstream bridge.
 It replaces the old string patches applied to third-party code
-(audit 2026-10-11, §3.8) — nothing is patched at run time; the base is the
+(audit 2026-10-11, §3.8) - nothing is patched at run time; the base is the
 vendored server/freecad-mcp (its own changes: CHANGES-NikeTheBee.md):
 
 1. Make sure a headless FreeCAD (AICopilot headless_server.py) listens on the
@@ -210,7 +210,7 @@ def retire_previous(freecadcmd: Path) -> bool:
             return True
         time.sleep(0.25)
     raise Untrusted(f"the previous FreeCAD ({prev}) still holds port {PORT}: close it "
-                    "(another Claude session may be restarting it), then retry")
+                    "(another harness session may be restarting it), then retry")
 
 
 def spawn(freecadcmd: Path) -> subprocess.Popen:

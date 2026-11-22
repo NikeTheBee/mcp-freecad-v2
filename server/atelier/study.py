@@ -7,7 +7,7 @@
        │                                                                │     │
        │            real test within tolerance AND close to the model? ─┤     │
        │                         │no                                    │yes  │
-       └──── calibrate (model ← measurements) ◄──┘                 validated  │
+       └──── calibrate (model <- measurements) ◄──┘                 validated  │
        └──────────────────────────────────────────────────────────────────────┘
 
 "Perfect" is a state the data must reach, not a claim: `validated` only when every simulation
@@ -120,7 +120,7 @@ def record_result(project_dir: Path, name: str, kind: str, res: Dict[str, Any],
 
 
 def _advance(s: Dict[str, Any]) -> None:
-    """design → ready_to_build when every criterion's kind has an OK result of this iteration."""
+    """design -> ready_to_build when every criterion's kind has an OK result of this iteration."""
     if s["state"] not in ("design", "ready_to_build"):
         return
     cur = {k: r for k, r in s["results"].items() if r.get("iteration") == s["iteration"]}
@@ -192,9 +192,9 @@ def measure(project_dir: Path, name: str, data: Dict[str, Any], source: str,
         s["state"] = "calibrate"
         why = []
         if not all_in:
-            why.append("a real measurement is outside its acceptance limits → correct the design")
+            why.append("a real measurement is outside its acceptance limits -> correct the design")
         if not all_agree:
-            why.append("model and test disagree beyond the agreed tolerance → calibrate the model")
+            why.append("model and test disagree beyond the agreed tolerance -> calibrate the model")
         if missing_acc:
             why.append(f"not yet measured: {', '.join(missing_acc)}")
         nxt = "; ".join(why)
@@ -351,7 +351,7 @@ def auto_calibrate(project_dir: Path, name: str, quantity: str, param: str, note
     return {"param": param, "from": p0, "to": p, "runs": runs, "residual": gap}
 
 
-_SAFETY = {   # kinds or input keys → precautions for the REAL test (FEUILLE_DE_ROUTE §10.2)
+_SAFETY = {   # kinds or input keys -> precautions for the REAL test (FEUILLE_DE_ROUTE §10.2)
     "pressure": "Pressure test: hydrostatic (water), never pneumatic; shield and distance; "
                 "relief valve set below the test pressure; nobody in line with closures.",
     "rotation": "Rotating parts: guard in place, hands off, stop at the rated speed first.",
@@ -360,7 +360,7 @@ _SAFETY = {   # kinds or input keys → precautions for the REAL test (FEUILLE_D
     "elec": "Electrical: SELV (<= 60 V DC) unless a qualified person is present; fuse near the "
             "battery; Li-ion with a BMS; check polarity before the first power-up.",
     "flight": "Flight/launch: in a permitted area, with the local rules (club, authority), range "
-              "clear, the pilot or range officer in charge — never driven by the AI.",
+              "clear, the pilot or range officer in charge - never driven by the AI.",
     "load": "Mechanical loading: dead weights or a calibrated actuator, catch the part if it "
             "fails, eye protection, increase the load in steps.",
 }
@@ -397,7 +397,7 @@ def test_plan(project_dir: Path, name: str, predicted: Optional[Dict[str, str]] 
     if keys & {"rocket_flight", "flight_sim"}:
         hazards.append("flight")
     d = _dir(project_dir, name)
-    md = [f"# Real test — study {name} (iteration {s['iteration']})", "", f"Goal: {s['goal']}", "",
+    md = [f"# Real test - study {name} (iteration {s['iteration']})", "", f"Goal: {s['goal']}", "",
           "Performed by a person. The AI prepared this sheet; it never runs the test or drives the rig.",
           "", "## Safety", *[f"- {_SAFETY[h]}" for h in hazards], "",
           "## Hypotheses to check on the real part",
@@ -474,7 +474,7 @@ def report(project_dir: Path, name: str) -> Path:
     s = load(project_dir, name)
     d = _dir(project_dir, name)
     out = [f"# Study {name}", "", f"Goal: {s['goal']}", f"State: **{s['state']}** (iteration {s['iteration']})", "",
-           "## Hypotheses", *[f"- {h['text']} — source: {h['source']} (since iteration {h['since']})"
+           "## Hypotheses", *[f"- {h['text']} - source: {h['source']} (since iteration {h['since']})"
                                for h in s["hypotheses"]], "", "## Criteria"]
     out += [f"- {k}: {json.dumps(v)}" for k, v in s["criteria"].items()] or ["- none"]
     out += ["", "## Real-test acceptance"] + ([f"- {k}: {json.dumps(v)}" for k, v in s["acceptance"].items()]
@@ -482,7 +482,7 @@ def report(project_dir: Path, name: str) -> Path:
     for h in s["history"] + [{"iteration": s["iteration"], "state": s["state"], "results": s["results"],
                               "params": s["params"], "measurements": s["measurements"]}]:
         out += ["", f"## Iteration {h['iteration']} ({h['state']})", f"Parameters: `{json.dumps(h['params'])}`"]
-        out += [f"- {k}: **{r['verdict']}** — {r['summary']}" for k, r in h["results"].items()]
+        out += [f"- {k}: **{r['verdict']}**: {r['summary']}" for k, r in h["results"].items()]
         out += [f"- measured {q} = {m['value']} ({m['source']})" for q, m in h["measurements"].items()]
     if s["calibration"]:
         out += ["", "## Calibration", f"`{json.dumps(s['calibration'])}`"]

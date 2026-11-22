@@ -1,7 +1,7 @@
-"""Verification traps (audit 2026-10-11, §2.2 V1–V3) — runs under freecadcmd.
+"""Verification traps (audit 2026-10-11, §2.2 V1 - V3) - runs under freecadcmd.
 
 Every case here once returned "OK" on a wrong part. The verifier must now
-say FAIL (or UNKNOWN when a check cannot run) — never OK. Sentinel: VERIFY_OK
+say FAIL (or UNKNOWN when a check cannot run) - never OK. Sentinel: VERIFY_OK
 """
 import sys
 from pathlib import Path

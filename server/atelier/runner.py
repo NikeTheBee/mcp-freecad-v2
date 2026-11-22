@@ -4,7 +4,7 @@
 - A kind runs only if its adapter passed its reference cases for the current adapter code and
   environment lock (validation/<adapter>.json in MCPFC_HOME); a stale or missing validation runs
   the reference cases first, and a FAIL makes the kind unusable (§3.7, step 5).
-- Cache: same inputs_hash (kind + params + geometry bytes + adapter code + pixi.lock) → the stored
+- Cache: same inputs_hash (kind + params + geometry bytes + adapter code + pixi.lock) -> the stored
   result, marked "cached".
 - Supervision: argument list (no shell), python -I, timeout, memory ceiling, whole process tree
   killed on overrun; works the same for a foreground run and a background job.
@@ -84,7 +84,7 @@ def _kill_tree(pid: int) -> None:
         for c in p.children(recursive=True):
             c.kill()
         p.kill()
-    except Exception:  # noqa: BLE001 — already gone
+    except Exception:  # noqa: BLE001 - already gone
         pass
 
 
@@ -135,7 +135,7 @@ def _launch(env: str, args: List[str], cwd: Path, device: str = "cpu") -> subpro
         raise RuntimeError(f"environment {env!r} is not installed: run install\\install.ps1 "
                            f"(tools_status() says what is missing)")
     flags = 0x08000000 if os.name == "nt" else 0          # CREATE_NO_WINDOW
-    log = open(cwd / "adapter.log", "w", encoding="utf-8")  # noqa: SIM115 — closed by watcher
+    log = open(cwd / "adapter.log", "w", encoding="utf-8")  # noqa: SIM115 - closed by watcher
     proc = subprocess.Popen([str(py), "-I", str(ADAPTERS / "_entry.py"), *args], cwd=str(cwd),
                             env=_clean_env(env, device), stdin=subprocess.DEVNULL, stdout=log,
                             stderr=subprocess.STDOUT, creationflags=flags)

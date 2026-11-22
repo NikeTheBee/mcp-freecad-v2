@@ -1,6 +1,6 @@
 # skill-assembly
 
-**Load when:** combining multiple parts into a product — assemblies, positioning parts, joints/mates,
+**Load when:** combining multiple parts into a product - assemblies, positioning parts, joints/mates,
 exploded layouts.
 
 ## What this is
@@ -16,7 +16,7 @@ for part in (base, lid):
     asm.addObject(part)               # parts become assembly children
 ```
 
-## Position parts (placement-based — robust headless)
+## Position parts (placement-based - robust headless)
 ```python
 from FreeCAD import Vector, Placement, Rotation
 lid.Placement = Placement(Vector(0, 0, 10), Rotation(Vector(0,0,1), 0))   # translate + rotate

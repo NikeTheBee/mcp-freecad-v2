@@ -1,4 +1,4 @@
-"""URDF augmentation — ros2_control, sensors, Gazebo plugins (§4.2 completion).
+"""URDF augmentation - ros2_control, sensors, Gazebo plugins (§4.2 completion).
 
 Takes the bare URDF built with CROSS's `urdf_utils` (see skill-robotics-ros)
 and adds what a ROS2/Gazebo consumer needs, WITHOUT requiring a ROS2 runtime:
@@ -52,7 +52,7 @@ def inertial_from_shape(shape, density_kg_m3: float, link_placement=None) -> dic
 
     shape: a `Part.Shape` with solids, expressed in the SAME frame as
     `link_placement` (document frame: `obj.Shape` for a top-level object,
-    `Part.getShape(container, "obj.")` for an object inside a moved container —
+    `Part.getShape(container, "obj.")` for an object inside a moved container - 
     `obj.Shape` alone ignores the container's placement).
     link_placement: `FreeCAD.Placement` of the URDF link frame in that frame
     (None = the link frame is the shape's frame).
@@ -136,7 +136,7 @@ def add_ros2_control(robot: et.Element, joint_names: Iterable[str],
                      interface: str = "position") -> et.Element:
     """Add a `<ros2_control type="system">` block exposing each joint.
 
-    interface: "position" | "velocity" | "effort" — the command interface;
+    interface: "position" | "velocity" | "effort" - the command interface;
     state interfaces (position+velocity) are always exposed.
     """
     if interface not in _CONTROLLERS:

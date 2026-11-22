@@ -1,9 +1,9 @@
-"""Design contract — the user's requirements as automatic, blocking checks.
+"""Design contract - the user's requirements as automatic, blocking checks.
 
 When the user says "a 60x40x8 plate with one Ø6 hole in the centre, under
 200 g", record it once with `require(...)`; `check_all()` then re-measures
 the model after every step and any deviation is a FAIL. The code decides
-whether the part matches the request — not the AI's reading of it
+whether the part matches the request - not the AI's reading of it
 (audit 2026-10-11 §9, idea from maker-agent).
 
 Specs live in the project state (state.json "specs"), so they survive
@@ -203,11 +203,11 @@ def _on_axis(h: Dict[str, Any], c, tol: float) -> bool:
 
 def _eval(spec: Dict[str, Any], doc=None, memo: Optional[Dict[tuple, Any]] = None) -> Dict[str, Any]:
     """Evaluate one spec. One that cannot be evaluated (e.g. saved with bad
-    parameters before they were validated) is UNKNOWN for itself — it used to
+    parameters before they were validated) is UNKNOWN for itself - it used to
     crash every later `check` of its target."""
     try:
         return _eval_spec(spec, doc, {} if memo is None else memo)
-    except Exception as e:  # noqa: BLE001 — reported in the result, never silent
+    except Exception as e:  # noqa: BLE001 - reported in the result, never silent
         return {"id": spec.get("id"), "kind": spec.get("kind"), "target": spec.get("target"),
                 "status": UNKNOWN, "measured": None, "expected": spec.get("params"),
                 "message": f"could not evaluate ({type(e).__name__}: {e}); "

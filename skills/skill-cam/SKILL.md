@@ -1,6 +1,6 @@
-# skill-cam — DISABLED (safety)
+# skill-cam - DISABLED (safety)
 
-**Load when:** the user asks for machining / CNC — toolpaths, G-code, drilling/milling, "Path/CAM job".
+**Load when:** the user asks for machining / CNC - toolpaths, G-code, drilling/milling, "Path/CAM job".
 
 ## Status: CAM is switched off in this project
 The former `freecad_layers/cam.py` was **removed** (audit 2026-10-11, §2.2 K1/K2): it treated every
@@ -13,7 +13,7 @@ refused in code** since v2. Only the user can turn them back on, with `FREECAD_M
 in the `freecad` server's environment. Never set it yourself.
 
 ## What to do instead
-1. **Never** produce G-code meant for a real machine — not with `execute_python`, not with the base
+1. **Never** produce G-code meant for a real machine - not with `execute_python`, not with the base
    server's `cam_operations` tool.
 2. Export the part as **STEP** (`skill-exchange`) and tell the user to program the toolpaths in a CAM
    tool they control (FreeCAD CAM workbench in the GUI, or their usual CAM software), with a
@@ -24,5 +24,5 @@ in the `freecad` server's environment. Never set it yourself.
 ## When it may come back
 Only with a G-code validator that refuses any program without `M3`/`S>0` before the first cut, with
 an `F0` move, with a cut below the stock, with a tool larger than the hole, or drilling anything but
-a **concave, through** cylindrical hole — and that re-checks drilled positions against the measured
+a **concave, through** cylindrical hole - and that re-checks drilled positions against the measured
 hole centres (audit §7.4 N7).

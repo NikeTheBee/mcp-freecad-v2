@@ -18,7 +18,7 @@ Les sorties d'outils (étiquettes, noms de fichiers, texte dans un STEP) | **don
 ## 2. Ce qui est désormais vérifié automatiquement
 
 `install/cyber_scan.py` (sentinelle `CYBER_SCAN_OK`, dans `run_all_tests.py`). Il lit le code avec
-`ast` — il n'importe jamais les modules — et les fichiers de verrouillage.
+`ast`: il n'importe jamais les modules - et les fichiers de verrouillage.
 
 | Section | Règle |
 |---|---|
@@ -26,7 +26,7 @@ A1 | aucun shell : pas de `shell=True`, `os.system`, `os.popen`, `subprocess.get
 A2 | aucun code dynamique ni désérialisation : `eval`, `exec`, `pickle`, `marshal`, `shelve`, `yaml.load` sans loader sûr |
 A3 | aucun réseau propre à un adaptateur : pas de client HTTP importé (le garde-fou de `_entry.py` l'impose à l'exécution, ceci l'impose à l'écriture) |
 A4 | aucun analyseur XML sur une entrée non fiable, sauf exception nommée et justifiée |
-A5 | le contrat : `ENV`, `KINDS` littéral, `run`, `versions`, et **`REFERENCES` non vide** — un type de calcul sans cas de référence ne doit pas exister |
+A5 | le contrat : `ENV`, `KINDS` littéral, `run`, `versions`, et **`REFERENCES` non vide**: un type de calcul sans cas de référence ne doit pas exister |
 A6 | les écritures restent dans le dossier du job : pas de chemin absolu littéral, pas de `tempfile` |
 A7 | seules les variables d'environnement passées en revue peuvent être posées : aucun adaptateur ne peut couper le garde-fou réseau ni la BLAS déterministe |
 B | outils épinglés : https, SHA256 de 64 hexa, licence, type d'archive connu, destination sous `tools/`, taille, **provenance de l'empreinte** |
@@ -37,14 +37,14 @@ E | règle du cahier des charges : une couche FreeCAD qui écrit passe par `safe
 Les exceptions sont **nommées avec leur raison dans le code du portail**, pas suppressées en
 silence : elles restent visibles en revue et un nouvel adaptateur ne les hérite pas.
 
-État au 2026-11-21 : **20 adaptateurs, outils épinglés, `pixi.lock`, packs et couches — aucune
+État au 2026-11-21 : **20 adaptateurs, outils épinglés, `pixi.lock`, packs et couches - aucune
 violation.** Plus `security_scan.py` : 388 fichiers suivis, aucun secret, aucun fichier sensible,
 écoute locale seulement. L'adresse de courriel privée du propriétaire n'apparaît dans **aucun**
 fichier suivi (elle n'est que dans la paternité des commits, à sa place).
 
 ## 3. Trouvailles
 
-**F1 — `firmware.py` écrivait dans le temp du système (FAIBLE, hygiène — CORRIGÉ).**
+**F1 - `firmware.py` écrivait dans le temp du système (FAIBLE, hygiène - CORRIGÉ).**
 `tempfile.mkdtemp(prefix="mcpfc_renode_")` au lieu du dossier du job. À la relecture, le code
 nettoyait déjà son dossier (`rmtree` en `finally`), donc ce n'était pas une fuite ; mais le temp
 du système n'est pas le bon endroit, et le projet a déjà connu une accumulation de 3,8 Go de
@@ -59,16 +59,16 @@ l'arbre passe quand même.
 runner redirige `TEMP` et `TMP` vers `MCPFC_HOME`, donc il reste à l'intérieur de l'atelier. Rien
 à corriger de notre côté, mais c'est le genre de chose qu'il faut avoir regardée pour le dire.
 
-**F2 — URDF/SDF analysés avec l'ElementTree de la bibliothèque standard (FAIBLE, informatif).**
+**F2 - URDF/SDF analysés avec l'ElementTree de la bibliothèque standard (FAIBLE, informatif).**
 `dynamics.py` et `gazebo.py`. Pas de XXE : l'ElementTree standard ne résout pas les entités
 externes, donc ni lecture de fichier ni SSRF. Le risque résiduel est l'expansion d'entités, soit
 un analyse lente sur le fichier de l'utilisateur lui-même. *Correctif proposé* : `defusedxml` si
 un jour il entre dans ces environnements. Exception inscrite au portail avec cette raison.
 
-**F3 — provenance d'empreinte absente pour `pixi` et `freecad` (FAIBLE, corrigé).**
+**F3 - provenance d'empreinte absente pour `pixi` et `freecad` (FAIBLE, corrigé).**
 Les deux étaient épinglés par SHA256, mais sans `sha_source` : l'empreinte était vérifiée, son
 origine n'était pas documentée. **Corrigé** : recalculée depuis l'archive du cache de l'atelier,
-celle qui a installé la copie en service — les deux correspondent — et la provenance est inscrite.
+celle qui a installé la copie en service - les deux correspondent - et la provenance est inscrite.
 
 **Note de méthode.** Première lecture de `pixi.lock`, j'ai cru que neuf nouveaux paquets
 n'avaient pas d'empreinte : je lisais la liste de références des environnements, pas la section
@@ -77,7 +77,7 @@ qu'un audit doit attraper sur lui-même avant de le publier.
 
 ## 4. Vérifié et sain, avec la preuve
 
-- **Injection de code par expression (`mdo.py`)** — c'est la surface la plus sensible ajoutée :
+- **Injection de code par expression (`mdo.py`)**: c'est la surface la plus sensible ajoutée :
   des chaînes de l'appelant atteignent `ExecComp` d'OpenMDAO, qui les compile. 13 tentatives de
   contournement passées à `_check_expr`, **13 refusées** : `__import__("os").system(...)`,
   `x.__class__.__mro__[1].__subclasses__()`, `getattr(x,"real")`, `x.real`, `x[0]`, `open(...)`,
@@ -86,7 +86,7 @@ qu'un audit doit attraper sur lui-même avant de le publier.
   `2*x - y/3 + pi`) passent. Le tokeniseur doit consommer **toute** la chaîne : l'accès par
   point, l'indexation, les littéraux de chaîne et tout nom non déclaré sont refusés par
   construction, et un nom de variable doit valoir `[A-Za-z_]\w{0,30}` sans masquer une fonction.
-- **Injection dans un script généré (`vsp.py`)** — l'adaptateur écrit un fichier AngelScript
+- **Injection dans un script généré (`vsp.py`)**: l'adaptateur écrit un fichier AngelScript
   exécuté par `vspscript.exe`. Toutes les valeurs interpolées passent par `_f()` / `_pos()`, donc
   sont des flottants formatés en `%.9g`. La seule interpolation non numérique est un nom de
   fichier `.vsp3` trouvé dans le dossier du job ; Windows interdit déjà `"` dans un nom de

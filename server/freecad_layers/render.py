@@ -9,7 +9,7 @@ That gives a picture of what the part looks like, good enough to catch
 two axes. The picture is not a measurement: `check`/`analyze` remain the
 source of truth.
 
-Use it on request, or at a milestone of a complex part or assembly (CLAUDE.md:
+Use it on request, or at a milestone of a complex part or assembly (AGENTS.md:
 no screenshots by default).
 """
 from __future__ import annotations

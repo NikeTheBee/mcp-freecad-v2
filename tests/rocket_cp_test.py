@@ -2,7 +2,7 @@
 
 Run with:  A:/FreeCAD/bin/freecadcmd.exe tests/rocket_cp_test.py
 
-Analytical (subsonic) aerodynamics — NO CFD/OpenFOAM needed. Computes the centre
+Analytical (subsonic) aerodynamics - NO CFD/OpenFOAM needed. Computes the centre
 of pressure (CP) from nose + body-transitions + fins, and the static stability
 margin in calibers given the centre of gravity (CG). Prints ROCKET_CP_OK.
 """
@@ -133,7 +133,7 @@ margin = stability_calibers(cp, cg, rocket.d_ref)
 print(f"CP = {cp:.1f} mm from tip | total CN_alpha = {cn:.2f}")
 print(f"CG = {cg:.1f} mm | stability margin = {margin:.2f} calibers")
 
-assert 70 < cp < 350, "CP outside the rocket body — calc wrong"
+assert 70 < cp < 350, "CP outside the rocket body - calc wrong"
 assert cn > 0, "non-physical normal-force slope"
 assert margin > 0, "CP ahead of CG -> unstable"  # stable rockets: CP behind CG
 # typical model-rocket stability is ~1-2 calibers; sanity-bound it

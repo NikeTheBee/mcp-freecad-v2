@@ -14,7 +14,7 @@ import sys
 _repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ROCKET_ROOT = os.path.join(_repo, "addons", "Rocket")
 if not os.path.isdir(ROCKET_ROOT):
-    sys.exit(f"Rocket clone not found at {ROCKET_ROOT} — see install/WINDOWS-SETUP.md")
+    sys.exit(f"Rocket clone not found at {ROCKET_ROOT} - see install/WINDOWS-SETUP.md")
 sys.path.insert(0, ROCKET_ROOT)
 
 import FreeCAD

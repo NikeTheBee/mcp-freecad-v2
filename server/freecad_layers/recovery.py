@@ -1,4 +1,4 @@
-"""Autosave / crash recovery — never lose work (cahier des charges §1.3-3).
+"""Autosave / crash recovery - never lose work (cahier des charges §1.3-3).
 
 A headless FreeCAD has no GUI autosave: a kernel crash used to lose every
 unsaved document (audit 2026-10-11, §2.3). `autosave()` writes a timestamped

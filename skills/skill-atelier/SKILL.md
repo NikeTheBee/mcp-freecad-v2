@@ -6,7 +6,7 @@ rocket for a G motor", "a humanoid leg") and expects it designed, simulated, cor
 to build in one go. This skill is the method; the domain skills hold the details.
 
 ## The pipeline (do it in this order, without asking again what is already said)
-1. **Understand → requirements.** From the request, write down what was said, with numbers.
+1. **Understand -> requirements.** From the request, write down what was said, with numbers.
    Ask ONE grouped question only for what is missing AND changes the design (load, depth,
    voltage, mass budget, printer bed...). Everything else becomes a hypothesis with a source or
    "UNSOURCED" (it is listed until checked).
@@ -42,9 +42,9 @@ to build in one go. This skill is the method; the domain skills hold the details
 5. **Model parametrically.** Every dimension that may change lives in a spreadsheet cell
    (skill-partdesign); parts and assembly with the freecad tools; `check` after every step,
    `record_step` when OK, `checkpoint` before a risky one.
-6. **Simulate all criteria** (`simulate(..., study=name)`). FAIL → correct:
-   - a dimension → `study optimize` on its cell (the lightest / smallest that passes), or
-   - the concept (material, shape, architecture) → change it, `study iterate {change}`.
+6. **Simulate all criteria** (`simulate(..., study=name)`). FAIL -> correct:
+   - a dimension -> `study optimize` on its cell (the lightest / smallest that passes), or
+   - the concept (material, shape, architecture) -> change it, `study iterate {change}`.
    Repeat until the study says `ready_to_build`. Never stop at the first FAIL, never call a
    FAIL or UNKNOWN "good enough".
    Before trusting a stress result:
@@ -60,9 +60,9 @@ to build in one go. This skill is the method; the domain skills hold the details
 7. **Fabrication files.** `export` (STEP / 3MF / STL, read back and compared), `drawing_sheet`
    (DXF), `bill_of_materials`, `print_project` (PrusaSlicer project, no G-code), KiCad / WireViz
    outputs for electronics. Machining: STEP + drawing for the human's CAM, never G-code.
-8. **Real test plan.** `study test_plan` → procedure (with the safety notes) + `measurements.csv`.
-   The human builds and tests; then `study built`, `study measure {csv}`. Disagreement →
-   `study calibrate {auto}` → simulate again → until `VALIDATED`. `study report` at the end.
+8. **Real test plan.** `study test_plan` -> procedure (with the safety notes) + `measurements.csv`.
+   The human builds and tests; then `study built`, `study measure {csv}`. Disagreement ->
+   `study calibrate {auto}` -> simulate again -> until `VALIDATED`. `study report` at the end.
 
 ## Answering the user
 One short report per milestone, not per tool call:

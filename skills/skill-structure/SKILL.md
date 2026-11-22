@@ -14,7 +14,7 @@ da/dN, Paris law, inspection interval, "elle est fissurée, combien de cycles re
 buckling of a shell or a hull | `marine pressure_hull`, `fem_buckling` |
 
 ## Use the tool
-`freecad-layers` → **`simulate(kind, target, params)`**, adapter `structure` (env `sim`).
+`freecad-layers` -> **`simulate(kind, target, params)`**, adapter `structure` (env `sim`).
 No geometry. Stresses in MPa; laminate lengths in mm; crack sizes in **m** so that K comes out in
 MPa·√m, the unit every published da/dN table uses.
 
@@ -29,9 +29,9 @@ Answers: `A`/`B`/`D`, `Ex_MPa`, `Ey_MPa`, `Gxy_MPa`, `nu_xy`, `thickness_mm`,
 axes plus `max_stress_index` and `tsai_wu_index`, with their margins.
 
 Two flags worth reading before anything else:
-- **`symmetric: 0`** → B ≠ 0: the plate will **warp when it cures** and bend when you pull it.
+- **`symmetric: 0`** -> B ≠ 0: the plate will **warp when it cures** and bend when you pull it.
   Almost always a mistake unless you wanted it.
-- **`balanced: 0`** → A16/A26 ≠ 0: in-plane shear couples to stretching, so a tensile load twists
+- **`balanced: 0`** -> A16/A26 ≠ 0: in-plane shear couples to stretching, so a tensile load twists
   the part. Pair every +θ with a −θ.
 
 ### `crack_growth`
@@ -39,17 +39,17 @@ Two flags worth reading before anything else:
 optionally `R`, `a_final_m`, `law` (`paris` or `forman`), `delta_K_threshold_MPa_sqrt_m`,
 `beta` (`centre_crack_infinite_plate`, `centre_crack_finite_width` + `width_m`,
 `edge_crack_single`, `surface_crack_semicircular`), `inspection_life_fraction`, and
-**`thickness_m`** — give it whenever there is a wall.
+**`thickness_m`**: give it whenever there is a wall.
 
 **Leak before break.** With `thickness_m`, the calculation stops when the crack reaches the far
 face: it leaks. Without it, a surface crack in a 3 mm wall is happily reported as growing to a
 "critical" 2.4 m, which is arithmetic, not engineering. `leak_before_break: 1` means it leaks
 first (usually the benign outcome, and the one inspection relies on); `0` with a wall given means
-K reaches Kc inside the wall — it breaks.
+K reaches Kc inside the wall - it breaks.
 
 Answers: `cycles_to_failure`, `critical_crack_m`, `delta_K_initial/final`, `Kmax_final`,
 `inspection_crack_m` (the size an inspection has to catch to leave that fraction of life), and
-`grows: 0` when ΔK is at or below the threshold — in which case there is **no** life to report
+`grows: 0` when ΔK is at or below the threshold - in which case there is **no** life to report
 and the answer says so instead of inventing a number.
 
 ## What to say when you report

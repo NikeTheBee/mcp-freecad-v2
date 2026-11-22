@@ -1,14 +1,14 @@
-"""Bill of materials — extract a parts list from an assembly (GAP G6).
+"""Bill of materials - extract a parts list from an assembly (GAP G6).
 
 Closes the "conception -> dossier de fabrication" loop: the pince project
 shipped a Nomenclature; a driven design should be able to emit one.
 
 What counts as a part (audit 2026-10-11, §2.2 B1):
-- a PartDesign::Body is ONE part — its internal features are not parts;
+- a PartDesign::Body is ONE part - its internal features are not parts;
 - an object consumed by another shape feature (the Base/Tool of a Cut...) is
-  not a part — the result is; the source of a Mirror or a Draft clone is one
+  not a part - the result is; the source of a Mirror or a Draft clone is one
   while it stays visible (left and right hand);
-- containers (App::Part, groups, Part::Compound, assemblies) are not parts —
+- containers (App::Part, groups, Part::Compound, assemblies) are not parts - 
   their children are;
 - each App::Link is one more instance of the object it points to; a link to a
   container (a sub-assembly) is one more of every part inside it, nested links
@@ -23,7 +23,7 @@ name stem: a box and a cylinder of equal volume are never merged. Limitation: mi
 together (equal measurements).
 
 Secure by design: CSV export goes through `safe_out_path` (extension enforced,
-no silent clobber). Reading only otherwise — no code execution on labels.
+no silent clobber). Reading only otherwise - no code execution on labels.
 """
 from __future__ import annotations
 
@@ -82,7 +82,7 @@ def _consumers(o) -> List[Any]:
                 if o in _flatten(getattr(x, prop)):
                     out.append(x)
                     break
-            except Exception:  # noqa: BLE001 — exotic property, ignore
+            except Exception:  # noqa: BLE001 - exotic property, ignore
                 continue
     return out
 

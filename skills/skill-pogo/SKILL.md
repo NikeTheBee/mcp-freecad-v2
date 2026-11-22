@@ -5,15 +5,15 @@ feedline dynamics, propellant line resonance, pump cavitation compliance, accumu
 "the launcher oscillates along its axis at a few Hz".
 
 ## What POGO is
-A closed loop: the vehicle vibrates longitudinally → the acceleration shakes the propellant
-column → the pressure oscillation reaches the pump → the pump modulates the chamber pressure →
+A closed loop: the vehicle vibrates longitudinally -> the acceleration shakes the propellant
+column -> the pressure oscillation reaches the pump -> the pump modulates the chamber pressure ->
 the thrust oscillation shakes the vehicle again. Below a certain margin it diverges. Titan II,
 Saturn V and Ariane all needed an accumulator. NASA's own tool (ML_POGO) is US-release-only and
 there is no free equivalent, so this adapter implements the published method.
 
 ## Use the tool
-`freecad-layers` → **`simulate(kind, target, params)`**, adapter `pogo` (env `sim`). No geometry.
-No `limits` → UNKNOWN. The usual criterion: `limits = {"gain_margin": {"min": 2.0},
+`freecad-layers` -> **`simulate(kind, target, params)`**, adapter `pogo` (env `sim`). No geometry.
+No `limits` -> UNKNOWN. The usual criterion: `limits = {"gain_margin": {"min": 2.0},
 "min_damping_ratio": {"min": 0.0}}`.
 
 | kind | params | main values |
@@ -26,7 +26,7 @@ No `limits` → UNKNOWN. The usual criterion: `limits = {"gain_margin": {"min": 
 - `modes`: the **longitudinal** modes of the stage. `fem_modal` (CalculiX) on the vehicle gives
   frequency, modal mass and the mode-shape value at the engine gimbal block (`phi_engine`) and at
   the tank bottom (`phi_tank`), normalised the same way. `damping_ratio` is assumed: 0.005 is the
-  usual launcher value, and the answer is sensitive to it — sweep it.
+  usual launcher value, and the answer is sensitive to it - sweep it.
 - `pump.gain`: the ratio of discharge to suction pressure perturbation; 1.5 to 3 for a pump
   operating with some cavitation. `cavitation_compliance_m3_pa` is the bubble volume's softness
   at the inducer: it is the term that moves the feed resonance down into the structural band.
@@ -36,7 +36,7 @@ No `limits` → UNKNOWN. The usual criterion: `limits = {"gain_margin": {"min": 
 - **`gain_margin` is the POGO number**: the factor by which the loop gain can be multiplied
   before the least damped mode reaches zero damping. Below about 2 (6 dB) is where programmes fit
   an accumulator. `nyquist_gain_margin` is the classical loop margin and is a different, usually
-  much larger number for a lightly damped mode — do not quote it as the POGO margin.
+  much larger number for a lightly damped mode - do not quote it as the POGO margin.
 - `damping_change_vs_open_loop` is the honest picture: the loop eats damping long before it goes
   unstable. A mode going from 0.50 % to 0.05 % is already a programme problem.
 - If the result says the solver **lost the pole** beyond a gain, read the reported value as a
@@ -51,7 +51,7 @@ line hydraulics against the quarter-wave, half-wave, inertance, compliance and H
 forms. See `REFERENCES` in `server/adapters/pogo.py`.
 
 ## Limits to state every time
-Linear, small perturbations, **one frozen flight point** — propellant level, thrust and pump speed
+Linear, small perturbations, **one frozen flight point**: propellant level, thrust and pump speed
 all change along the trajectory, so run several points. One line and one engine per run. The pump
 is a gain with a delay, not a blade-row model. Combustion is a first-order lag: chug, buzz and
 screech are a different family and are NOT covered. Longitudinal only.

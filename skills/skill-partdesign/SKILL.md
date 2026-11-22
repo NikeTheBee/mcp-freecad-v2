@@ -1,9 +1,9 @@
 # skill-partdesign
 
-**Load when:** parametric solid modeling of a single part — sketches, Pad/Pocket/Revolution/Loft, fillets,
+**Load when:** parametric solid modeling of a single part - sketches, Pad/Pocket/Revolution/Loft, fillets,
 chamfers, holes, patterns, and spreadsheet-driven variants. This is the core modeling domain (§4.1).
 
-## Backbone: Body → Sketch → Pad/Pocket (validated headless)
+## Backbone: Body -> Sketch -> Pad/Pocket (validated headless)
 ```python
 import Part, Sketcher
 from FreeCAD import Vector
@@ -54,14 +54,14 @@ Pick edge ids from `pad.Shape.Edges` / `measurement_operations list_faces`.
 
 ## Holes & patterns
 - Simple vertical hole (through or blind): **`pd_hole(body, diameter, x, y, through, depth)`** from
-  the `freecad-layers` server — a real feature inside the Body. Since v2 the base tool
+  the `freecad-layers` server - a real feature inside the Body. Since v2 the base tool
   `partdesign_operations hole` (no `face_index`) also cuts inside the Body (it used to build a
   `Part::Cut` *outside* it, audit 2026-10-11 §2.4); `pd_hole` stays the preferred, tested path.
   (x, y) are in the Body's own frame (= global unless the Body was moved). A blind `depth` is
   measured from the part's surface AT (x, y) (on a stepped part: the step under the hole). The
   hole is measured once made; one that cuts nothing, breaks the part, is not through when asked,
   goes through when asked blind, or misses its depth is not kept: `FAIL pd_hole: ...; hole not
-  kept` — fix x/y/Ø/depth.
+  kept` - fix x/y/Ø/depth.
 - Counterbore/countersink/threaded: `PartDesign::Hole` (`.HoleCutType`, `.Threaded`) on a circle sketch.
 - After any hole, `check(body)`; record the expected holes once with
   `require(body, "holes", {"count": n, "diameter": d})` so a missing hole FAILs. Holes are
@@ -69,7 +69,7 @@ Pick edge ids from `pad.Shape.Edges` / `measurement_operations list_faces`.
   flanges of a clevis, counts once; `analyze` lists each bore with its `#hole` number.
   A threaded hole measures its DRILL diameter (an M6x1.0 `PartDesign::Hole` reads D5): require
   `diameter: 5` for it, not 6.
-- Repetition: `PartDesign::LinearPattern` / `PolarPattern` / `Mirrored` — set `.Originals=[feature]`,
+- Repetition: `PartDesign::LinearPattern` / `PolarPattern` / `Mirrored`: set `.Originals=[feature]`,
   `.Direction`, `.Occurrences`/`.Angle`.
 
 ## Spreadsheet-driven variants (validated headless)

@@ -5,7 +5,7 @@ velocity, thruster speed, attitude drift), or "does my URDF survive the conversi
 MuJoCo" (masses, inertias, joints, fixed links that disappear).
 
 ## Use the tool
-`freecad-layers` → **`simulate(kind=..., params={...})`**, adapter `gazebo` (env `ros`: Gazebo
+`freecad-layers` -> **`simulate(kind=..., params={...})`**, adapter `gazebo` (env `ros`: Gazebo
 Jetty, gz-sim 10, sdformat 15). No `target`: these kinds read numbers or a model file.
 Units SI: m, kg, s, N, kg m², rad (keys ending `_deg` are degrees). Depth is positive downwards,
 `vz` positive **up**. Vectors of 6 are `[surge, sway, heave, roll, pitch, yaw]`.
@@ -31,7 +31,7 @@ simulate("gz_underwater", params={"hull": {"shape": "cylinder", "radius": 0.1, "
   zero speed: take it from tests, Fossen-type tables or CFD, and say where it came from.
 - **Thrusters:** a fixed command in N along `axis` (vehicle frame), re-sent every 0.05 s. The
   propeller spin gives a small reaction roll: it shows up in the attitude drift.
-- **Verdict:** `gz_underwater` is judged on `params.limits` (no criteria → UNKNOWN).
+- **Verdict:** `gz_underwater` is judged on `params.limits` (no criteria -> UNKNOWN).
   `convert_check` is OK when every mass/inertia agrees within `tol`, FAIL otherwise
   (or when a moving joint is missing / changed type, or the SDF is not valid).
 
@@ -40,7 +40,7 @@ simulate("gz_underwater", params={"hull": {"shape": "cylinder", "radius": 0.1, "
   for ever; a surfacing or wave case needs another tool (say so).
 - Buoyancy comes from the **collision** volume; the hydrodynamics are Fossen-type lumped
   coefficients: the answer is only as good as the damping you give.
-- `terminal_reached` false → lengthen `duration` before quoting a terminal velocity.
+- `terminal_reached` false -> lengthen `duration` before quoting a terminal velocity.
 - The integrator is semi-implicit (error ~ dt/T): the free fall is 0.05 % long at dt = 1 ms.
 - `convert_check`: sdformat **lumps fixed links** into their parent (listed in `dropped_links`,
   composite inertia checked exactly). MuJoCo fuses them too, **silently**, and a fixed-base root
@@ -58,14 +58,14 @@ Reference cases, re-run whenever the adapter or the environment changes:
 | Quadratic damping, k = 100 | v = √(F/k) = 0.9905 m/s | 0.99045 |
 | No fluid, free fall 2 s | g t²/2 = 19.62 m | 19.630 |
 | Thruster 25 N, surge c = 50 | u = T/c = 0.500 m/s | 0.4998 |
-| 2-link URDF + fixed sensor → SDF | masses/inertias exact, 1 link lumped | 0 / 1e-15, 1 |
+| 2-link URDF + fixed sensor -> SDF | masses/inertias exact, 1 link lumped | 0 / 1e-15, 1 |
 
 ## Network safety (what gz binds)
 gz-transport normally discovers peers by UDP multicast on every interface. The adapter runs gz
 with `GZ_IP=127.0.0.1`, a unique `GZ_PARTITION`, the **zenoh** backend listening on
 `tcp/127.0.0.1` only with multicast scouting off, and parks the legacy discovery on ports Windows
 refuses to bind (excluded port ranges), since that discovery always binds `0.0.0.0`. psutil samples
-every socket of the gz process tree during the run: any non-loopback address → gz killed, UNKNOWN.
+every socket of the gz process tree during the run: any non-loopback address -> gz killed, UNKNOWN.
 If no unbindable port exists on the machine, gz is not started (UNKNOWN, with the reason). Remote
 model URIs (http, Fuel) and files outside the study folder are refused. Never change the firewall.
 

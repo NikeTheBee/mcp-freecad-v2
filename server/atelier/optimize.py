@@ -6,7 +6,7 @@ battery that gives 2 h", "the fin span that gives a static margin of 1.5 caliber
 search(evaluate, variables, objective, sense, constraints, max_runs):
 - evaluate(x: dict) -> dict of values (or None when the design is broken: infeasible);
 - variables: [{"name", "lo", "hi"}] (1 to 3);
-- constraints: {value: {"min"|"max": x}} — the same form as simulate limits;
+- constraints: {value: {"min"|"max": x}} - the same form as simulate limits;
 - objective: a value to minimise or maximise, or None = only satisfy the constraints, choosing
   the variable closest to `lo` (e.g. the thinnest that holds).
 

@@ -81,7 +81,7 @@ def main(argv) -> int:
             work = Path(argv[2]).resolve().parent
             result = mod.run(inp["kind"], inp, work)
             result.setdefault("verdict", "UNKNOWN")
-    except Exception as e:  # noqa: BLE001 — reported, not raised
+    except Exception as e:  # noqa: BLE001 - reported, not raised
         tb = traceback.extract_tb(e.__traceback__)
         where = f"{Path(tb[-1].filename).name}:{tb[-1].lineno}" if tb else ""
         result = {"verdict": "UNKNOWN", "summary": f"{type(e).__name__}: {e}"[:600],

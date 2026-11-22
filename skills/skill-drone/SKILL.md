@@ -1,12 +1,12 @@
 # skill-drone
 
-**Load when:** the task involves fixed-wing / VTOL / drone aero surfaces — airfoils (NACA), wings, fuselage/nacelle profiles. (Quadcopter *frames* — arms, motor mounts, electronics bays — are plain PartDesign; use `skill-partdesign` for those.)
+**Load when:** the task involves fixed-wing / VTOL / drone aero surfaces - airfoils (NACA), wings, fuselage/nacelle profiles. (Quadcopter *frames* - arms, motor mounts, electronics bays - are plain PartDesign; use `skill-partdesign` for those.)
 
 ## What this is
 The [AirPlaneDesign workbench](https://github.com/FredsFactory/FreeCAD_AirPlaneDesign) (FredsFactory, LGPL-2.1, v0.4.1, min FreeCAD 0.18). Grafted as Phase 3 domain #2.
 
 ## Availability & headless gotchas (important)
-This workbench is **GUI-only** (`InitGui.py`, no `Init.py`): the wing/rib/panel/nacelle builders all `import FreeCADGui` and won't run under `freecadcmd`. The reusable **headless** core is `libAeroShapes.py` — pure aero-coordinate math.
+This workbench is **GUI-only** (`InitGui.py`, no `Init.py`): the wing/rib/panel/nacelle builders all `import FreeCADGui` and won't run under `freecadcmd`. The reusable **headless** core is `libAeroShapes.py`: pure aero-coordinate math.
 
 Cloned at `addons/AirPlaneDesign` (gitignored). It is **NOT** auto-loaded from the Mod dir (pending explicit authorization to activate). Use it on demand:
 ```python
@@ -34,7 +34,7 @@ wire = Part.makePolygon(coords)        # or Part.BSplineCurve().interpolate(coor
 obj = doc.addObject("Part::Feature", "Airfoil"); obj.Shape = wire; doc.recompute()
 ```
 
-## Sizing & performance (analytical — no CFD)
+## Sizing & performance (analytical - no CFD)
 `server/freecad_layers/aero.py`: hover thrust/power (momentum theory), thrust-to-weight,
 disk loading, endurance, tip Mach, wing loading, stall speed. One-line verdicts:
 ```python
@@ -43,13 +43,13 @@ from freecad_layers import aero
 aero.verdict_multirotor(mass_kg=1.2, n_motors=4, prop_diameter_m=0.254,
                         max_thrust_per_motor_n=8.0, battery_wh=55.5)
 ```
-Inputs are validated (mass, motors, diameters must be > 0 → clear `ValueError`).
+Inputs are validated (mass, motors, diameters must be > 0 -> clear `ValueError`).
 **Units are SI, the CAD model is in mm**: prop diameter in metres (10" = 0.254), wing area in m²
 (`face.Area * 1e-6`), mass in kg. A diameter in mm/inches gives `FAIL ... implausible disk loading`,
-an area in mm² a `ValueError` — convert, don't work around.
-Limits: momentum theory ignores profile drag and interference — hover power ±15–25 %.
+an area in mm² a `ValueError`: convert, don't work around.
+Limits: momentum theory ignores profile drag and interference - hover power ±15-25 %.
 
-## Flow analysis (drag / lift) — external CFD only
+## Flow analysis (drag / lift) - external CFD only
 No CFD runs in this project. If the user needs real flow results:
 1. Gate the geometry: `check` (freecad-layers) must be `OK` and the part watertight.
 2. Export **STL** (`skill-print3d`, for `snappyHexMesh`) or **STEP** (`skill-exchange`).

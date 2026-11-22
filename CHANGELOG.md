@@ -1,0 +1,135 @@
+# Changelog
+
+Changes before the workshop (atelier) work, kept from the former README. The workshop and
+everything after it are described in the README and in `docs/FEUILLE_DE_ROUTE_ATELIER.md`.
+
+## Since 2.1 (unreleased)
+- **Verified export** (`export`, new tool): STL or 3MF for printing, STEP, BREP or IGES for another
+  CAD, written only for a part `check` passes. The file is then read back and compared with the
+  solid (volume, size, position, closed mesh). A file that does not match is never handed over,
+  and never replaces a good one.
+- **Overhangs of curved faces are measured**: each face was judged by its middle normal only,
+  so the ceiling of a horizontal hole, the underside of a sphere or of a rod lying down counted
+  0 mm2. They are now measured over the face (within 1 % of the known values), and a wall
+  exactly at the limit (the 45° chamfer printed without supports) is not counted.
+- **Exact sizes on curved parts**: FreeCAD's quick bounding box read a 30×20 loft as 37.3×26.8,
+  and a revolved B-spline as smaller than it is (so a real collision was skipped). Sizes,
+  requirements, bed fit, exports and collision checks now use the exact box, in the layers
+  and in the base.
+- **Holes measured right on real parts**: a through hole in the base of an L-bracket, under a
+  counterbore or tilted read "blind" (it was compared with the height of the whole part), and
+  a bore stored as a B-spline (a STEP from another CAD) was not seen at all. "Through" now
+  means both ends open, decided on the faces at each end (1,600 holes: under a second).
+  A blind hole made by `pd_hole` (or the base's hole on a Body) starts at the surface under it,
+  not at the top of the whole part (on a stepped part it began in the air), and is measured once
+  made: through, depth. On a plain Part solid, the base's countersink cut nothing (its cone lay
+  under the part) and the counterbore went on the bottom face: both now sit on the top.
+- **A pocket into empty space is not "created"**: sketched on the bottom face, it cut into the
+  air and removed nothing while the reply said it was made. It is now cut on the other side of
+  the sketch (and said so), or refused when no side touches the part. Any PartDesign feature
+  that leaves the part unchanged (a pad buried in it, a groove in the air) is refused too.
+- **Extrusions keep their holes**: the base's Part extrude/revolve used the sketch's first wire
+  only, so a plate sketch came out without its holes (or as a lone cylinder when a hole was drawn
+  first); a rib went along the global Y axis and made solids of zero volume. Both now use the
+  whole profile along the sketch's own normal, and refuse a direction lying in the sketch.
+- **Fillets, chamfers and shells land in the part**: "fillet all edges" of a PartDesign part made
+  a separate object beside the Body, which kept its sharp edges while the reply said "all 12
+  edges" (same for chamfer, shell, loft and sweep: a loft of a Body's sketches left the Body
+  empty). They are now features of the Body (and `check` notes any solid still built on a Body's
+  feature outside it), checked against the
+  same operation done directly (to 1e-6). Thickness/shell/draft take `faces=[...]` headless,
+  where they used to ask for a selection in a window that does not exist.
+- **Revolve around the axis you name**: on a sketch drawn in the XZ plane, "around y" turned around
+  Z while the reply said "around Y-axis" (the letter named the sketch's own axes). Revolution,
+  groove and helix now take the part's axes, like the patterns; the sketch's normal is refused.
+- **"No interference" includes the part it is set on**: `require("Plate", "no_interference",
+  objects=[pins])` checked the pins against each other only, so an oversize pin in the plate
+  passed.
+- **A step is not the part**: `export`, `printability`, `fem_static` and `drawing_sheet` on a
+  PartDesign step ("Pad") worked on that step: `export("Pad")` after drilling wrote the part
+  without its holes. They now refuse it and name the Body; `check` and `require` on a step say so.
+- **A sketch whose loops cross is caught before the Pad**: a figure-8 (the Pad made two solids),
+  two overlapping outlines (zero area) or a hole circle cutting the edge all checked OK.
+- **A feature left out of the part is a FAIL**: a Body whose Tip stops before its last feature, or
+  with a suppressed feature, used to check OK (a valid solid, without the hole).
+- **Files land in the project**: a file named without a folder (`plan.dxf`, `part.stl`) used to land
+  among the server's code; it now goes to the project folder.
+- **Heavy parts** (measured on a plate with 1,600 holes):
+  - wall thickness: 73 s -> 1.1 s, and now exact (rays meet the real surfaces, no mesh; faces
+    closer than the rays found are measured two by two: a hole 0.3 mm from an edge read 0.81 mm;
+    and the knife edge where two holes cross is a corner, not a wall: it read 0.03 mm);
+  - `printability`: 129 s -> 2 s; `analyze`: 132 s -> 2 s; `render_views`: 48 s -> 13 s;
+  - hole detection: 2.7 s -> 0.2 s (same result, without comparing every pair);
+  - `check` runs the slow OCCT analysis once per shape version;
+  - the analysis tools wait up to 5 minutes for FreeCAD instead of 2, and a call that is
+    still running is explained plainly instead of a raw "no response".
+- **Bad inputs get a reason, not a wrong answer** (all 17 layer tools swept): malformed
+  requirements are refused (a typo no longer weakens the contract), a requirement can be
+  replaced or removed (`replaces="S3"`), and a hole that cuts nothing or breaks the part is
+  rolled back.
+- `fem_static` refuses a hopeless mesh size at once (Gmsh used to grind on it first) and says
+  which size works.
+- **A long operation no longer looks like a crash**: past 35 s, the base reported "FreeCAD
+  crashed" while headless FreeCAD was still computing. It now returns the result (or, past
+  2 minutes, a job id to poll). A real crash during a layers call is reported as one, with the
+  way back (`recover`).
+- **A restart can no longer lock you out**: when two FreeCADs started at once during a restart,
+  the one that could not get the port overwrote the other's access key before quitting, and
+  every call was then refused ("did not prove it is your FreeCAD") until the next restart. The
+  key is now written only by the FreeCAD that holds the port, and the call whose FreeCAD lost
+  the race gets the winner instead of "FreeCAD exited during start".
+- **A stuck FreeCAD can be restarted by the assistant** (`restart_freecad`, headless too): it saves
+  what it safely can, exits, and the launcher starts a fresh one. Before, only killing the
+  process by hand helped.
+- **Assemblies measured part by part**: the parts list counts identical parts once whatever
+  their orientation, and keeps a left and a right hand apart (same measures, mirror images); holes, overhangs and printability judge each part on its own; a plan
+  never puts an overall size on an iso view (a projected length is not a size).
+- **The base's modeling replies say what was made** (later sweep of the base tools): a sketch on
+  YZ follows FreeCAD's YZ plane and `Fix` holds; a draft hinges on `neutral_plane`; a Part shell
+  goes inward; a boolean that leaves nothing is refused, and works when its inputs share a
+  container; a scaled copy is exact; move/rotate of an attached object goes through its
+  AttachmentOffset; spreadsheet and VarSet bindings check units; `save_document` needs
+  `overwrite=true` to replace a file; `validate_mesh` checks the orientation. The parts list counts
+  linked sub-assemblies part by part, Draft arrays, the visible source of a mirror and Assembly links.
+  The listener serves at most 32 connections and frees a silent one after 5 s; an output path to a
+  network share or a device is refused. URDF inertials come in SI from `urdf_aug.inertial_from_shape`.
+  Mesh and CAD exports of a part inside a moved App::Part land where the document shows it, and an
+  App::Part or Link exports its real shape; a solid beside loose faces is measured as the solid only.
+- **Rollback and recovery keep the work whole**: a restored checkpoint or recovered copy reopens
+  under the document's own name, as a working copy (a later save no longer overwrites the
+  checkpoint), and after a crash `recover` brings back the rollback you chose. A rollback closes
+  the document the checkpoint was taken from (it used to close whichever was active), and the
+  newest recovery copy is the one written last.
+
+## What's new in 2.1
+- **Stress analysis** (`fem_static`, CalculiX): displacement, von Mises stress and safety factor,
+  with a verdict. A cantilever comes within 0.3 % of F·L³/3EI.
+- **Pictures without the GUI** (`render_views`): shaded front, top, right and iso views in one
+  image.
+- **Several projects side by side** (`project_init` never overwrites, `project_switch`) and
+  **verified recipes** (`recipe`): a design is kept only when its contract is OK.
+- **Safer by construction**:
+  - FreeCAD proves it knows the token before anything is sent (HMAC challenge);
+  - the CAM tools (machine G-code) are off unless you opt in;
+  - the tools that cannot work on Windows are hidden (about 2,200 tokens saved per session).
+- **Base updated to blwfish v8.3.0**, our changes kept. Also fixed in the base:
+  - headless fillet and chamfer with named edges;
+  - every non-Body chamfer;
+  - crash tracking on Windows;
+  - clear headless messages instead of Python errors, found by a sweep of all 190 operations.
+- **Windows CI**: every push installs the official FreeCAD 1.1.1 and runs all 36 tests,
+  nothing skipped.
+
+## What's new in 2.0
+- **The base server is part of the project.** blwfish/freecad-mcp v8.3.0 is vendored in
+  `server/freecad-mcp/` (git subtree): fixed here, and still able to pull upstream updates
+  (`python install/bootstrap.py --update-base`). Fixed in it: holes in a PartDesign Body, sketch
+  "fully constrained" verdict, oversized replies that hung for 2 minutes
+  ([`CHANGES-NikeTheBee.md`](server/freecad-mcp/CHANGES-NikeTheBee.md)).
+- **Reliability layer** (`freecad-layers`, 17 tools): OK/FAIL/UNKNOWN verdicts, design contract,
+  part analysis, **real FEM stress analysis (CalculiX)**, checkpoints, autosave/recovery,
+  supervised FreeCAD restart, anti-squatting, and FreeCAD proves its identity before any command.
+- **New licence**: PolyForm Noncommercial (free to use and modify, not to sell).
+- Version 1 stays available, unchanged, at
+  [NikeTheBee/mcp-freecad](https://github.com/NikeTheBee/mcp-freecad).
+

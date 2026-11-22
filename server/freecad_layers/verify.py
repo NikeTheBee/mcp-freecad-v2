@@ -1,4 +1,4 @@
-"""Geometric verification — deterministic verdicts (cahier des charges §7.2).
+"""Geometric verification - deterministic verdicts (cahier des charges §7.2).
 
 The AI validates its output before continuing and gets a short text verdict
 (token-efficient) rather than a screenshot. The *code* decides, never the AI.
@@ -7,10 +7,10 @@ Three outcomes, never a silent pass (audit 2026-10-11, §3.4):
   OK       every check ran and none found a problem;
   FAIL     at least one check found a problem;
   UNKNOWN  a check could not run (e.g. too many solids for the pairwise
-           interference test) — treat as "not verified", never as OK.
+           interference test) - treat as "not verified", never as OK.
 
 Checks: recompute state of the object and of everything it depends on
-(a failed recompute keeps the LAST GOOD shape — that must not pass), shape
+(a failed recompute keeps the LAST GOOD shape - that must not pass), shape
 validity, presence of a solid, closed shells, inverted/degenerate volume,
 OCCT BOP self-intersection check (it RAISES on problems), one-solid rule
 for PartDesign, every feature of a Body in its shape (none after the Tip, none
@@ -49,7 +49,7 @@ def _occt_check(s) -> Optional[str]:
     try:
         s.check(True)
         err = None
-    except Exception as e:  # noqa: BLE001 — the message IS the finding
+    except Exception as e:  # noqa: BLE001 - the message IS the finding
         err = " ".join(str(e).split())[:160]
     _SHAPE_CHECKS.append((s, tols, err))
     del _SHAPE_CHECKS[:-_SHAPE_CHECKS_SIZE]
@@ -66,7 +66,7 @@ def box(shp):
         bb = shp.optimalBoundingBox(False, False)
         if bb.isValid():
             return bb
-    except Exception:  # noqa: BLE001 — never fail a measurement on the better box
+    except Exception:  # noqa: BLE001 - never fail a measurement on the better box
         pass
     return shp.BoundBox
 
@@ -81,7 +81,7 @@ def global_shape(obj):
         return shp
     try:
         parent = obj.getParentGeoFeatureGroup()
-    except Exception:  # noqa: BLE001 — not a document object: as it is
+    except Exception:  # noqa: BLE001 - not a document object: as it is
         return shp
     if parent is None:
         return shp
@@ -224,7 +224,7 @@ def check(obj_or_name, doc=None, min_volume: float = 1e-6,
 
     solids = list(shp.Solids)
     # OCCT BOP check. It RAISES with the list of problems when the shape is
-    # bad and returns None when clean — the old code swallowed the exception,
+    # bad and returns None when clean - the old code swallowed the exception,
     # so self-intersections were never reported. Run it per solid: on a
     # compound it also flags solids that merely TOUCH; real overlaps between
     # solids are measured by the interference test below.
@@ -238,7 +238,7 @@ def check(obj_or_name, doc=None, min_volume: float = 1e-6,
     # check(True) starts with the same BRepCheck analysis as isValid() and
     # raises when it fails, so a clean pass proves validity: isValid() (as
     # slow as that analysis, 15 s on a 1600-hole plate) only runs when needed
-    # — after a failure, or when the shape holds more than its solids.
+    # - after a failure, or when the shape holds more than its solids.
     solids_only = len(solids) <= 1 or all(
         sum(len(getattr(s, k)) for s in solids) == len(getattr(shp, k))
         for k in ("Faces", "Edges", "Vertexes"))
@@ -316,7 +316,7 @@ def verdict_of(r: Dict[str, Any]) -> str:
 
 
 def watertight(obj_or_name, doc=None) -> bool:
-    """True only if every check passed on a closed solid — gate STL export."""
+    """True only if every check passed on a closed solid - gate STL export."""
     r = check(obj_or_name, doc)
     return r["ok"] and r["solids"] >= 1 and r["closed"]
 
@@ -338,7 +338,7 @@ def _profile_problem(loops) -> Optional[str]:
             return f"loop {i} crosses itself (a figure-8 or folded outline)"
     try:
         face = Part.makeFace(loops, "Part::FaceMakerBullseye")
-    except Exception as e:  # noqa: BLE001 — the reason IS the finding
+    except Exception as e:  # noqa: BLE001 - the reason IS the finding
         return ("the loops cross each other, no face can be made: "
                 + " ".join(str(e).split())[:120])
     if face.isNull() or not face.Faces or abs(face.Area) <= 1e-9:
@@ -356,7 +356,7 @@ def sketch_check(obj_or_name, doc=None, require_closed: bool = True,
 
     Uses `DoF` / `FullyConstrained`, NOT `solve()`'s return code: solve()
     returns 0 for an under-constrained sketch (the base's verify_sketch reads
-    that 0 as "fully constrained" — reported upstream).
+    that 0 as "fully constrained" - reported upstream).
     Returns {status, issues, advisories, dof, wires_closed, wires_open}.
     """
     sk = _resolve(obj_or_name, doc)

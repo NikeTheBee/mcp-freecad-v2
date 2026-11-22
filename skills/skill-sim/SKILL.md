@@ -2,27 +2,27 @@
 
 **Load when:** any simulation or virtual test beyond `fem_static`: pressure, gravity, rotation,
 vibration modes, buckling, heat, dilatation, thermal stress, fatigue, any steady field (heat,
-electrostatics, DC current, Darcy), and the design loop "model → simulate → build → test →
+electrostatics, DC current, Darcy), and the design loop "model -> simulate -> build -> test ->
 correct" (`study`). Domain packs have their own skills (skill-marine, skill-elec, skill-aero-sim,
 skill-dynamics...).
 
 ## The four tools (`freecad-layers`)
-- `tools_status()` — installed environments and tools, every simulation `kind` and its state:
+- `tools_status()`: installed environments and tools, every simulation `kind` and its state:
   `validated` (its reference cases passed for this code and lock), `stale` (rerun them on first
   use, automatically), `fail` (unusable), `env missing` (install command given).
-- `simulate(kind, target, params, study)` — runs outside FreeCAD in the tool's own environment.
+- `simulate(kind, target, params, study)`: runs outside FreeCAD in the tool's own environment.
   `target` = the FreeCAD solid (checked, then exported to STEP) for geometry kinds.
   Answer: `OK|FAIL|UNKNOWN summary`, `values: ...`, `files: ...` (VTU for ParaView), and the
-  reference line. Same inputs → `cached`. Longer than ~110 s → `RUNNING job <id>`: poll `job(id)`.
+  reference line. Same inputs -> `cached`. Longer than ~110 s -> `RUNNING job <id>`: poll `job(id)`.
 - `job(id, action="status"|"cancel")`.
-- `study(action, name, args)` — the loop below.
+- `study(action, name, args)`: the loop below.
 
 **Files:** `params.files = ["robot/arm.urdf", "logs/run1.csv"]` (paths relative to the
 project folder) are copied into the study folder for the adapter, and their bytes are part of the
 cache key (a changed log is recomputed). Paths outside the project are refused.
 
 **Verdict rule:** criteria live in `params.limits = {value: {"min"|"max": x}}` or in the study's
-`criteria` for that kind. No criteria → `UNKNOWN` (computed, nothing judged). Never read UNKNOWN as OK.
+`criteria` for that kind. No criteria -> `UNKNOWN` (computed, nothing judged). Never read UNKNOWN as OK.
 
 ## Kinds of the common core
 | kind | params (besides `limits`) | main values |
@@ -50,13 +50,13 @@ start from). Units: mm, N, MPa, °C, W.
 ## The loop: until the real object matches the model
 ```
 study start {goal, criteria {kind: limits}, hypotheses [{text, source}], acceptance {quantity: limits}, agreement 0.1}
-simulate(..., study=name) × N      → FAIL: fix the design, study iterate {change, params}
-                                   → all OK: state ready_to_build → export / drawing_sheet
-(the human builds and tests it)    → study built
+simulate(..., study=name) × N      -> FAIL: fix the design, study iterate {change, params}
+                                   -> all OK: state ready_to_build -> export / drawing_sheet
+(the human builds and tests it)    -> study built
 study measure {data {quantity: value}, source, predicted {quantity: "kind.value"}}
-   → VALIDATED: measured inside acceptance AND model within `agreement` of the test
-   → CALIBRATE: study calibrate {factors {param: value}, note: how fitted} → next iteration
-study report                       → report.md (hypotheses, iterations, tests, gaps) + journal.jsonl
+   -> VALIDATED: measured inside acceptance AND model within `agreement` of the test
+   -> CALIBRATE: study calibrate {factors {param: value}, note: how fitted} -> next iteration
+study report                       -> report.md (hypotheses, iterations, tests, gaps) + journal.jsonl
 ```
 
 **Automatic correction:** when a criterion FAILs because of a dimension, put that dimension in a
@@ -68,8 +68,8 @@ iteration. Each run is listed (the proof). No feasible design in the ranges -> c
   tested before building.
 - Calibration changes the MODEL (effective modulus, friction, drag coefficient...), the design
   changes the OBJECT: say which one you are doing in `change` / `note`.
-- "Validated" means the data agree within the stated hypotheses — never "safe" or "certified".
+- "Validated" means the data agree within the stated hypotheses - never "safe" or "certified".
 
 ## Never
 - Command a real machine, vehicle, robot or printer; flash a real board; write machine G-code.
-- Invent a material property, a datasheet limit or a test value: unsourced → UNKNOWN.
+- Invent a material property, a datasheet limit or a test value: unsourced -> UNKNOWN.

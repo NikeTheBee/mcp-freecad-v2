@@ -1,4 +1,4 @@
-"""BOM / nomenclature test (GAP G6) — runs under freecadcmd.
+"""BOM / nomenclature test (GAP G6) - runs under freecadcmd.
 
 Builds an assembly with repeated parts, extracts the grouped nomenclature and
 exports CSV. Checks identical parts collapse into one line with the right qty,

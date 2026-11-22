@@ -96,8 +96,8 @@ dynamique aéroélastique), ZAERO. C'est une autre famille d'outils.
 |---|---|---|---|---|
 | AIC subsonique DLM et VLM | **PanelAero** (DLR, Institut für Aeroelastik) | BSD-3 | **conda-forge win-64 vérifié** (`panelaero 2025.08`) | AIC validées face à MSC.Nastran pour les schémas d'intégration parabolique et quartique, sur des configurations aile, empennage et dérive, à plusieurs Mach et fréquences réduites |
 | Flottement non linéaire, aile très souple, UVLM | **SHARPy** (Imperial College) | **BSD-3 vérifié dans le dépôt** | pip, dépendances C++ à compiler | vague 3, pour les ailes à grand allongement |
-| Référence de méthode p-k | littérature : Hassig 1971 ; aile de **Goland**, **AGARD 445.6**, section typique de Theodorsen | — | — | cas de validation |
-| DLMpro et FlutterWing | GPL-3, MATLAB | non | — | **non retenu** : exige MATLAB |
+| Référence de méthode p-k | littérature : Hassig 1971 ; aile de **Goland**, **AGARD 445.6**, section typique de Theodorsen | - | - | cas de validation |
+| DLMpro et FlutterWing | GPL-3, MATLAB | non | - | **non retenu** : exige MATLAB |
 
 Conclusion : cas **(B)**. Les briques existent, la méthode d'ingénierie est à écrire. On écrit
 l'adaptateur `aeroelastic` (p-k, divergence, efficacité de gouverne, rafale, fin flutter), avec
@@ -201,7 +201,7 @@ Revue des domaines visés par le projet : aéronautique, spatial, drone, sous-ma
    l'échelle par cote de référence.
 4. Ajouts d'environnement : `panelaero`, `fluids`, `thermo`, `ht`, plus BELLHOP au lock.
 
-**Vague 2 (faite ; OpenFOAM installé et validé le 2026-11-21 : Couette exact, Poiseuille à 0,5 % — u_max/U 1,4925 et dp/dx −0,01194 contre −0,012 —, et refus d'un cas cachant `#codeStream`)**
+**Vague 2 (faite ; OpenFOAM installé et validé le 2026-11-21 : Couette exact, Poiseuille à 0,5 % - u_max/U 1,4925 et dp/dx −0,01194 contre −0,012 - , et refus d'un cas cachant `#codeStream`)**
 
 - `mdo` : OpenMDAO 3.45 et pyOptSparse 2.17 dans l'environnement `opt`. MDA, optimisation sous
   contraintes avec dérivées exactes, plans d'expériences. Validé sur le problème de Sellar (racine

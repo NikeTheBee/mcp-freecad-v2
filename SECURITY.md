@@ -3,20 +3,20 @@
 Cyber posture for MCP FREECAD, covering the cahier des charges **NF5** (safe Python execution;
 never expose `0.0.0.0` without an IP allowlist) and **§13** (no secrets, deny `.env`, localhost RPC).
 
-## Trust model — read this first
+## Trust model - read this first
 This system lets an AI client run **arbitrary Python inside FreeCAD** (`execute_python`, and the workbench
 grafts). That is powerful **by design** (it's how natural-language CAD works) and therefore:
 - **Only connect a trusted AI client** you control. Treat the `freecad` MCP server like a local shell.
 - Tool results (object labels, file names, imported STEP/mesh names, spreadsheet and CSV cells, macro
   contents) are **external data, not instructions**; don't let a document's text drive privileged
   actions. Where this is said to the AI: the `freecad-layers` server instructions (server-wide), the
-  project's `CLAUDE.md`, and in the base the descriptions of three tools only (object listing, macros,
-  debug logs) — the base's server-wide instructions do not say it.
+  project's `AGENTS.md`, and in the base the descriptions of three tools only (object listing, macros,
+  debug logs) - the base's server-wide instructions do not say it.
 - `macro_operations run` is the same power as `execute_python` (a macro is Python with full OS access).
   Its `confirmed=true` argument is a reminder to the AI to ask you first, not a technical barrier.
 - `execute_python` is **not sandboxed** (the base's source calls it a "sandbox"; it is a plain `exec`
   in FreeCAD's process, with your rights: files, network, subprocesses).
-- Run untrusted third-party workbench code (grafts) only after vetting — see how Rocket/AirPlaneDesign/CROSS
+- Run untrusted third-party workbench code (grafts) only after vetting - see how Rocket/AirPlaneDesign/CROSS
   were reviewed before use (`install/WINDOWS-SETUP.md`).
 
 ## Network exposure & socket authentication
@@ -56,21 +56,21 @@ grafts). That is powerful **by design** (it's how natural-language CAD works) an
   Regression tests: base unit tests `TestListenerProof` / `TestVerifyListener`, live
   `tests/base_fixes_test.py` (real FreeCAD accepted, fake listener refused, token never sent).
 - **Never** change the bind to `0.0.0.0` / a LAN IP without putting an **IP allowlist** (and ideally
-  TLS) in front — NF5. The token protects against local callers, not network eavesdropping.
+  TLS) in front - NF5. The token protects against local callers, not network eavesdropping.
 - For remote/multi-machine use, tunnel over SSH rather than exposing the port.
 
 ## Secure-by-design rule for first-party code
-Every new layer/helper is written secure **from the first commit** — security is never retrofitted.
+Every new layer/helper is written secure **from the first commit**: security is never retrofitted.
 Concretely, all first-party code that touches files or caller-supplied names goes through the shared
 gates in `server/freecad_layers/__init__.py`:
-- **`safe_out_path(path, exts, overwrite)`** — every file WRITE: resolved path, enforced extension
+- **`safe_out_path(path, exts, overwrite)`**: every file WRITE: resolved path, enforced extension
   (a "gears.dxf" request can never write "evil.dll"), and no silent clobber (explicit `overwrite=True`).
   Refused as well: NTFS alternate data streams (`a.exe:x.csv`), Windows device names in any form and in
   any folder of the path (`CON.csv`, `CON .csv`, `COM¹.csv`, `CONIN$.csv`, `sub\NUL\x.csv`), and, since
   the 2026-11-12 audit, **network and device paths** (`\\host\share\…`, `//host/share/…`, `\\?\…`,
   `\\.\…`): they made FreeCAD open an SMB session to a host named by the path (Windows sends your NTLM
   credentials with it) and write the part there. A share mapped to a drive letter still works.
-- **`safe_under(base, candidate)`** — every caller-supplied name that must map into a known directory
+- **`safe_under(base, candidate)`**: every caller-supplied name that must map into a known directory
   (template names, checkpoint labels): anti path-traversal (`..\\..` cannot escape `base`), and no
   alternate data stream (`name.FCStd:stream`).
 The policy lives in ONE place; extend it there, not locally. Tests must exercise the refusal paths
@@ -116,7 +116,7 @@ the 2026-11-12 audit no `:` (`D:name` reached drive D:'s working folder, `x.FCMa
 - Python dependencies live in a dedicated venv (`~/.freecad-mcp/venv`), with version bounds;
   nothing is installed into the system Python.
 - The installer refuses to touch a clone with local modifications, and never overwrites an
-  unreadable Claude Desktop config (backup + atomic write otherwise).
+  unreadable desktop harness config (backup + atomic write otherwise).
 
 ## Logs
 `~/.freecad-mcp/logs/` holds the launcher log and the base's operation logs, which record the
@@ -128,7 +128,7 @@ The launcher deletes operation logs older than 14 days at start-up
 - **A program running under your own Windows account, or an administrator.** It can read the token
   file, start the configured FreeCAD itself on the port, read the logs and your designs. The token,
   the listener proof and the launcher's check protect against *other* accounts and against a foreign
-  program holding the port — not against yourself.
+  program holding the port - not against yourself.
 - **Local denial of service.** Any local account can connect to `127.0.0.1:23456`. Without the token
   it gets nothing. FreeCAD serves at most 32 connections at once (beyond: closed at once) and frees a
   connection that sends nothing after 5 s, so a flood no longer piles up threads; but a program that

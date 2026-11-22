@@ -1,6 +1,6 @@
 # skill-techdraw
 
-**Load when:** the task asks for 2D drawings/plans — "plan 2D", workshop drawing, dimensioned
+**Load when:** the task asks for 2D drawings/plans - "plan 2D", workshop drawing, dimensioned
 sheet, DXF/blueprint of a part (cahier des charges §4.6; e.g. the pince project's "plan 2D pdf
 par pièce").
 
@@ -26,11 +26,11 @@ print(res["verdict"])   # must start with OK
 | `auto_scale(shapes, views, slot_w, slot_h)` | largest ISO scale (2:1, 1:1, 1:2, 1:5…) that fits |
 | `add_extent_dims(view)` | overall width/height dimensions |
 | `add_distance_dim(view, (x1,y1), (x2,y2), "Distance"/"DistanceX"/"DistanceY")` | point-to-point dim (unscaled 2D view coords) |
-| `export_dxf(page, path, overwrite=False)` | full page → DXF (refuses clobber without overwrite) |
+| `export_dxf(page, path, overwrite=False)` | full page -> DXF (refuses clobber without overwrite) |
 | `view_svg(view)` | one view's edges as SVG string (cheap text preview) |
 
 ## Honest limits
-- **PDF/SVG page export is GUI-coupled** in FreeCAD 1.1 — headless deliverable is **DXF**
+- **PDF/SVG page export is GUI-coupled** in FreeCAD 1.1 - headless deliverable is **DXF**
   (universally accepted by CAD/CAM). For a PDF: open the saved .FCStd in the GUI and print,
   or convert the DXF externally.
 - Auto-dimensioning beyond overall extents (each hole, each feature) is per-feature work:
@@ -41,5 +41,5 @@ print(res["verdict"])   # must start with OK
 out; `UNKNOWN` if an extent could not be computed. `sheet_for` returns it in `res["verdict"]`.
 
 ## Verify
-`tests/techdraw_test.py` (sentinel `TECHDRAW_OK`) — includes the secure-by-design refusal
+`tests/techdraw_test.py` (sentinel `TECHDRAW_OK`) - includes the secure-by-design refusal
 paths (clobber/extension/traversal).

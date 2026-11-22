@@ -923,7 +923,7 @@ def _loop_force(a, b, z, i1, i2):
 
 try:
     _LOOP_F = _loop_force(0.02, 0.015, 0.01, 10.0, 5.0)
-except Exception:  # noqa: BLE001 — scipy missing: the reference case then fails, visibly
+except Exception:  # noqa: BLE001 - scipy missing: the reference case then fails, visibly
     _LOOP_F = float("nan")
 _J, _D, _H, _Z = 1.2, 0.01, 0.005, 0.003     # cylinder magnet: J (T), diameter, height, gap (m)
 

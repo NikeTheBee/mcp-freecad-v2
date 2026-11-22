@@ -5,7 +5,7 @@ moving under gravity/torques/PD, controller tuning (step, margins, LQR), standin
 a wheel on sand or soil (sinkage, drawbar pull, max slope).
 
 ## Use the tool
-`freecad-layers` → **`simulate(kind=..., params={...})`**, adapter `dynamics` (env `robot`:
+`freecad-layers` -> **`simulate(kind=..., params={...})`**, adapter `dynamics` (env `robot`:
 MuJoCo 4, Pinocchio, python-control). No `target`: these kinds read a model file or numbers.
 Units SI: m, kg, s, N, N m, rad (keys ending `_deg` are degrees), W, Pa.
 
@@ -15,7 +15,7 @@ Units SI: m, kg, s, N, N m, rad (keys ending `_deg` are degrees), W, Pa.
 - `model`: a path relative to the study run folder. Every mesh/include it references must resolve
   inside that folder, else refused. URDF `package://` paths are read as the mesh's base name.
 - `builtin:pendulum | builtin:free_fall | builtin:two_link` (+ `model_params`), for checks.
-- URDF from FreeCAD: see `skill-robotics-ros` (inertials via `urdf_aug`; mm → m).
+- URDF from FreeCAD: see `skill-robotics-ros` (inertials via `urdf_aug`; mm -> m).
 
 | kind | params | key values |
 |---|---|---|

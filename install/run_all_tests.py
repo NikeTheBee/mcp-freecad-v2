@@ -41,7 +41,7 @@ def resolve_freecadcmd() -> str:
 
 FREECADCMD = resolve_freecadcmd()
 
-# (script, success sentinel) — run under the system Python, no FreeCAD needed
+# (script, success sentinel) - run under the system Python, no FreeCAD needed
 PURE_TESTS = [
     ("security_scan.py", "SECURITY_SCAN_OK"),
     # structural cyber gate: the rules every adapter and the pinned supply chain must obey
@@ -67,7 +67,7 @@ PURE_TESTS = [
     ("refcases_test.py", "REFCASES_OK"),
 ]
 
-# (script, success sentinel) — run under freecadcmd
+# (script, success sentinel) - run under freecadcmd
 # Graft tests need the third-party workbench clones under addons/. Set
 # MCPFC_SKIP_GRAFTS=1 (e.g. in CI with only bundled FreeCAD) to skip them.
 GRAFT_TESTS = [
@@ -111,7 +111,7 @@ CORE_TESTS = [
 FREECAD_TESTS = (CORE_TESTS if os.environ.get("MCPFC_SKIP_GRAFTS")
                  else GRAFT_TESTS + CORE_TESTS)
 
-# (script, sentinel) — run with the bridge venv Python on an isolated instance
+# (script, sentinel) - run with the bridge venv Python on an isolated instance
 LIVE_TESTS = [
     ("launcher_test.py", "LAUNCHER_OK"),
     ("phase1_smoke_test.py", "PHASE1_OK"),
@@ -205,7 +205,7 @@ def _rmtree(path: Path) -> None:
 def _main() -> int:
     results = []
 
-    # Pure-Python tests (no FreeCAD needed) — also run in CI.
+    # Pure-Python tests (no FreeCAD needed) - also run in CI.
     for script, sentinel in PURE_TESTS:
         ok, out = _run([sys.executable, str(_script(script))])
         _record(results, script, ok, out, sentinel)
@@ -226,7 +226,7 @@ def _main() -> int:
         if os.environ.get("MCPFC_SKIP_GRAFTS"):
             _skip(results, script, "CI: no Windows FreeCAD install")
         elif not VENV_PY.exists():
-            _skip(results, script, f"bridge venv missing at {VENV_PY} — run install/bootstrap.py")
+            _skip(results, script, f"bridge venv missing at {VENV_PY} - run install/bootstrap.py")
         else:
             env = dict(os.environ, FREECAD_MCP_FREECAD_BIN=FREECADCMD)
             ok, out = _run([str(VENV_PY), str(_script(script))], env=env)

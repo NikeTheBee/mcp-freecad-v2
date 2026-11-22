@@ -12,7 +12,7 @@ not one part".
   optimises it in one shot. Use it for a vehicle-level sizing loop.
 
 ## Use the tool
-`freecad-layers` → **`simulate(kind, target, params)`**, adapter `mdo` (env `opt`).
+`freecad-layers` -> **`simulate(kind, target, params)`**, adapter `mdo` (env `opt`).
 Everything is **declared**, not coded: each discipline is `output = expression`, and the objective
 and constraints are expressions too. Expressions go through a strict whitelist (declared names,
 numbers, `+ - * / **`, and sqrt exp log log10 sin cos tan atan tanh abs min max sign, plus `pi`);
@@ -25,7 +25,7 @@ anything else is refused, so a typo is an error, never a surprise.
 | `doe` | the same plus `doe` `full_factorial`\|`latin_hypercube`, `levels` or `samples`, `seed` | `objective_min`/`max`/`mean`/`std`, `best_<var>`, `cases`; file `doe.csv` |
 
 Mark a variable `design: true` to let the optimiser move it (it then needs `lower` and `upper`).
-A discipline output must also be declared in `variables` — its value seeds the coupling solver.
+A discipline output must also be declared in `variables`: its value seeds the coupling solver.
 
 ## How to read the answer
 - **`converged: 0` means the optimiser gave up.** The numbers are where it stopped, not an
@@ -46,7 +46,7 @@ a constrained quadratic solved by hand with a Lagrange multiplier, Rosenbrock's 
 full factorial whose mean is exact. See `REFERENCES` in `server/adapters/mdo.py`.
 
 ## Limits
-Expressions only — a discipline that needs a real solver (FEM, CFD) is not plugged in yet: run it
+Expressions only - a discipline that needs a real solver (FEM, CFD) is not plugged in yet: run it
 through `simulate`, fit a surrogate or a simple expression to those runs, and declare that. No
 integer or categorical variables, no multi-objective Pareto front (optimise one objective with
 the others as constraints), no uncertainty propagation.

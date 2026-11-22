@@ -1,4 +1,4 @@
-"""Resume-between-sessions demo — proves cahier des charges §14.1 criterion
+"""Resume-between-sessions demo - proves cahier des charges §14.1 criterion
 "reprendre un projet entre 2 sessions via la mémoire projet (sans re-décrire)".
 
 Two genuinely separate FreeCAD processes share only /project_state/state.json:
@@ -6,9 +6,9 @@ Two genuinely separate FreeCAD processes share only /project_state/state.json:
   Session 1  (freecadcmd, process #1)
     - init project memory: intent, parameters
     - build the base plate from those parameters, verify it, record the feature
-  Session 2  (freecadcmd, FRESH process #2 — knows nothing)
+  Session 2  (freecadcmd, FRESH process #2 - knows nothing)
     - reads `state.summary()` (the token-minimal digest an AI reads at session
-      start), rebuilds context from it — no re-description by the user
+      start), rebuilds context from it - no re-description by the user
     - continues the design: drills the holes using the STORED parameters,
       verifies, records the new feature
 

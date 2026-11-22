@@ -74,7 +74,7 @@ jobs:
         env:
           MCPFC_SKIP_GRAFTS: "1"
           # conda-forge headless TechDraw segfaults during view recompute
-          # (native crash) — reported as SKIP, validated on the Windows target.
+          # (native crash) - reported as SKIP, validated on the Windows target.
           # See docs/COMPATIBILITY.md R11.
           MCPFC_SKIP_TECHDRAW: "1"
         run: |

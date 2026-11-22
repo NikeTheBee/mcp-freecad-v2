@@ -1,4 +1,4 @@
-"""Project memory — persistent design state (cahier des charges §7.1).
+"""Project memory - persistent design state (cahier des charges §7.1).
 
 Goal: never re-describe the project across sessions. The AI reads a compact
 state at session start and updates it after each *validated* step. Stored as a
@@ -6,7 +6,7 @@ single JSON file under /project_state so it is versionable and diff-friendly.
 
 Robustness (audit 2026-10-11, §3.6):
 - every read-modify-write holds an exclusive file lock, so two sessions
-  (Claude Code + Claude Desktop, two tabs) cannot lose each other's updates;
+  (CLI harness + desktop harness, two tabs) cannot lose each other's updates;
 - writes are atomic (temp file + replace) and keep the previous good version
   as state.json.bak; a corrupt state.json is recovered from it instead of
   breaking the session start;
@@ -53,8 +53,8 @@ def _empty(project: str = "untitled") -> Dict[str, Any]:
         "parameters": {},
         "features": [],     # [{name, type, params, at}]
         "decisions": [],    # [{text, at}]
-        "checkpoints": [],  # [{name, file, at, note}] — maintained by checkpoint.py
-        "specs": [],        # design contract — maintained by spec.py
+        "checkpoints": [],  # [{name, file, at, note}] - maintained by checkpoint.py
+        "specs": [],        # design contract - maintained by spec.py
     }
 
 
@@ -165,7 +165,7 @@ def _write(state: Dict[str, Any], p: Path) -> None:
 
 def save(state: Dict[str, Any]) -> None:
     """Atomic, locked write: a crash mid-write must never corrupt the project
-    memory (NF2 — the memory IS the recovery mechanism)."""
+    memory (NF2 - the memory IS the recovery mechanism)."""
     p = _state_path()
     with _locked(p):
         _write(state, p)

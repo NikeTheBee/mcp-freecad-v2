@@ -123,7 +123,7 @@ def _mesh(geom: Path, size: float, face_info: Dict[str, Any]):
                 tets = n.reshape(-1, 10)
         if tets is None:
             raise RuntimeError("Gmsh produced no 10-node tetrahedra")
-        tets = tets[:, [0, 1, 2, 3, 4, 5, 6, 7, 9, 8]]  # Gmsh → CalculiX/VTK node order
+        tets = tets[:, [0, 1, 2, 3, 4, 5, 6, 7, 9, 8]]  # Gmsh -> CalculiX/VTK node order
         surfaces = {}
         for _, s in gmsh.model.getEntities(2):
             com = gmsh.model.occ.getCenterOfMass(2, s)
@@ -462,7 +462,7 @@ def run(kind: str, inp: Dict[str, Any], work: Path) -> Dict[str, Any]:
     files = ["job.inp", "job.frd"]
     try:
         files.append(_vtu(work, tags, xyz, tets, blocks))
-    except Exception as e:  # noqa: BLE001 — the numbers stand without the picture
+    except Exception as e:  # noqa: BLE001 - the numbers stand without the picture
         notes.append(f"no VTU ({type(e).__name__})")
     return result(values, inp.get("limits"), head, files, notes)
 

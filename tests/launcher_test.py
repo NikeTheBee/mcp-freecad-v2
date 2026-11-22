@@ -1,4 +1,4 @@
-"""Launcher + socket auth (replaces autostart_test / auth_test) — bridge venv Python.
+"""Launcher + socket auth (replaces autostart_test / auth_test) - bridge venv Python.
 
 On an isolated instance (port 23499, private home):
 1. the launcher starts FreeCAD and reports a trusted PID;

@@ -1,4 +1,4 @@
-"""Part analysis (holes, walls, overhangs, printability) — runs under freecadcmd.
+"""Part analysis (holes, walls, overhangs, printability) - runs under freecadcmd.
 
 Known-value cases, including the parts the old CAM layer mistook for holes.
 Sentinel: ANALYSIS_OK

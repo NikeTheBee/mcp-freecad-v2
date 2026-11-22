@@ -3,7 +3,7 @@
 **Load when:** OpenFOAM, Fluent-type CFD, free surface / VOF, sloshing, cavitation, rotating zone
 (MRF), six-DOF body in flow, turbulence model other than SU2's, "run this OpenFOAM case".
 
-`freecad-layers` → **`simulate(kind, target, params)`**, adapter `foam` (env `sim`, pack
+`freecad-layers` -> **`simulate(kind, target, params)`**, adapter `foam` (env `sim`, pack
 `fluides-plus`: blueCFD-Core 2024-1 = OpenFOAM 12 native Windows, serial).
 
 | kind | params | main values |
@@ -19,11 +19,11 @@
 - It pays off from about 100k cells upward; below that, the run is quicker serial.
 
 **Security:** a supplied case is scanned first. `#codeStream`, `#calc`, `coded*`, `libs (...)`,
-`systemCall`, or an `#include` from outside the case → **refused, nothing runs** (OpenFOAM can
+`systemCall`, or an `#include` from outside the case -> **refused, nothing runs** (OpenFOAM can
 compile and execute C++ from a dictionary, and blueCFD ships the compiler). Write cases without
 them; if one is truly needed, a human reads it.
 
-**Reading:** pressure is kinematic (p/ρ). No `limits` → UNKNOWN. For `foam_case`, judge
+**Reading:** pressure is kinematic (p/ρ). No `limits` -> UNKNOWN. For `foam_case`, judge
 `max_final_residual` (above ~1e-3 usually means not converged) and say the physics/mesh are the
 case's own. One machine (no cluster). Fields open in ParaView (env `post`).
 

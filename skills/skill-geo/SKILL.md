@@ -4,9 +4,9 @@
 heat in soil or rock, borehole heat exchanger, geothermal, clay settlement, consolidation, Terzaghi.
 
 ## Use the tool
-`freecad-layers` → **`simulate(kind, params)`** with the adapter `geo` (env `geo`: OpenGeoSys 6.5
+`freecad-layers` -> **`simulate(kind, params)`** with the adapter `geo` (env `geo`: OpenGeoSys 6.5
 from the `ogs` wheel, numpy, scipy). No CAD target: the adapter builds a structured block mesh.
-Every answer is OK / FAIL / UNKNOWN + numbers. No `limits` → UNKNOWN ("computed, nothing judged").
+Every answer is OK / FAIL / UNKNOWN + numbers. No `limits` -> UNKNOWN ("computed, nothing judged").
 
 Units: SI. m, K in m/s, head in m, k in W/(m K), T in °C. Side fluxes are **positive into the
 domain**: m/s (m³/s per m²) or W/m². Flows through a side are m³/s or W: 2-D results are per
@@ -43,7 +43,7 @@ simulate("borehole", params={"mode": "line_source", "q_W_per_m": 40, "k_W_mK": 2
   by two fixed sides is split half and half (said in the summary).
 - `consolidation`: Terzaghi 1-D theory (constant cv and mv, small strain, instant load, no creep or
   secondary compression). OGS solves the excess pore-pressure equation; the series solution is the
-  cross-check. More than 0.02 apart → UNKNOWN (refine `cells`, or the time is too early). It is
+  cross-check. More than 0.02 apart -> UNKNOWN (refine `cells`, or the time is too early). It is
   **not** a coupled Biot hydro-mechanical model: say so for 2-D/3-D settlement or embankments.
 - `borehole`: closed forms, homogeneous isotropic infinite medium. Thiem needs a radius of influence
   (an assumption: say it); Theis assumes a confined aquifer, full penetration, constant rate; the

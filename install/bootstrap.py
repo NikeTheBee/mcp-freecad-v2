@@ -4,19 +4,19 @@
 What it does:
   1. Finds FreeCAD (freecadcmd) and its REAL version-specific user Mod dir.
   2. Checks the base server: a modified copy of `blwfish/freecad-mcp` (v8.3.0) is part of
-     this repository (server/freecad-mcp, git subtree, LGPL — see its
+     this repository (server/freecad-mcp, git subtree, LGPL - see its
      CHANGES-NikeTheBee.md). Nothing is downloaded for it.
   3. Creates a dedicated venv (~/.freecad-mcp/venv) with version-bounded dependencies
      (mcp-agent-notes pinned to a commit): nothing goes into your system Python.
   4. Installs the AICopilot addon into the versioned Mod dir (for GUI use).
   5. Registers two MCP servers: `freecad` (supervised launcher + base) and
      `freecad-layers` (verification, contract, checkpoints, BOM, drawings...)
-     with Claude Code and/or Claude Desktop.
+     with a CLI and/or desktop harness.
   6. Optionally clones the workbench grafts, each pinned to a commit.
   7. Runs the test suite.
 
 Every step either succeeds or stops the install with a clear message
-(audit 2026-10-11, §3.7). Claude Desktop's config is backed up and written
+(audit 2026-10-11, §3.7). the desktop harness's config is backed up and written
 atomically; an unreadable config is never overwritten.
 
 Usage:
@@ -159,7 +159,7 @@ def check_base() -> None:
     missing = [n for n in needed if not (BASE_DIR / n).is_file()]
     if missing:
         raise InstallError(f"{BASE_DIR} is incomplete (missing {missing}); re-clone the "
-                           "repository — the base server ships inside it")
+                           "repository - the base server ships inside it")
     log(f"base server: {BASE_DIR} (vendored, see CHANGES-NikeTheBee.md)")
 
 
@@ -230,7 +230,7 @@ def retire_legacy(moddir: Path, dry: bool) -> None:
             shutil.move(str(p), str(dest))
         except OSError as e:   # e.g. a FreeCAD still running from that folder
             log(f"WARNING: could not move {p} ({e}); close FreeCAD and re-run, "
-                "or delete it by hand — FreeCAD 1.x does not load it anyway")
+                "or delete it by hand - FreeCAD 1.x does not load it anyway")
         if p.is_dir() and not any(p.iterdir()):
             try:
                 p.rmdir()
@@ -259,11 +259,11 @@ def stop_stale_headless(dry: bool) -> None:
 # --------------------------------------------------------------------------
 # Client registration
 # --------------------------------------------------------------------------
-def record_previous(claude: str, freecadcmd: Path, dry: bool) -> None:
+def record_previous(cli: str, freecadcmd: Path, dry: bool) -> None:
     """Registering another FreeCAD (an upgrade in a new folder): note the one it replaces, so the
     launcher can ask that FreeCAD, if it still serves the port, to save and exit
     (mcp_freecad_launch.retire_previous) instead of refusing it as a squatter."""
-    r = subprocess.run([claude, "mcp", "get", "freecad"], capture_output=True, text=True)
+    r = subprocess.run([cli, "mcp", "get", "freecad"], capture_output=True, text=True)
     old = next((ln.split("=", 1)[1].strip() for ln in r.stdout.splitlines()
                 if ln.strip().startswith("FREECAD_MCP_FREECAD_BIN=")), "")
     if not old or os.path.normcase(str(Path(old).parent)) == os.path.normcase(str(freecadcmd.parent)):
@@ -278,25 +278,25 @@ def record_previous(claude: str, freecadcmd: Path, dry: bool) -> None:
     log(f"previous FreeCAD recorded ({old}): it hands the port over at the next session")
 
 
-def register_claude_code(freecadcmd: Path, dry: bool) -> bool:
-    claude = shutil.which("claude")
-    if not claude:
+def register_cli_harness(freecadcmd: Path, dry: bool) -> bool:
+    cli = shutil.which("claude")
+    if not cli:
         return False
-    record_previous(claude, freecadcmd, dry)
+    record_previous(cli, freecadcmd, dry)
     for name, script in SERVERS.items():
         if dry:
-            log(f"DRY: would register `{name}` with Claude Code")
+            log(f"DRY: would register `{name}` with the CLI harness")
             continue
-        subprocess.run([claude, "mcp", "remove", "-s", "user", name],
+        subprocess.run([cli, "mcp", "remove", "-s", "user", name],
                        capture_output=True, text=True)
-        run([claude, "mcp", "add", "-s", "user", name,
+        run([cli, "mcp", "add", "-s", "user", name,
              "-e", f"FREECAD_MCP_FREECAD_BIN={freecadcmd}",
              "--", VENV_PY, script], capture_output=True, text=True)
-        log(f"registered `{name}` with Claude Code (user scope)")
+        log(f"registered `{name}` with the CLI harness (user scope)")
     return True
 
 
-def claude_desktop_config_path() -> Path:
+def desktop_harness_config_path() -> Path:
     if sys.platform == "win32":
         return Path(os.environ["APPDATA"]) / "Claude" / "claude_desktop_config.json"
     if sys.platform == "darwin":
@@ -304,16 +304,16 @@ def claude_desktop_config_path() -> Path:
     return HOME / ".config" / "Claude" / "claude_desktop_config.json"
 
 
-def register_claude_desktop(freecadcmd: Path, dry: bool) -> bool:
-    cfg = claude_desktop_config_path()
+def register_desktop_harness(freecadcmd: Path, dry: bool) -> bool:
+    cfg = desktop_harness_config_path()
     if not cfg.parent.exists():
-        return False  # Claude Desktop not installed
+        return False  # desktop harness not installed
     data = {}
     if cfg.exists():
         try:
             data = json.loads(cfg.read_text(encoding="utf-8"))
         except (ValueError, OSError) as e:
-            raise InstallError(f"{cfg} is not valid JSON ({e}); fix or remove it — "
+            raise InstallError(f"{cfg} is not valid JSON ({e}); fix or remove it - "
                                "it was NOT modified") from e
         if not isinstance(data, dict):
             raise InstallError(f"{cfg} does not contain a JSON object; NOT modified")
@@ -324,14 +324,14 @@ def register_claude_desktop(freecadcmd: Path, dry: bool) -> bool:
             "env": {"FREECAD_MCP_FREECAD_BIN": str(freecadcmd)},
         }
     if dry:
-        log(f"DRY: would update Claude Desktop config at {cfg}")
+        log(f"DRY: would update desktop harness config at {cfg}")
         return True
     if cfg.exists():
         shutil.copy2(cfg, cfg.with_name(cfg.name + f".bak-{time.strftime('%Y%m%d-%H%M%S')}"))
     tmp = cfg.with_name(cfg.name + ".tmp")
     tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
     os.replace(tmp, cfg)
-    log(f"registered {', '.join(f'`{n}`' for n in SERVERS)} with Claude Desktop ({cfg}, "
+    log(f"registered {', '.join(f'`{n}`' for n in SERVERS)} with desktop harness ({cfg}, "
         "previous config backed up)")
     return True
 
@@ -343,7 +343,7 @@ def main() -> int:
                     help="also clone the workbench grafts (Rocket, AirPlaneDesign, CROSS), pinned")
     ap.add_argument("--client", choices=["auto", "code", "desktop", "both", "none"],
                     default="auto",
-                    help="MCP client(s) to register with (auto: Claude Code, else Claude Desktop)")
+                    help="MCP client(s) to register with (auto: the CLI harness, else desktop harness)")
     ap.add_argument("--freecad-bin", help="path to freecadcmd (default: auto-detected)")
     ap.add_argument("--python", default=sys.executable,
                     help="interpreter used to create the venv (3.10+)")
@@ -385,11 +385,11 @@ def main() -> int:
                     log(f"activated graft {name} (auto-load)")
 
         registered = []
-        if args.client in ("auto", "code", "both") and register_claude_code(freecadcmd, dry):
-            registered.append("Claude Code")
+        if args.client in ("auto", "code", "both") and register_cli_harness(freecadcmd, dry):
+            registered.append("the CLI harness")
         if args.client in ("desktop", "both") or (args.client == "auto" and not registered):
-            if register_claude_desktop(freecadcmd, dry):
-                registered.append("Claude Desktop")
+            if register_desktop_harness(freecadcmd, dry):
+                registered.append("desktop harness")
         log(f"Registered clients: {registered or 'none (use --client)'}")
     except InstallError as e:
         log(f"STOPPED: {e}")

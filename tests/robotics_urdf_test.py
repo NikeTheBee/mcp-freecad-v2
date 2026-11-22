@@ -20,7 +20,7 @@ sys.modules.setdefault("FreeCADGui", types.ModuleType("FreeCADGui"))
 _repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _cross = os.path.join(_repo, "addons", "freecad.cross")
 if not os.path.isdir(_cross):
-    sys.exit(f"CROSS not found at {_cross} — clone galou/freecad.cross there")
+    sys.exit(f"CROSS not found at {_cross} - clone galou/freecad.cross there")
 
 import FreeCAD
 import freecad  # FreeCAD's own namespace package

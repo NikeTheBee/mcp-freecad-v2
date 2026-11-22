@@ -3,7 +3,7 @@
 Run with:  A:\FreeCAD\bin\freecadcmd.exe tests\memory_recovery_test.py
 
 - Multi-session: write project state + a checkpoint in THIS process, then spawn a
-  SECOND freecadcmd process that reads the state from disk — proving continuity
+  SECOND freecadcmd process that reads the state from disk - proving continuity
   across sessions without re-describing context.
 - Crash recovery: build geometry, checkpoint it, simulate a crash (close the doc),
   then restore from the checkpoint and confirm the geometry is back.

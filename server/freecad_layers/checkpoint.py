@@ -1,4 +1,4 @@
-"""Checkpoints / rollback — named .FCStd saves (cahier des charges §7.3).
+"""Checkpoints / rollback - named .FCStd saves (cahier des charges §7.3).
 
 Return to a clean state when the AI goes astray ("revert to the checkpoint
 before the fins"). Each checkpoint is a named .FCStd under /checkpoints plus an
@@ -94,7 +94,7 @@ def _path_of(name: str) -> Path:
                          f"(known: {[c.get('name') for c in list_checkpoints()]})")
     # `entry["file"]` comes from state.json (on-disk, tamperable): anchor it
     # under /checkpoints so a doctored state can't make us open an arbitrary
-    # path (secure by design — safe_under).
+    # path (secure by design - safe_under).
     path = safe_under(_ckpt_dir(), entry["file"])
     if not path.exists():
         raise ValueError(f"Checkpoint {name!r} file missing: {path}")

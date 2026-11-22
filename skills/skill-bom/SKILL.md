@@ -20,7 +20,7 @@
 - Identical parts are grouped by measured geometry (volume, area, moments of inertia; a mirror
   image is a different part, listed "(mirrored)") **and**
   name stem: two different shapes of equal volume are never merged.
-- Limitation: mirror images with the same name stem group together — name left/right parts
+- Limitation: mirror images with the same name stem group together - name left/right parts
   differently (`Bracket_L`, `Bracket_R`).
 
 ## Python fallback
@@ -38,5 +38,5 @@ Model screws as simple cylinders named after the standard (`ISO4762_M5x20`) or a
 STEP files from a supplier; size clearance holes with `skill-assembly`'s fit helpers.
 
 ## Verify
-`tests/bom_test.py` (`BOM_OK`) — includes the audit traps: Body features, boolean inputs,
+`tests/bom_test.py` (`BOM_OK`) - includes the audit traps: Body features, boolean inputs,
 links, equal-volume different parts.

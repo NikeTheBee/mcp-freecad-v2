@@ -1,16 +1,16 @@
-"""Planar kinematics — linkage input/output laws (GAP G2).
+"""Planar kinematics - linkage input/output laws (GAP G2).
 
 Two complementary paths for §4.2 (FK) / §4.4 (transmissions):
 
-1. **Analytical planar solver** (this module's core) — dependency-free, fully
+1. **Analytical planar solver** (this module's core) - dependency-free, fully
    headless, exact. Solves revolute/slider linkages (slider-crank, four-bar,
    and the RRR dyad primitive they are built from). This is what solved the
    `examples/` gripper to 3 µm; here it is generalized and tested.
 
-2. **Native Assembly solver passthrough** — `native_solve(assembly)` runs
+2. **Native Assembly solver passthrough**: `native_solve(assembly)` runs
    FreeCAD's built-in OndselSolver (`AssemblyObject.solve()`), which DOES work
    headless. Creating the joints, however, needs element references and is
-   GUI-coupled (see docs/COMPATIBILITY.md R8) — so we surface the solver, not
+   GUI-coupled (see docs/COMPATIBILITY.md R8) - so we surface the solver, not
    fragile headless joint authoring.
 
 Secure by design: pure math + a read-only solver call; no file or network I/O.
@@ -38,7 +38,7 @@ def circle_intersect(a: Point, ra: float, c: Point, rc: float
     dx, dy = cx - ax, cy - ay
     d = math.hypot(dx, dy)
     if d == 0:
-        return []                      # concentric — no discrete solution
+        return []                      # concentric - no discrete solution
     if d > ra + rc + 1e-9 or d < abs(ra - rc) - 1e-9:
         return []                      # no reach (dead point / disassembled)
     aa = (ra * ra - rc * rc + d * d) / (2 * d)
@@ -254,7 +254,7 @@ def native_solve(assembly_obj) -> Dict[str, object]:
     others; Distance and the coupling joints are "not_measured").
     """
     if not hasattr(assembly_obj, "solve"):
-        return {"ok": False, "why": "object has no solve() — not an AssemblyObject"}
+        return {"ok": False, "why": "object has no solve() - not an AssemblyObject"}
     try:
         code = assembly_obj.solve()
     except Exception as e:  # noqa: BLE001

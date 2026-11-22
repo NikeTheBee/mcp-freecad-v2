@@ -7,7 +7,7 @@ __pycache__/
 # Third-party FreeCAD workbenches (grafts) — cloned locally, not vendored
 /addons/
 
-# Local, machine-specific Claude Code settings
+# Local, machine-specific agent settings
 .claude/settings.local.json
 
 # Secrets — never commit (cyber / NF5 / §13). Defense in depth.
@@ -37,9 +37,11 @@ secrets.*
 # Runtime output of examples/resume_between_sessions.py
 /examples/demo_state/
 
-# Machine-local Claude Code launcher config (absolute user paths)
+# Machine-local launcher config (absolute user paths)
 /.claude/launch.json
 
 # Workshop environments (detached to MCPFC_HOME by install/atelier_install.py)
 /.pixi/
 sbom.cdx.json
+# Local pointer for agents that read CLAUDE.md (it only imports AGENTS.md)
+/CLAUDE.md

@@ -1,9 +1,9 @@
 # skill-print3d
 
-**Load when:** preparing a model for 3D printing — STL/3MF export, watertight check, scale/units.
+**Load when:** preparing a model for 3D printing - STL/3MF export, watertight check, scale/units.
 
 ## What this is
-3D-print export using **bundled FreeCAD** (`Part`, `Mesh`/`MeshPart`) — no external install, works on
+3D-print export using **bundled FreeCAD** (`Part`, `Mesh`/`MeshPart`) - no external install, works on
 FreeCAD 1.1 today. The golden rule (cahier des charges §7.2): **never export a non-watertight solid.**
 
 ## Use the MCP tools (the code decides)

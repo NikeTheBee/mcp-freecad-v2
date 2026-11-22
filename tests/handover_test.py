@@ -1,4 +1,4 @@
-"""FreeCAD upgrade handover — bridge venv Python, isolated port 23499, private home.
+"""FreeCAD upgrade handover - bridge venv Python, isolated port 23499, private home.
 
 An old FreeCAD (another folder) holds the port:
 - without a record of it, the launcher configured on the new FreeCAD refuses it (anti-squatting);

@@ -47,7 +47,7 @@ pin = Part.makeCylinder(shaft_d / 2, 5)
 pin.translate(FreeCAD.Vector(15, 15, 0))
 common = plate_holed.common(pin)
 print(f"interference volume = {common.Volume:.4f} (must be ~0 for clearance fit)")
-assert common.Volume < 1e-6, "pin interferes with hole — not a clearance fit"
+assert common.Volume < 1e-6, "pin interferes with hole - not a clearance fit"
 
 # Press fit must show interference
 press_hole = hole_for_shaft(shaft_d, "press")

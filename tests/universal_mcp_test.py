@@ -1,5 +1,5 @@
 """The workshop through a bare MCP client, as Cursor, VS Code, Codex, Gemini CLI or LM Studio see it:
-no Claude-specific feature. The layers server starts over stdio, lists its tools, serves the
+no harness-specific feature. The layers server starts over stdio, lists its tools, serves the
 skills as a tool, as resources (skill://...) and as a prompt, and refuses a skill name that is
 not one of its folders. Does not need FreeCAD running. Sentinel: UNIVERSAL_MCP_OK
 """

@@ -1,244 +1,144 @@
-# MCP FREECAD 2 🇫🇷
+# MCP FREECAD 2
 
 [![Tests](https://github.com/NikeTheBee/mcp-freecad-v2/actions/workflows/tests.yml/badge.svg)](https://github.com/NikeTheBee/mcp-freecad-v2/actions/workflows/tests.yml)
 [![Licence : PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/License-PolyForm_Noncommercial_1.0.0-lightgrey.svg)](LICENSE)
-🇬🇧 [English version](README.md)
+[![FreeCAD 1.1](https://img.shields.io/badge/FreeCAD-1.1.x-red.svg)](https://www.freecad.org)
 
-Concevez des pièces **mécaniques, aéro et robotiques** dans **FreeCAD** en **langage naturel**, via
-n'importe quel client IA parlant **MCP** — avec une couche de fiabilité qui **mesure** le résultat
-au lieu de croire la lecture qu'en fait l'IA.
+[English version](README.md)
 
-> Décrivez l'intention (« une plaque 60×40×8 mm avec un trou débouchant Ø6 au centre ») ; l'IA
-> modélise, enregistre vos exigences comme des contrôles, vérifie la géométrie et les exigences après
-> chaque étape, sauvegarde automatiquement, et permet de revenir en arrière.
+Un atelier d'ingénierie qu'on pilote en langage courant. FreeCAD fait la CAO paramétrique, des
+solveurs libres et gratuits font la physique, et un serveur MCP relie les deux à n'importe quel
+client IA. Chaque réponse est une mesure assortie d'un verdict (OK, FAIL ou UNKNOWN), pas l'avis du
+modèle sur son propre travail.
 
-## Depuis la 2.1 (non publié)
-- **Export vérifié** (`export`, nouvel outil) : STL ou 3MF pour l'impression, STEP, BREP ou IGES
-  pour une autre CAO, écrit seulement pour une pièce que `check` valide. Le fichier est ensuite
-  relu et comparé au solide (volume, dimensions, position, maillage fermé). Un fichier qui ne
-  correspond pas n'est jamais livré, et ne remplace jamais un bon fichier.
-- **Les porte-à-faux des faces courbes sont mesurés** : chaque face était jugée par sa seule
-  normale médiane, si bien que le plafond d'un trou horizontal, le dessous d'une sphère ou d'un
-  rond couché comptaient 0 mm2. Ils sont maintenant mesurés sur toute la face (à 1 % des valeurs
-  connues), et une paroi pile à la limite (le chanfrein à 45° imprimé sans support) n'est pas
-  comptée.
-- **Dimensions exactes sur les pièces courbes** : la boîte englobante rapide de FreeCAD lisait
-  un loft de 30×20 comme 37,3×26,8, et une révolution de B-spline plus petite qu'elle n'est (une
-  vraie collision passait alors inaperçue). Dimensions, exigences, plateau, exports et
-  collisions utilisent maintenant la boîte exacte, dans les couches et dans la base.
-- **Des trous bien mesurés sur de vraies pièces** : un trou débouchant dans la semelle d'une
-  équerre en L, sous un lamage ou incliné passait pour « borgne » (comparé à la hauteur de toute
-  la pièce), et un alésage stocké en B-spline (un STEP venu d'un autre CAO) n'était pas vu du
-  tout. « Débouchant » veut maintenant dire ouvert aux deux bouts, jugé sur les faces de chaque
-  extrémité (1 600 trous : moins d'une seconde). Un trou borgne fait par `pd_hole` (ou par le
-  trou de la base dans un Body) part de la surface sous lui, pas du sommet de toute la pièce (sur
-  une pièce à gradins il commençait dans le vide), et il est mesuré une fois fait : débouchant,
-  profondeur. Sur un solide Part simple, le fraisage de la base ne coupait rien (son cône était
-  sous la pièce) et le lamage se faisait sur la face du dessous : les deux sont maintenant
-  dessus.
-- **Une poche dans le vide n'est plus « créée »** : esquissée sur la face du dessous, elle
-  creusait dans l'air sans rien enlever, et la réponse la disait faite. Elle est maintenant
-  creusée de l'autre côté de l'esquisse (et c'est dit), ou refusée si aucun côté ne touche la
-  pièce. Toute fonction PartDesign qui laisse la pièce inchangée (un pad noyé dedans, une rainure
-  dans le vide) est refusée aussi.
-- **Les extrusions gardent leurs trous** : l'extrusion/révolution Part de la base n'utilisait que
-  le premier contour de l'esquisse, si bien qu'une plaque sortait sans ses trous (ou réduite à un
-  cylindre quand un trou était dessiné en premier) ; une nervure partait selon l'axe Y global et
-  donnait des solides de volume nul. Les deux prennent maintenant tout le profil, selon la
-  normale de l'esquisse, et refusent une direction couchée dans l'esquisse.
-- **Congés, chanfreins et coques sont dans la pièce** : « congé sur toutes les arêtes » d'une pièce
-  PartDesign créait un objet à côté du Body, qui gardait ses arêtes vives alors que la réponse
-  disait « all 12 edges » (de même pour chanfrein, coque, lissage et balayage : un lissage des
-  esquisses d'un Body laissait le Body vide). Ce sont maintenant des fonctions du Body (et `check`
-  signale tout solide encore construit sur une fonction du Body en dehors de lui), vérifiées contre la même opération faite directement (à 1e-6). Coque/évidement/dépouille
-  prennent `faces=[...]` sans interface, là où ils demandaient une sélection dans une fenêtre
-  inexistante.
-- **Révolution autour de l'axe nommé** : sur une esquisse du plan XZ, « autour de y » tournait
-  autour de Z alors que la réponse disait « around Y-axis » (la lettre désignait les axes propres
-  de l'esquisse). Révolution, rainure et hélice prennent maintenant les axes de la pièce, comme
-  les réseaux ; la normale de l'esquisse est refusée.
-- **« Pas d'interférence » inclut la pièce visée** : `require("Plaque", "no_interference",
-  objects=[goupilles])` ne comparait que les goupilles entre elles, si bien qu'une goupille trop
-  grosse dans la plaque passait.
-- **Une étape n'est pas la pièce** : `export`, `printability`, `fem_static` et `drawing_sheet` sur
-  une étape PartDesign (« Pad ») travaillaient sur cette étape : `export("Pad")` après perçage
-  écrivait la pièce sans ses trous. Ils la refusent maintenant en nommant le Body ; `check` et
-  `require` sur une étape le signalent.
-- **Une esquisse dont les contours se croisent est arrêtée avant le Pad** : un « 8 » (le Pad
-  faisait deux solides), deux contours qui se chevauchent (aire nulle) ou un trou qui coupe le
-  bord passaient OK.
-- **Une fonction laissée hors de la pièce donne FAIL** : un Body dont la Tip s'arrête avant sa
-  dernière fonction, ou avec une fonction supprimée, passait OK (un solide valide, sans le trou).
-- **Les fichiers arrivent dans le projet** : un fichier nommé sans dossier (`plan.dxf`,
-  `piece.stl`) atterrissait parmi le code du serveur ; il va maintenant dans le dossier du projet.
-- **Pièces lourdes** (mesuré sur une plaque percée de 1 600 trous) :
-  - épaisseur de paroi : 73 s → 1,1 s, et désormais exacte (les rayons rencontrent les vraies
-    surfaces, sans maillage ; les faces plus proches que ce qu'ont trouvé les rayons sont mesurées
-    deux à deux : un trou à 0,3 mm d'un bord était lu 0,81 mm ; et l'arête vive où deux trous se
-    croisent est un coin, pas une paroi : elle était lue 0,03 mm) ;
-  - `printability` : 129 s → 2 s ; `analyze` : 132 s → 2 s ; `render_views` : 48 s → 13 s ;
-  - détection des trous : 2,7 s → 0,2 s (même résultat, sans comparer chaque paire) ;
-  - `check` ne refait l'analyse OCCT, lente, qu'une fois par version de la forme ;
-  - les outils d'analyse attendent FreeCAD jusqu'à 5 minutes au lieu de 2, et un calcul
-    encore en cours est expliqué clairement au lieu d'un « no response » brut.
-- **Une entrée invalide reçoit une raison, pas une mauvaise réponse** (les 17 outils passés en
-  revue) : les exigences mal formées sont refusées (une faute de frappe n'affaiblit plus le
-  contrat), une exigence se remplace ou se retire (`replaces="S3"`), et un trou qui ne
-  coupe rien ou casse la pièce est annulé.
-- `fem_static` refuse d'emblée une taille de maille irréaliste (Gmsh moulinait d'abord) et indique
-  la taille qui convient.
-- **Une opération longue ne passe plus pour un plantage** : au-delà de 35 s, la base annonçait
-  « FreeCAD a planté » alors que FreeCAD headless calculait encore. Elle rend maintenant le
-  résultat (ou, au-delà de 2 minutes, un identifiant de tâche à interroger). Un vrai plantage
-  pendant un appel des couches est signalé comme tel, avec le moyen de s'en remettre (`recover`).
-- **Un redémarrage ne peut plus vous bloquer dehors** : quand deux FreeCAD démarraient en même temps
-  pendant un redémarrage, celui qui n'obtenait pas le port écrasait la clé d'accès de l'autre avant
-  de quitter, et tous les appels étaient ensuite refusés (« did not prove it is your FreeCAD »)
-  jusqu'au redémarrage suivant. La clé n'est plus écrite que par le FreeCAD qui tient le port, et
-  l'appel dont le FreeCAD a perdu la course obtient le gagnant au lieu de « FreeCAD exited during
-  start ».
-- **Un FreeCAD bloqué peut être redémarré par l'assistant** (`restart_freecad`, aussi sans
-  interface) : il enregistre ce qui peut l'être sans risque, quitte, et le lanceur en démarre un
-  neuf. Avant, seul un arrêt manuel du processus en venait à bout.
-- **Assemblages mesurés pièce par pièce** : la nomenclature compte une seule fois les pièces
-  identiques quelle que soit leur orientation, et sépare une pièce gauche de sa droite (mêmes
-  mesures, images miroir) ; trous, porte-à-faux et imprimabilité jugent
-  chaque pièce seule ; un plan ne met jamais de cote d'encombrement sur une vue iso (une
-  longueur projetée n'est pas une dimension).
-- **Retour arrière et récupération préservent le travail** : un checkpoint restauré ou une copie
-  récupérée se rouvre sous le nom du document, en copie de travail (un enregistrement n'écrase
-  plus le checkpoint), et après un plantage `recover` ramène le retour arrière choisi. Un retour
-  arrière ferme le document d'où vient le checkpoint (il fermait le document actif, quel qu'il
-  soit), et la copie de récupération la plus récente est la dernière écrite.
-- **Les réponses de la base disent ce qui a été fait** (revue suivante des outils de la base) : une
-  esquisse sur YZ suit le plan YZ de FreeCAD et `Fix` tient ; une dépouille pivote sur
-  `neutral_plane` ; une coque Part va vers l'intérieur ; un booléen qui ne laisse rien est refusé,
-  et fonctionne quand ses entrées partagent un conteneur ; une copie mise à l'échelle est exacte ;
-  déplacer/tourner un objet attaché passe par son AttachmentOffset ; les liaisons tableur et VarSet
-  vérifient les unités ; `save_document` demande `overwrite=true` pour remplacer un fichier ;
-  `validate_mesh` vérifie l'orientation. La nomenclature compte les sous-assemblages liés pièce par
-  pièce, les réseaux Draft, la source visible d'une symétrie et les liens d'un Assembly. Le
-  serveur accepte au plus 32 connexions et libère une connexion muette après 5 s ; un chemin de
-  sortie vers un partage réseau ou un périphérique est refusé. Les inerties URDF sortent en SI de
-  `urdf_aug.inertial_from_shape`. Les exports maillage et CAO d'une pièce placée dans un App::Part
-  déplacé tombent là où le document la montre, un App::Part ou un lien exporte sa forme réelle ; un
-  solide accompagné de faces isolées est mesuré seul.
+Vous décrivez une pièce ou un projet complet (« une plaque de 60 x 40 x 8 mm percée d'un trou
+débouchant de 6 mm au centre », « un robot gyropode qui porte 500 g »). L'agent le modélise, note
+vos exigences sous forme de contrôles, vérifie la géométrie après chaque étape, lance les
+simulations et s'arrête aux fichiers de fabrication. La fabrication et l'essai réel restent les
+vôtres ; vos mesures servent ensuite à recaler les modèles.
 
-## Nouveautés de la 2.1
-- **Calcul de résistance** (`fem_static`, CalculiX) : déplacement, contrainte de von Mises et
-  coefficient de sécurité, avec un verdict. Une poutre encastrée tombe à 0,3 % de F·L³/3EI.
-- **Images sans interface** (`render_views`) : vues face, dessus, droite et iso ombrées, en une
-  image.
-- **Plusieurs projets en parallèle** (`project_init` n'écrase jamais, `project_switch`) et
-  **recettes vérifiées** (`recipe`) : une conception n'est gardée que si son contrat est OK.
-- **Plus sûr par construction** :
-  - FreeCAD prouve qu'il connaît la clé avant tout envoi (défi HMAC) ;
-  - les outils CAM (G-code machine) sont coupés sauf activation explicite ;
-  - les outils inutilisables sous Windows sont masqués (environ 2 200 tokens économisés par
-    session).
-- **Base mise à jour en v8.3.0 de blwfish**, nos corrections conservées. Aussi corrigés dans la
-  base :
-  - congés et chanfreins sans interface, avec arêtes nommées ;
-  - tous les chanfreins hors Body ;
-  - suivi des crashs sous Windows ;
-  - messages clairs au lieu d'erreurs Python sans interface, trouvés en passant en revue les 190
-    opérations.
-- **CI Windows** : à chaque envoi, installation du FreeCAD 1.1.1 officiel et passage des 36 tests,
-  aucun ignoré.
+## Ce qui est couvert
 
-## Nouveautés de la 2.0
-- **Le serveur de base fait partie du projet.** blwfish/freecad-mcp v8.3.0 est intégré dans
-  `server/freecad-mcp/` (git subtree) : corrigé ici, et toujours capable de récupérer les mises à
-  jour d'origine (`python install/bootstrap.py --update-base`). Corrigés : trous dans un Body
-  PartDesign, verdict « entièrement contrainte » des esquisses, réponses trop grosses qui bloquaient
-  2 minutes ([`CHANGES-NikeTheBee.md`](server/freecad-mcp/CHANGES-NikeTheBee.md)).
-- **Couche de fiabilité** (`freecad-layers`, 17 outils) : verdicts OK/FAIL/UNKNOWN, contrat de
-  conception, analyse de pièce, **vrai calcul de résistance (CalculiX)**, checkpoints,
-  sauvegarde/récupération, relance supervisée de FreeCAD, anti-usurpation du port, et FreeCAD
-  prouve son identité avant toute commande.
-- **Nouvelle licence** : PolyForm Noncommercial (libre d'utiliser et modifier, interdit de vendre).
-- La version 1 reste disponible, inchangée :
-  [NikeTheBee/mcp-freecad](https://github.com/NikeTheBee/mcp-freecad).
+| Domaine | Contenu |
+|---|---|
+| CAO | PartDesign, esquisses, vrais perçages, assemblages et liaisons, variantes par tableur, pièces normalisées (vis, écrous, rondelles ISO), plans TechDraw vers DXF, nomenclature et notice de montage |
+| Contrôles | verdicts géométriques, contrat de conception (cotes, perçages, masse, paroi, interférences), imprimabilité, fabricabilité, points de reprise et récupération après plantage |
+| Structures | CalculiX en statique, modes propres, flambage, thermique et thermomécanique ; fatigue ; stratifiés composites ; propagation de fissure |
+| Fluides | SU2, Elmer, OpenFOAM 12 (en série ou en MPI sur vos cœurs), profils, ailes, tuyères, combustion |
+| Aéro et espace | vol de fusée (RocketPy, OpenRocket), flottement et divergence, POGO, OpenVSP, orbites et GMAT, optimisation de trajectoire (dymos), cycles de turboréacteur (pyCycle) |
+| Électronique | SPICE, batteries, aimants, dimensionnement des câbles, bilan de puissance, pistes / vias / impédance de circuit imprimé, ERC de netlist, faisceaux WireViz, KiCad 10 (DRC, Gerber, STEP) |
+| Robotique | dynamique multicorps (MuJoCo, Pinocchio), commande, capteurs (bruit d'Allan, ADC, Kalman), moteurs à courant continu, ArduPilot SITL, Gazebo, ROS 2 |
+| IA et microprogramme | réseaux de neurones de pilotage et de décision (apprentissage supervisé et par renforcement, export ONNX), microprogramme STM32 dans Renode, et ce microprogramme qui pilote le robot simulé en boucle fermée |
+| Marin, sol | hydrostatique, propulseurs, coques sous pression, joints toriques, eaux souterraines et sols (OpenGeoSys) |
 
-## Objectif : l'IA locale d'abord
-Le but final est la CAO pilotée par des modèles d'IA **locaux**. L'architecture repose sur **MCP**,
-un protocole ouvert : n'importe quel agent MCP peut la piloter. Les modèles frontier (ex. Claude
-Code) servent de client de référence en attendant.
+L'atelier compte 29 adaptateurs et environ 170 cas de référence. Un type de calcul ne tourne qu'une
+fois ses cas de référence validés (bancs d'essai de type NAFEMS, formules exactes, valeurs
+publiées). Il est revérifié dès que son code ou son environnement verrouillé change.
 
-## Fonctionnement
+## Comment tout s'articule
+
 ```
-Vous (langage naturel)
-  → client IA (Claude Code / Claude Desktop / tout client MCP)
-    ├─ `freecad`         lanceur (démarre/surveille FreeCAD, refuse un port usurpé)
-    │                      → bridge freecad-mcp (blwfish v8.3.0, intégré + corrigé, ~39 outils)
-    └─ `freecad-layers`  18 outils de fiabilité : project_status · project_init · project_switch · recipe ·
-                          require · check · analyze · fem_static · render_views ·
-                          check_assembly · printability · export · record_step · checkpoint ·
-                          recover · bill_of_materials · drawing_sheet · pd_hole
-         → FreeCAD 1.1 headless sur localhost:23456 (jeton) + ateliers greffés
+vous, en langage courant
+  -> tout client MCP (harness en ligne de commande, Cursor, VS Code, Codex, Gemini CLI, LM Studio, Continue...)
+     |- freecad          le lanceur surveille un FreeCAD sans interface (local uniquement, jeton)
+     |                   et sert les outils de modélisation de la base freecad-mcp intégrée
+     '- freecad-layers   contrôles, contrat, export, simulate, study, skills
+          -> le lanceur de l'atelier démarre chaque solveur dans son propre environnement verrouillé
 ```
-- **Le code décide, pas l'IA.** `check` répond `OK`, `FAIL` ou `UNKNOWN` (un contrôle qui n'a pas pu
-  tourner n'est jamais présenté comme OK), avec les mesures du noyau et vos exigences (encombrement,
-  trous et positions, masse, épaisseur de paroi, interférences).
-- **Rien ne se perd.** Mémoire projet robuste aux sessions et aux écritures simultanées, copie de
-  secours après chaque étape validée, checkpoints rechargés depuis le disque, FreeCAD relancé
-  immédiatement après un crash.
-- **Sobre en tokens.** Les outils de fiabilité coûtent ~3 300 tokens de schéma ; réponses en texte
-  court ; pas de capture d'écran par défaut.
 
-## Installation (une commande, Windows)
+Deux choses gardent la consommation de tokens basse. Les résultats sont des verdicts courts avec
+quelques chiffres ; les journaux complets restent sur le disque. Les schémas d'outils sont
+compacts : l'ensemble coûte environ 15 000 tokens au démarrage d'une session, et un test fait
+échouer la suite au-delà de 15 500. Les connaissances métier sont dans `skills/` et ne sont lues
+qu'au besoin, par un outil `skill`, des ressources MCP ou un prompt, de la même façon dans tous les
+clients.
+
+## Installation (Windows)
+
 ```
 git clone https://github.com/NikeTheBee/mcp-freecad-v2 "MCP FREECAD" && cd "MCP FREECAD"
 python install/bootstrap.py --with-grafts
+powershell -ExecutionPolicy Bypass -File install\install.ps1 -Home D:\Atelier -Packs tout -Scan
 ```
-Prérequis : **FreeCAD 1.1.x**, **Python 3.10+**, **git**, un client MCP. Le serveur de base est livré
-dans le dépôt ; l'installeur fige les greffes et `mcp-agent-notes` sur un commit et borne les autres paquets
-Python par version (`mcp>=2.2,<3`, `psutil>=6,<8`...), crée un environnement Python dédié (`~/.freecad-mcp/venv`, rien dans
-votre Python système), enregistre les deux serveurs MCP et lance les tests. Il s'arrête à la
-première erreur et n'écrase jamais une configuration Claude Desktop illisible. Relançable sans risque.
 
-## Vérifier
+`bootstrap.py` prépare la partie MCP : un environnement Python dédié, les deux serveurs
+enregistrés, puis les tests. Il s'arrête à la première erreur et n'écrase jamais une
+configuration client qu'il ne sait pas relire.
+
+`install.ps1` construit l'atelier dans le dossier choisi (`-Home`), avec des téléchargements
+épinglés et vérifiés par SHA256, et des environnements pixi verrouillés. Quelques comportements à
+connaître :
+
+- `-Packs` choisit les domaines : socle, fluides, fluides-plus, opt, air, fusee, espace, terre,
+  soussol, marin, elec, embarque, fab, outillage, ros, ia, ou `tout` pour tous.
+- `-Scan` demande d'abord votre accord, puis relève le processeur, la mémoire, la carte graphique
+  et le disque libre. Les téléchargements et le profil de calcul par défaut en découlent : par
+  exemple, la version CUDA de l'environnement IA n'est ajoutée que pour une carte NVIDIA avec un
+  pilote assez récent. Rien ne quitte la machine.
+- Avant tout téléchargement, l'installeur cherche ce qui est déjà présent, sur tous les disques.
+  Une copie de la même version est proposée à la réutilisation ; une autre version est seulement
+  signalée. Les paquets communs à plusieurs environnements ne sont stockés qu'une fois.
+- Avant de télécharger, il affiche la taille totale et demande confirmation.
+
+Pour un autre client que celui trouvé par le bootstrap :
+`python install/mcp_clients.py --client cursor --write`. Les autres clients sont vscode, codex,
+gemini, lmstudio, continue, windsurf et desktop-harness. Sans `--write`, la configuration est
+seulement affichée.
+
+## Calcul : CPU, GPU ou les deux
+
+Toute simulation accepte `device` : `cpu`, `gpu`, ou `both` (le réseau s'entraîne sur le GPU
+pendant que la physique tourne sur les cœurs). Le choix par défaut vient du scan matériel ; sans
+scan, tout tourne sur le CPU. OpenFOAM prend `cpus` pour le nombre de rangs MPI, et CalculiX
+utilise les threads du profil.
+
+## Règles de sécurité appliquées par le code
+
+- FreeCAD et chaque solveur n'écoutent que sur la machine locale ; un processus qui ouvre autre
+  chose est arrêté.
+- Aucun G-code machine n'est jamais écrit. Le microprogramme tourne dans un émulateur, et une
+  politique entraînée sort en fichier ONNX. Flasher une carte, commander des pièces ou faire
+  bouger une machine reste une action humaine.
+- Les fichiers fournis qui pourraient exécuter du code sont refusés : dictionnaires OpenFOAM qui
+  compilent du C++, modèles sérialisés par pickle, inclusions MJCF, extensions KiCad.
+- La sortie des outils est traitée comme une donnée, jamais comme une consigne pour l'agent.
+
+Le détail est dans [SECURITY.md](SECURITY.md) et [docs/AUDIT_CYBER_2026-11-21.md](docs/AUDIT_CYBER_2026-11-21.md).
+
+## Tests
+
 ```
 python install/run_all_tests.py
 ```
-42 tests : les pièges de l'audit (verdicts qui passaient sur des pièces fausses), couches, greffes,
-lanceur (authentification, relance après crash, refus d'un port usurpé) et boucles MCP complètes —
-sur une instance FreeCAD **isolée** (port 23499), jamais sur votre instance réelle. Un test ignoré
-s'affiche SKIP, jamais comme réussi. La base intégrée garde aussi ses ~2 400 tests unitaires
+
+La suite compte 58 tests. Les tests de bout en bout utilisent un FreeCAD isolé (port 23499,
+dossier privé), jamais celui en service. Ils couvrent :
+- les pièges relevés à l'audit d'octobre ;
+- les couches et le lanceur ;
+- des boucles MCP complètes depuis un client nu ;
+- les cas de référence des adaptateurs rapides ;
+- le portail cyber et le budget de tokens.
+
+Un test sauté s'affiche SKIP, jamais PASS. La base intégrée garde ses propres tests unitaires
 (`pytest tests/unit` dans `server/freecad-mcp`).
 
-## Capacités et maturité
-**Stable** = tests d'exactitude (valeurs connues + pièges). **Bêta** = testé de bout en bout, limites
-documentées. **Expérimental** = marche sur les cas testés seulement.
-
-| Domaine | Capacité | Maturité |
-|---|---|---|
-| Fiabilité | Verdicts géométriques (recalcul périmé, auto-intersection, interférence), contrat de conception, analyse de pièce (trous, parois), mémoire projet, checkpoints, sauvegarde auto | **Stable** |
-| Organisation | Plusieurs projets en parallèle (`project_init` n'écrase jamais, `project_switch`) ; recettes vérifiées (une conception n'est gardée que si son contrat est OK) | **Bêta** |
-| Modélisation | PartDesign (esquisse, Pad/Pocket, vrais trous dans le Body), variantes par feuille de calcul | **Stable** |
-| Fabrication | Export STL/3MF/STEP/IGES seulement après `check` OK, fichier relu et comparé au solide · imprimabilité FDM (plateau, parois, porte-à-faux) · réparation de maillage | **Stable** |
-| Documentation | Nomenclature (vraies pièces, liens, CSV) | **Stable** |
-| Contrôle visuel | `render_views` : vues face/dessus/droite/iso ombrées en une image, sans interface, à la demande | **Bêta** |
-| Plans 2D | Vues TechDraw, échelle ISO auto, contrôle de mise en page, cotes d'encombrement → DXF | **Bêta** (PDF via l'interface) |
-| Mécanismes | Assemblages (placement), engrenages droits, ajustements, cinématique (bielle-manivelle, quatre barres) | **Bêta** |
-| Calcul de structure | `fem_static` : CalculiX statique linéaire, déplacement, von Mises, coefficient de sécurité, contrôle de convergence (F·L³/3EI à 0,3 % près) | **Bêta** (élastique linéaire) |
-| Analyse | Dimensionnement drone · stabilité fusée (Barrowman) | **Expérimental** |
-| Greffes | Rocket · AirPlaneDesign (cœur headless) · CROSS URDF/xacro + package ROS 2 | **Expérimental** |
-| CAM / G-code | — | **Retiré** : l'ancienne couche produisait du G-code dangereux. Exporter en STEP et programmer dans un outil de FAO maîtrisé. |
-| Cinématique inverse | — | **Retirée** : nécessite Pinocchio, indisponible sous Windows. |
-| CFD | — | Non inclus : export pour un cas OpenFOAM externe (voir `skill-drone`). |
-
-Connaissance métier : [`skills/`](skills), chargée à la demande.
-
 ## Documentation
-- [`docs/AUDIT_2026-10-11.md`](docs/AUDIT_2026-10-11.md) — audit complet, résultats, plan de réparation.
-- [`SECURITY.md`](SECURITY.md) · [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md) ·
-  [`docs/CAHIER_DES_CHARGES.md`](docs/CAHIER_DES_CHARGES.md) (spécification d'origine).
+
+- [AGENTS.md](AGENTS.md) : les règles que suit tout agent, et la carte du dépôt (en anglais).
+- [docs/FEUILLE_DE_ROUTE_ATELIER.md](docs/FEUILLE_DE_ROUTE_ATELIER.md) : feuille de route de l'atelier, outils et état.
+- [SECURITY.md](SECURITY.md) : modèle de confiance, chaîne d'approvisionnement, ce qui n'est pas protégé.
+- [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md) : risques de version et liste de contrôle des mises à jour.
+- [CHANGELOG.md](CHANGELOG.md) : historique avant l'atelier (en anglais).
+- `skills/<domaine>/SKILL.md` : paramètres, limites et validation de chaque domaine.
 
 ## Licence
-[PolyForm Noncommercial 1.0.0](LICENSE) © 2026 NikeTheBee — chacun est libre d'**utiliser,
-modifier et partager** pour tout usage non commercial ; **le vendre ou tout usage commercial**
-demande une autorisation écrite. Gardez la ligne `Required Notice` de [`NOTICE`](NOTICE) et les
-crédits de [`CREDITS.md`](CREDITS.md). Exception : `server/freecad-mcp/` (blwfish/freecad-mcp,
-modifié) reste sous **LGPL-2.1-or-later**. FreeCAD et les ateliers greffés gardent leurs propres
-licences (LGPL-2.1, non inclus ici).
+
+[PolyForm Noncommercial 1.0.0](LICENSE), © 2026 NikeTheBee. Libre d'utilisation, de modification et
+de partage pour tout usage non commercial ; la vente ou tout usage commercial demande une
+autorisation écrite. Conservez la `Required Notice` de [NOTICE](NOTICE) et les crédits de
+[CREDITS.md](CREDITS.md).
+
+Deux exceptions :
+- `server/freecad-mcp/` (blwfish/freecad-mcp, modifié) reste sous LGPL-2.1 ou ultérieure.
+- FreeCAD, les ateliers greffés et chaque outil de l'atelier gardent leur propre licence. Ils sont
+  téléchargés par l'installeur, pas fournis ici.

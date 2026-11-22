@@ -14,7 +14,7 @@ Kinds:
 - terramech         rigid wheel on deformable soil: Bekker pressure-sinkage, Janosi-Hanamoto
                     shear: sinkage, motion resistance, thrust, drawbar pull, max slope
 
-Units: SI everywhere — m, kg, s, N, N m, rad (angles in params are rad unless the key ends in
+Units: SI everywhere - m, kg, s, N, N m, rad (angles in params are rad unless the key ends in
 _deg), rad/s, W, J, Pa. Soil: kc in N/m^(n+1), kphi in N/m^(n+2), c in Pa, K in m.
 
 Models: params["model"] = a path RELATIVE to the study folder `work` (.xml MJCF or .urdf); it and
@@ -359,7 +359,7 @@ def _multibody(inp: Dict[str, Any], work: Path):
             renderer = mujoco.Renderer(m, h_px, w_px)
             cam = mujoco.MjvCamera()
             mujoco.mjv_defaultFreeCamera(m, cam)
-        except Exception as e:  # noqa: BLE001 — no headless GL: say so, keep the numbers
+        except Exception as e:  # noqa: BLE001 - no headless GL: say so, keep the numbers
             renderer = None
             notes.append(f"video skipped: offscreen rendering unavailable ({type(e).__name__}: {str(e)[:120]})")
     frame_every = max(1, int(round(1.0 / (fps * dt))))
@@ -981,7 +981,7 @@ def _ellip_period(L: float, theta0: float) -> float:
 
 try:
     _T_LARGE = _ellip_period(1.0, 2.0)
-except Exception:  # noqa: BLE001 — scipy missing: the case fails instead of the import
+except Exception:  # noqa: BLE001 - scipy missing: the case fails instead of the import
     _T_LARGE = float("nan")
 # static 2-link arm, axes -y: tau2 = m2 g c2 cos(q1+q2); tau1 = g[(m1 c1 + m2 L1) cos q1 + m2 c2 cos(q1+q2)]
 _Q1, _Q2 = 0.3, -0.5

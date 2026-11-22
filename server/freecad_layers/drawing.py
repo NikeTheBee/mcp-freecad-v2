@@ -1,4 +1,4 @@
-"""TechDraw 2D drawings — pages, projected views, dimensions, export (GAP G1).
+"""TechDraw 2D drawings - pages, projected views, dimensions, export (GAP G1).
 
 Closes the workshop-deliverable gap (cahier des charges §4.6; the pince test
 required per-part 2D plans): build a dimensioned drawing page from any solid
@@ -10,7 +10,7 @@ Headless facts (probed on FreeCAD 1.1.1):
     PDF/SVG page export is GUI-coupled; for PDF, open the .FCStd in the GUI
     and print, or convert the DXF externally.
 
-No silent fallbacks (audit 2026-10-11, §2.2 D1–D3): an unknown view name or
+No silent fallbacks (audit 2026-10-11, §2.2 D1 - D3): an unknown view name or
 template is an error, the scale is chosen so views fit their slot, and
 verdict() FAILs when a view sticks out of the page.
 """
@@ -55,7 +55,7 @@ def _template_dir() -> Path:
 def _find_template(name: str = "A4_Landscape") -> str:
     """Resolve a template NAME to an SVG inside FreeCAD's template dir.
 
-    Secure by design: the caller's string is a name fragment, never a path —
+    Secure by design: the caller's string is a name fragment, never a path - 
     the result is re-anchored under the template dir (anti-traversal).
     Unknown names are an error, not a silent A4.
     """
@@ -171,7 +171,7 @@ def add_extent_dims(view, horizontal: bool = True, vertical: bool = True) -> Lis
             continue
         try:
             dims.append(TechDraw.makeExtentDim(view, [], direction))
-        except Exception as e:  # noqa: BLE001 — RuntimeError from OCCT
+        except Exception as e:  # noqa: BLE001 - RuntimeError from OCCT
             print(f"extent dim {'H' if direction == 0 else 'V'} skipped "
                   f"on {view.Name}: {e}")
     view.Document.recompute()
@@ -193,7 +193,7 @@ def export_dxf(page, path: str, overwrite: bool = False) -> str:
     """Export the full page (views + dimensions) to DXF. Headless-safe.
 
     Secure by design: extension enforced, resolved path, no silent clobber
-    (pass overwrite=True to replace an existing file) — see safe_out_path.
+    (pass overwrite=True to replace an existing file) - see safe_out_path.
     """
     out = safe_out_path(path, {".dxf"}, overwrite=overwrite)
     TechDraw.writeDXFPage(page, str(out))

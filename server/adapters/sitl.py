@@ -297,7 +297,7 @@ class Sitl:
                 except psutil.Error:
                     pass
             root.kill()
-        except Exception:  # noqa: BLE001 — already gone
+        except Exception:  # noqa: BLE001 - already gone
             pass
         try:
             self.proc.wait(10)

@@ -1,4 +1,4 @@
-"""MCP-protocol loop test (Part A) — the full client -> launcher -> bridge -> FreeCAD path.
+"""MCP-protocol loop test (Part A) - the full client -> launcher -> bridge -> FreeCAD path.
 
 Drives the registered entry point (server/launcher/mcp_freecad_launch.py) as a
 real MCP client over stdio, on an isolated FreeCAD (test port, private home):

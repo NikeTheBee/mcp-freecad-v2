@@ -13,7 +13,7 @@ Adapter module contract (one file per tool or family in server/adapters/):
     ]
 
 `inp["limits"]` = {"value_key": {"max": x} | {"min": x}}: the criteria the verdict is judged on.
-No criteria → UNKNOWN ("computed, nothing to judge against"), never a silent OK.
+No criteria -> UNKNOWN ("computed, nothing to judge against"), never a silent OK.
 """
 from __future__ import annotations
 
@@ -87,7 +87,7 @@ def judge(values: Dict[str, Any], limits: Optional[Dict[str, Dict[str, float]]])
         v = values.get(key)
         if not isinstance(v, (int, float)) or (isinstance(v, float) and not math.isfinite(v)):
             verdict = "UNKNOWN" if verdict == "OK" else verdict
-            lines.append(f"{key}: not computed → UNKNOWN")
+            lines.append(f"{key}: not computed -> UNKNOWN")
             continue
         ok = True
         if "max" in lim and v > float(lim["max"]):

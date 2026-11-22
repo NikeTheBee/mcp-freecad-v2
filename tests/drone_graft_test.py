@@ -13,7 +13,7 @@ import sys
 _repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WB_ROOT = os.path.join(_repo, "addons", "AirPlaneDesign")
 if not os.path.isdir(WB_ROOT):
-    sys.exit(f"AirPlaneDesign clone not found at {WB_ROOT} — see install/WINDOWS-SETUP.md")
+    sys.exit(f"AirPlaneDesign clone not found at {WB_ROOT} - see install/WINDOWS-SETUP.md")
 sys.path.insert(0, WB_ROOT)
 
 import types

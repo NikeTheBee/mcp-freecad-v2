@@ -1,4 +1,4 @@
-"""Part analysis — measured facts about a part (holes, walls, overhangs).
+"""Part analysis - measured facts about a part (holes, walls, overhangs).
 
 Deterministic measurements the AI compares with what the user asked for,
 instead of trusting its own reading of the model (audit 2026-10-11 §9:
@@ -127,7 +127,7 @@ def _bore(f, tol: float) -> Optional[tuple]:
     if s.TypeId in _FREEFORM:
         try:
             return _fitted_bore(f, tol)
-        except Exception:  # noqa: BLE001 — an unreadable face is simply not a bore
+        except Exception:  # noqa: BLE001 - an unreadable face is simply not a bore
             return None
     return None
 
@@ -365,7 +365,7 @@ def _closed_end(faces, o, a, r, t_end, side: float, edge_faces, outer) -> bool:
                     u, v = nb.Surface.parameter(q)
                     if nb.isInside(nb.Surface.value(u, v), 1e-6, True):
                         return True
-                except Exception:  # noqa: BLE001 — unreadable neighbour: say closed
+                except Exception:  # noqa: BLE001 - unreadable neighbour: say closed
                     return True
     return False
 
@@ -434,7 +434,7 @@ def _exit_distance(p, d, surfs, faces, lo, hi, limit, eps, tol):
                 u, v = surfs[j].parameter(q)
                 if faces[j].normalAt(u, v).dot(d) > 1e-9:   # leaving, not entering or grazing
                     limit, hit = t, int(j)
-        except Exception:  # noqa: BLE001 — counted and reported, never silent
+        except Exception:  # noqa: BLE001 - counted and reported, never silent
             errors += 1
     return limit, errors, hit
 
@@ -473,7 +473,7 @@ def _closest_walls(faces, lo, hi, limit: float, tol: float, adjacent: Optional[s
                 p1, p2 = pts[0]
                 n1 = fi.normalAt(*fi.Surface.parameter(p1))
                 n2 = fj.normalAt(*fj.Surface.parameter(p2))
-            except Exception:  # noqa: BLE001 — the sampled value stands
+            except Exception:  # noqa: BLE001 - the sampled value stands
                 continue
             if (p2 - p1).dot(n1) < 0 and (p1 - p2).dot(n2) < 0:     # material in between
                 best, where = d, (p1 + p2) * 0.5
@@ -636,7 +636,7 @@ def _face_overhang(f, up, limit: float, z_min: float) -> float:
         u, v = s.parameter(c)
         if np.dot(N[k], tuple(f.normalAt(u, v))) < 0:
             N = -N
-    except Exception:  # noqa: BLE001 — keep the triangulation's own winding
+    except Exception:  # noqa: BLE001 - keep the triangulation's own winding
         pass
     u_ = np.array((up.x, up.y, up.z))
     # vertex normals (area-weighted), then how far each vertex is inside the

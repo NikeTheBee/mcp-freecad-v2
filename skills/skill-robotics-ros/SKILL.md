@@ -1,6 +1,6 @@
 # skill-robotics-ros
 
-**Load when:** robots / ROS — defining links & joints, generating **URDF/xacro** robot descriptions.
+**Load when:** robots / ROS - defining links & joints, generating **URDF/xacro** robot descriptions.
 
 ## What this is
 The [CROSS workbench](https://github.com/galou/freecad.cross) (galou, cloned in `addons/freecad.cross`).
@@ -21,7 +21,7 @@ The high-level CROSS `Robot`/`Link`/`Joint` document objects are GUI-proxy-coupl
 build the URDF from the `urdf_utils` primitives below (which operate on plain FreeCAD objects).
 
 ## Generate URDF from geometry
-`urdf_utils` returns `xml.etree.ElementTree` elements (URDF is in **metres** — CROSS converts from mm):
+`urdf_utils` returns `xml.etree.ElementTree` elements (URDF is in **metres**: CROSS converts from mm):
 ```python
 import xml.etree.ElementTree as et
 robot = et.Element("robot", {"name": "demo_bot"})
@@ -32,13 +32,13 @@ urdf_aug.add_inertial(link, box.Shape, 7850.0)          # freecad_layers.urdf_au
 xml_str = et.tostring(robot, encoding="unicode")        # write to <name>.urdf
 ```
 Helpers: `urdf_geometry_box/cylinder/sphere`, `urdf_visual_from_*`, `urdf_collision_from_*`,
-`urdf_origin_from_placement` (mm → m, rpy = fixed-axis XYZ in radians), `urdf_*_mesh`.
+`urdf_origin_from_placement` (mm -> m, rpy = fixed-axis XYZ in radians), `urdf_*_mesh`.
 - `urdf_visual_mesh/urdf_collision_mesh` only **reference** `package://<pkg>/meshes/<file>`: they do
   not export the mesh and write no `scale`. Export it yourself into `meshes/`; an STL written by
   FreeCAD is in **mm**, so add `scale="0.001 0.001 0.001"` on the `<mesh>` element (otherwise the
   part is 1000× too big in RViz/Gazebo).
 
-## Inertial (mass, centre of mass, inertia) — never by hand
+## Inertial (mass, centre of mass, inertia) - never by hand
 `urdf_aug.add_inertial(link, shape, density_kg_m3, link_placement=None)` (or
 `inertial_from_shape` for the numbers) converts FreeCAD's mm units: `Shape.Volume` mm³,
 `Shape.CenterOfMass` mm, `Shape.MatrixOfInertia` = unit-density tensor in **mm⁵ about the centre of
@@ -74,13 +74,13 @@ To hand off to a ROS2 workspace, emit an `ament_cmake` package
 `robot_state_publisher`/`rviz2` deps) + `CMakeLists.txt` (installs `urdf/` + `launch/`) +
 `urdf/<pkg>.urdf`. No ROS2 runtime needed to *generate* it; `colcon build` it later in a workspace.
 
-## Inverse kinematics — not supported here
+## Inverse kinematics - not supported here
 CROSS's IK needs the Pinocchio binary package, which is not available in FreeCAD's or the bridge's
 Python on Windows; the former wrapper could never solve anything on the target OS and was removed
 (audit 2026-10-11, X4). Say so plainly. For IK, export the URDF and use MoveIt / KDL in a ROS 2
 workspace. Planar linkages (grippers, four-bars) are solved exactly by `skill-kinematics`.
 
-## ros2_control · sensors · Gazebo (generation only — §4.2)
+## ros2_control · sensors · Gazebo (generation only - §4.2)
 `server/freecad_layers/urdf_aug.py` augments the bare `<robot>` element for ROS 2 Jazzy (Iron+) /
 modern **Gazebo Sim** (`gz_ros2_control`, not Gazebo Classic; on Humble the plugin names are
 `ign_ros2_control…` and these do not load). Joint names are a **list**, never a bare string:
@@ -94,9 +94,9 @@ yaml_text = urdf_aug.controllers_yaml(["shoulder", "elbow"])     # ros2_controll
 print(urdf_aug.verdict(robot))                                   # compact check
 ```
 `verdict` appends `| WARN …` for a ros2_control joint that is not a movable `<joint>`, a sensor on
-an unknown link, or links without `<inertial>` — fix them, Gazebo fails or drops them silently.
+an unknown link, or links without `<inertial>`: fix them, Gazebo fails or drops them silently.
 Ship the YAML as `config/controllers.yaml` inside the ROS2 package (§ above). *Running* the
-sim still needs a ROS2+Gazebo install — we generate, the workspace consumes (§12).
+sim still needs a ROS2+Gazebo install - we generate, the workspace consumes (§12).
 
 ## Verify
 Assert the output contains `<robot`, each `<link>`, `<visual>/<collision>`, and the expected `<box size=>`
