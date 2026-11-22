@@ -131,6 +131,17 @@ Un test sauté s'affiche SKIP, jamais PASS. La base intégrée garde ses propres
 - [CHANGELOG.md](CHANGELOG.md) : historique avant l'atelier (en anglais).
 - `skills/<domaine>/SKILL.md` : paramètres, limites et validation de chaque domaine.
 
+## La suite
+
+Une version finale complète est prévue autour de CATIA V5 : la même tuyauterie entre une IA et les
+outils de CAO et de simulation, construite cette fois autour de CATIA. Le but est de matérialiser
+l'imagination. Elle s'adresse aux jeunes débutants qui ont des idées et un peu de temps, et qui
+veulent fabriquer pour le plaisir. Tout ce qu'il faut est déjà à portée de main : cartes Arduino,
+ESP32 et Raspberry Pi, moteurs et servomoteurs, capteurs en tout genre, cartes de commande de
+moteurs, et le reste, sans limite à ce qu'on peut imaginer. CATIA V5 est un logiciel commercial
+de Dassault Systèmes : cette version demandera donc une licence CATIA, et l'IA le pilotera par
+l'interface d'automatisation de CATIA sous Windows.
+
 ## Licence
 
 [PolyForm Noncommercial 1.0.0](LICENSE), © 2026 NikeTheBee. Libre d'utilisation, de modification et

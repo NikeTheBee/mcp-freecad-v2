@@ -126,6 +126,16 @@ A skipped test says SKIP, never PASS. The vendored base keeps its own unit tests
 - [CHANGELOG.md](CHANGELOG.md): history before the workshop.
 - `skills/<domain>/SKILL.md`: parameters, limits and validation of each domain.
 
+## What comes next
+
+A final, complete version is planned around CATIA V5: the same plumbing between an AI and the CAD
+and simulation tools, built this time around CATIA. The aim is to turn ideas into real objects. It
+is meant for young beginners who have ideas and a bit of free time, and who want to build things
+for fun. Everything they need is already within reach: Arduino, ESP32 and Raspberry Pi boards,
+motors and servos, sensors of every kind, motor driver boards, and so on, with no limit on what
+can be imagined. CATIA V5 is commercial software from Dassault Systemes, so that version will need
+a CATIA licence; the AI would drive it through CATIA's own automation interface on Windows.
+
 ## License
 
 [PolyForm Noncommercial 1.0.0](LICENSE), © 2026 NikeTheBee. You may use, modify and share it for
