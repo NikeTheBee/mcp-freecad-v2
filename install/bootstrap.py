@@ -289,8 +289,10 @@ def register_cli_harness(freecadcmd: Path, dry: bool) -> bool:
             continue
         subprocess.run([cli, "mcp", "remove", "-s", "user", name],
                        capture_output=True, text=True)
+        proj = os.environ.get("MCP_FREECAD_PROJECT_DIR")       # designs/studies elsewhere (e.g. D:)
         run([cli, "mcp", "add", "-s", "user", name,
              "-e", f"FREECAD_MCP_FREECAD_BIN={freecadcmd}",
+             *(["-e", f"MCP_FREECAD_PROJECT_DIR={proj}"] if proj else []),
              "--", VENV_PY, script], capture_output=True, text=True)
         log(f"registered `{name}` with the CLI harness (user scope)")
     return True
@@ -321,7 +323,9 @@ def register_desktop_harness(freecadcmd: Path, dry: bool) -> bool:
         data.setdefault("mcpServers", {})[name] = {
             "command": str(VENV_PY),
             "args": [str(script)],
-            "env": {"FREECAD_MCP_FREECAD_BIN": str(freecadcmd)},
+            "env": {"FREECAD_MCP_FREECAD_BIN": str(freecadcmd),
+                    **({"MCP_FREECAD_PROJECT_DIR": os.environ["MCP_FREECAD_PROJECT_DIR"]}
+                       if os.environ.get("MCP_FREECAD_PROJECT_DIR") else {})},
         }
     if dry:
         log(f"DRY: would update desktop harness config at {cfg}")

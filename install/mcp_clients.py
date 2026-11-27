@@ -61,7 +61,11 @@ def entries(style: str, home: Path) -> dict:
     py, fc = _python(home), _freecadcmd()
     out = {}
     for name, script in SERVERS.items():
-        e = {"command": py, "args": [str(script)], "env": {"FREECAD_MCP_FREECAD_BIN": fc}}
+        env = {"FREECAD_MCP_FREECAD_BIN": fc}
+        proj = os.environ.get("MCP_FREECAD_PROJECT_DIR")      # where designs, studies and autosaves go
+        if proj:
+            env["MCP_FREECAD_PROJECT_DIR"] = proj
+        e = {"command": py, "args": [str(script)], "env": env}
         if style == "typed":
             e = {"type": "stdio", **e}
         out[name] = e
@@ -142,7 +146,11 @@ def main() -> int:
     ap.add_argument("--client", default="generic", choices=sorted(CLIENTS) + ["generic", "all"])
     ap.add_argument("--write", action="store_true", help="merge into the client's config (backup kept)")
     ap.add_argument("--home", default=str(Path.home()), help="home folder (default: yours)")
+    ap.add_argument("--projects-dir", help="folder for the projects, studies and autosaves "
+                                           "(MCP_FREECAD_PROJECT_DIR); default: the repository")
     a = ap.parse_args()
+    if a.projects_dir:
+        os.environ["MCP_FREECAD_PROJECT_DIR"] = str(Path(a.projects_dir).resolve())
     home = Path(a.home)
     todo = sorted(CLIENTS) if a.client == "all" else [a.client]
     for c in todo:

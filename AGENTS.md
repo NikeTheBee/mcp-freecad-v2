@@ -26,7 +26,10 @@ docs/            spec, roadmap (FEUILLE_DE_ROUTE_ATELIER.md), audits
 projects/ checkpoints/ recovery/ project_state/ recipes/   runtime data (gitignored)
 ```
 Heavy files (tools, pixi environments, caches, validation results) live in the workshop home
-chosen at install (`install\install.ps1 -Home <dir>`), never in the repo.
+chosen at install (`install\install.ps1 -Home <dir>`), never in the repo. The designs, studies,
+checkpoints and autosaves go to `MCP_FREECAD_PROJECT_DIR` when it is set in the servers'
+environment (`install/mcp_clients.py --projects-dir <dir>`; no spaces, Renode needs that), else to
+the repository root.
 
 ## Stack
 - FreeCAD 1.1.4 portable under `<home>\tools\FreeCAD-1.1.4\` (`bin\freecad.exe` GUI,
