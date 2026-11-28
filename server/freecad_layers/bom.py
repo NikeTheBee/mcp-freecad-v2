@@ -47,8 +47,9 @@ def _label_stem(label: str) -> str:
 
 
 def _dup_free(label: str) -> str:
-    """'Bracket001' -> 'Bracket' (FreeCAD's own duplicate suffix); 'Fus_T1' unchanged."""
-    return re.sub(r"(?<=\D)\d{3}$", "", label) or label
+    """'Bracket001' -> 'Bracket' (FreeCAD's own duplicate suffix, zero-padded: 001..099);
+    'Fus_T1' and 'Controleur_F405' unchanged."""
+    return re.sub(r"(?<=\D)0\d\d$", "", label) or label
 
 
 def _is_container(o) -> bool:

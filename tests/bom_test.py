@@ -240,13 +240,14 @@ def main() -> int:
 
     # a single part keeps its whole label: digits that are part of the name are not a suffix
     d10 = App.newDocument("BOMNames")
-    for lab, (l, w, h) in (("Tube_0p6", (1, 2, 3)), ("Fus_T1", (4, 5, 6)), ("Fus_T2", (7, 8, 9))):
+    for lab, (l, w, h) in (("Tube_0p6", (1, 2, 3)), ("Fus_T1", (4, 5, 6)), ("Fus_T2", (7, 8, 9)),
+                           ("Controleur_F405", (2, 3, 4))):
         b = d10.addObject("Part::Box", "B")
         b.Label = lab
         b.Length, b.Width, b.Height = l, w, h
     d10.recompute()
     got = sorted(r["designation"] for r in bom.collect(d10))
-    assert got == ["Fus_T1", "Fus_T2", "Tube_0p6"], got
+    assert got == ["Controleur_F405", "Fus_T1", "Fus_T2", "Tube_0p6"], got
     print("single parts keep their full label: OK")
 
     print("BOM_OK")
