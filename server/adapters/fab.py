@@ -43,7 +43,8 @@ KINDS = {
                       "doc": "PrusaSlicer project 3MF with the user's profile, arranged; never G-code"},
 }
 MODEL_EXT = (".stl", ".3mf", ".obj", ".step", ".stp")
-_COMMON_KEYS = {"kind", "files", "geometry", "face_info", "limits", "timeout_s"}
+_COMMON_KEYS = {"kind", "files", "geometry", "face_info", "limits", "timeout_s",
+                "device"}                       # the runner adds the compute choice to every input
 _ALLOWED = {
     "print_check": _COMMON_KEYS | {"model", "models", "bed_mm"},
     "print_project": _COMMON_KEYS | {"model", "models", "profile", "copies", "rotate_x_deg",

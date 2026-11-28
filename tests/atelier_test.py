@@ -13,6 +13,7 @@ ATELIER_SKIP. Sentinel: ATELIER_OK
 """
 import asyncio
 import json
+import re
 import os
 import shutil
 import sys
@@ -95,7 +96,8 @@ async def run(inst: Instance, project: str, home: str) -> None:
             assert txt.startswith("OK fem_static"), txt
             uz = _val(txt, "max_abs_uz_mm")
             assert abs(uz - 0.96) / 0.96 < 0.03, uz            # Timoshenko: 0.9597 mm
-            assert "8/8 reference cases match" in txt, txt
+            m = re.search(r"(\d+)/(\d+) reference cases match", txt)   # every case of the adapter passed
+            assert m and m.group(1) == m.group(2) and int(m.group(2)) >= 8, txt
             txt = await call("simulate", kind="fem_static", target="Body", params=load, study="beam")
             assert "cached" in txt and abs(_val(txt, "max_abs_uz_mm") - uz) < 1e-12, txt
             st = json.loads(await call("study", action="status", name="beam"))

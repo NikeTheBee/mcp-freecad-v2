@@ -219,7 +219,15 @@ def _deck(kind: str, inp: Dict[str, Any], tags, xyz, tets, surfaces, bbox, face_
     if thermal or inp.get("delta_T"):
         lines += ["*INITIAL CONDITIONS, TYPE=TEMPERATURE", f"NALL,{t0}"]
     # step
-    lines.append("*STEP")
+    prestress = kind == "fem_modal" and bool(inp.get("rotation"))
+    if prestress:
+        # spinning part: a geometrically nonlinear static step under the centrifugal load (stress
+        # stiffening and spin softening), then the frequencies about that state (rotating frame)
+        lines += ["*STEP, NLGEOM", "*STATIC"]
+        lines += _loads(inp, surfaces, bbox, face_info, face_map, tets, xyz, nid)
+        lines += ["*END STEP", "*STEP, PERTURBATION"]
+    else:
+        lines.append("*STEP")
     if kind == "fem_modal":
         lines += ["*FREQUENCY", str(int(inp.get("n_modes", 6)))]
     elif kind == "fem_buckling":
@@ -410,7 +418,16 @@ def run(kind: str, inp: Dict[str, Any], work: Path) -> Dict[str, Any]:
             raise RuntimeError("no eigenfrequency in CalculiX output")
         values["freqs_Hz"] = [round(f, 4) for f in freqs]
         values["f1_Hz"] = freqs[0]
+        if len(freqs) > 1:
+            values["f2_Hz"] = freqs[1]
         head = f"modal: f1 = {freqs[0]:.2f} Hz; " + ", ".join(f"{f:.1f}" for f in freqs[:6]) + " Hz"
+        if inp.get("rotation"):
+            rpm = float(inp["rotation"]["rpm"])
+            values["prestress_rpm"] = rpm
+            values["rotation_Hz"] = rpm / 60.0
+            head += f" spinning at {rpm:g} rpm (rotating frame, centrifugal prestress)"
+            notes.append("frequencies in the rotating frame; compare them with the engine orders "
+                         "k x rpm/60 (Campbell)")
     elif kind == "fem_buckling":
         rows = _dat_table(dat, "B U C K L I N G   F A C T O R   O U T P U T")
         facs = [r[1] for r in rows if len(r) >= 2]
@@ -512,6 +529,8 @@ _E, _NU = 210000.0, 0.3
 _G = _E / (2 * (1 + _NU))
 _K = 10 * (1 + _NU) / (12 + 11 * _NU)          # Timoshenko shear coefficient, rectangle
 _I20 = 20 * 20 ** 3 / 12
+# clamped-free 300 x 10 x 10 mm steel beam, first bending mode (Euler-Bernoulli)
+_F0_300 = 1.87510407 ** 2 / (2 * math.pi) * math.sqrt(_E * 1e6 * (0.01 ** 4 / 12) / (7850 * 1e-4 * 0.3 ** 4))
 _STEEL = {"E": _E, "nu": _NU, "rho": 7850, "alpha": 1.2e-5, "k": 50, "cp": 470, "yield": 235}
 REFERENCES = [
     {   # tip force: Timoshenko beam (bending + shear)
@@ -544,6 +563,14 @@ REFERENCES = [
         "inp": {"box": [200, 20, 20], "material": _STEEL, "fixed": ["xmin"], "mesh_size": 5, "n_modes": 4},
         "expect": {"f1_Hz": [1.87510407 ** 2 / (2 * math.pi)
                              * math.sqrt(_E * 1e6 * (0.02 ** 4 / 12) / (7850 * 4e-4 * 0.2 ** 4)), 0.03]},
+    },
+    {   # rotating uniform cantilever, root on the axis (Southwell): flap f^2 = f0^2 + 1.193 W^2,
+        # lead-lag (in the plane of rotation) f^2 = f0^2 + (1.193 - 1) W^2; W = 100 Hz (6000 rpm)
+        "name": "rotating_cantilever_modal", "kind": "fem_modal", "setup": "box_geometry",
+        "inp": {"box": [300, 10, 10], "material": _STEEL, "fixed": ["xmin"], "mesh_size": 2.5,
+                "n_modes": 4, "rotation": {"rpm": 6000, "point": [0, 0, 0], "axis": [0, 0, 1]}},
+        "expect": {"f1_Hz": [math.sqrt(_F0_300 ** 2 + 0.193 * 100.0 ** 2), 0.03],
+                   "f2_Hz": [math.sqrt(_F0_300 ** 2 + 1.193 * 100.0 ** 2), 0.03]},
     },
     {   # Euler column clamped-free under unit axial compression: P = pi^2 E I / (4 L^2)
         "name": "euler_column", "kind": "fem_buckling", "setup": "box_geometry",

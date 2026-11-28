@@ -28,7 +28,7 @@ cache key (a changed log is recomputed). Paths outside the project are refused.
 | kind | params (besides `limits`) | main values |
 |---|---|---|
 | `fem_static` | `fixed` [faces], `loads` [{type force, faces, N:[x,y,z]} \| {type pressure, faces, MPa}], `gravity` [m/s²], `rotation` {rpm, axis, point}, `delta_T` + `initial_T` (dilatation), `material`, `mesh_size` mm | `max_disp_mm`, `max_abs_u{x,y,z}_mm`, `max_vm_MPa`, `max_vm_away_MPa`, `safety_factor`, `mass_kg` |
-| `fem_modal` | `fixed`, `material` (needs rho), `n_modes` | `f1_Hz`, `freqs_Hz` |
+| `fem_modal` | `fixed`, `material` (needs rho), `n_modes`, `rotation` {rpm, point, axis} for a spinning part (centrifugal prestress: stress stiffening and spin softening, rotating frame) | `f1_Hz`, `f2_Hz`, `freqs_Hz`, `prestress_rpm` |
 | `fem_buckling` | `fixed`, `loads` (the reference load), `n_modes`, `knockdown` | `buckling_factor` (× loads), `buckling_factor_knocked_down` |
 | `fem_thermal` | `temperatures` [{faces, C}], `heat_flux` [{faces, W_m2}], `convection` [{faces, h_W_m2K, T_inf_C}], `report_faces` | `T_max_C`, `T_min_C`, `T_<face>_C` |
 | `fem_thermomech` | thermal inputs + `fixed`, `initial_T` (stress-free temperature) | displacements, stresses, temperatures |
@@ -73,3 +73,11 @@ iteration. Each run is listed (the proof). No feasible design in the ranges -> c
 ## Never
 - Command a real machine, vehicle, robot or printer; flash a real board; write machine G-code.
 - Invent a material property, a datasheet limit or a test value: unsourced -> UNKNOWN.
+
+### Spinning parts: Campbell
+A rotor's blades stiffen with speed: run `fem_modal` at rest and with `rotation` near the top speed,
+then f(rpm)^2 = f0^2 + S (rpm/60)^2 gives the Southwell coefficient S. Engine order k crosses the
+mode at rpm = 60 f0 / sqrt(k^2 - S). Check the low orders (inlet distortion, 1-3) against the top
+speed and the vane count of the stator (its order) against the cruise speed; keep >= 5-10 % away.
+Validated on the rotating uniform cantilever (Southwell 1.193 flap, 0.193 lead-lag): 102.1 / 142.9
+Hz against 102.7 / 143.4 Hz.
