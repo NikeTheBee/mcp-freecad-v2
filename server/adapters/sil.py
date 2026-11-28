@@ -223,7 +223,7 @@ def _foreign_sockets(pid: int) -> List[str]:
 
 def _sil_run(inp: Dict[str, Any], work: Path) -> Dict[str, Any]:
     import numpy as np
-    from _renode_ext import Listener, RenodeError
+    from _renode_ext import Listener, RenodeError, renode_env
     plant = _plant(inp, work)
     m, meta, names_in, names_out, act, sub, dt, steps, noise, lsb = plant
     b = _firmware(inp, work)
@@ -242,7 +242,7 @@ def _sil_run(inp: Dict[str, Any], work: Path) -> Dict[str, Any]:
     flags = 0x08000000 if os.name == "nt" else 0
     log = open(root / "renode.log", "w")
     proc = subprocess.Popen([tool("renode"), "--disable-gui", "-P", "-1", "-p", "-e", f"include @{r}/run.resc"],
-                            cwd=str(root), stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+                            cwd=str(root), env=renode_env(root), stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
                             creationflags=flags)
     t0 = time.time()
     rn = None

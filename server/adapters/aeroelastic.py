@@ -381,7 +381,7 @@ class _Aero:
         return self.fn(k, v)
 
 
-def _flutter(m, kk, zs, als, y, b, a, rho, speeds, aero_kind, n_chord, mach):
+def _flutter(m, kk, zs, als, y, b, a, rho, speeds, aero_kind, n_chord, mach, g_noise=0.01):
     if aero_kind == "dlm":
         def fn(k, v):
             return _gen_aero_dlm(k, v, b, a, rho, y, zs, als, n_chord, mach)
@@ -405,8 +405,11 @@ def _flutter(m, kk, zs, als, y, b, a, rho, speeds, aero_kind, n_chord, mach):
                 table.append((v, n, om, g))
         if prev is not None and flutter is None:
             for n, ((om0, g0, _), (om1, g1, _)) in enumerate(zip(prev, pts)):
+                # a real crossing leaves a clearly damped state or clearly goes unstable; a mode
+                # hovering at |g| < g_noise (almost no aerodynamic damping at low dynamic
+                # pressure, p-k converged to its tolerance) is numerical noise, not flutter
                 if (math.isfinite(g0) and math.isfinite(g1) and g0 < 0.0 <= g1
-                        and om1 > 1e-6):
+                        and (g0 < -g_noise or g1 >= g_noise) and om1 > 1e-6):
                     t = (0.0 - g0) / (g1 - g0)
                     vf = v_prev + t * (v - v_prev)
                     omf = om0 + t * (om1 - om0)
@@ -476,14 +479,19 @@ def _run_flutter(inp: Dict[str, Any], work: Path) -> Dict[str, Any]:
         raise ValueError("need v_max > v_min and 5 <= n_speeds <= 400")
     speeds = list(np.linspace(v_min, v_max, n_v))
 
+    g_noise = _f(inp.get("g_noise", 0.01))
     flutter, table, w0 = _flutter(m, kk, zs, als, y, b, a, rho, speeds,
-                                  aero_kind, n_chord, mach)
+                                  aero_kind, n_chord, mach, g_noise)
     values: Dict[str, Any] = {
         "natural_frequencies_rad_s": [round(float(w), 4) for w in w0],
         "natural_frequencies_hz": [round(float(w) / (2 * math.pi), 4) for w in w0],
         "aero": aero_kind, "model": model, "rho_kg_m3": rho,
         "speed_range_m_s": [v_min, v_max],
     }
+    hover = sorted({n + 1 for (_v, n, _om, g) in table if 0.0 <= g < g_noise}
+                   - ({int(flutter[2]) + 1} if flutter is not None else set()))
+    if hover:
+        values["lightly_damped_modes"] = hover
     if flutter is not None:
         step = (v_max - v_min) / (n_v - 1)
         vf, omf = _refine_flutter(m, kk, zs, als, y, b, a, rho,
@@ -525,6 +533,9 @@ def _run_flutter(inp: Dict[str, Any], work: Path) -> Dict[str, Any]:
                  if aero_kind == "theodorsen" else
                  f"DLM: subsonic thin surface at M = {mach:g}, not valid transonically")
     notes.append("g is the REQUIRED structural damping of the p-k method, not a damping ratio")
+    if values.get("lightly_damped_modes"):
+        notes.append(f"modes {values['lightly_damped_modes']} hover at 0 <= g < {g_noise:g} (little "
+                     "aerodynamic damping, p-k noise): not flutter, but they rely on structural damping")
     return result(values, inp.get("limits"), head, files=[str(out)], notes=notes)
 
 

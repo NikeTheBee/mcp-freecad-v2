@@ -13,6 +13,10 @@ Kinds:
 - vsp_wing   build a parametric wing (span, chord, taper, sweep, dihedral, twist, NACA section),
              run a VSPAERO alpha sweep, and optionally export STEP and STL for FreeCAD
 - vsp_model  the same sweep on YOUR OpenVSP model (`params.files = ["aircraft.vsp3"]`)
+- vsp_aircraft  a whole small aircraft from a few numbers: lofted fuselage (radius law, nose
+             ogive, open nozzle end), swept wing, horizontal tail, vertical fin, optional
+             dorsal intake fairing; STEP / STL / .vsp3 for FreeCAD and the OpenVSP GUI, and a
+             VSPAERO sweep with the centre of gravity: neutral point and static margin
 
 Units: SI. Lengths m, areas m^2, angles in degrees (`sweep_deg`, `alpha_deg`...). `span_m` is the
 FULL span of the mirrored wing; OpenVSP's own section parameter is the half span, which the
@@ -57,6 +61,9 @@ KINDS = {
                         "slope, span efficiency; optional STEP/STL export for FreeCAD"},
     "vsp_model": {"timeout": 900,
                   "doc": "VSPAERO alpha sweep on your own .vsp3 model (params.files)"},
+    "vsp_aircraft": {"timeout": 1200,
+                     "doc": "fuselage + swept wing + tails (+ intake) from a few numbers: STEP/STL/"
+                            ".vsp3, VSPAERO sweep, neutral point and static margin for a CG"},
 }
 
 
@@ -220,6 +227,255 @@ void main()
 }}
 """
     return script, sref, bref, cref
+
+
+def _surface(name: str, p: Dict[str, Any], defaults: Dict[str, float]) -> Dict[str, float]:
+    d = dict(defaults)
+    d.update({k: _f(v) for k, v in (p or {}).items()})
+    for k in ("span_m", "root_chord_m"):
+        if not d.get(k, 0) > 0:
+            raise ValueError(f"{name}.{k} must be > 0")
+    if not 0.05 <= d["taper"] <= 1.0:
+        raise ValueError(f"{name}.taper must be in 0.05..1")
+    if abs(d["sweep_le_deg"]) > 70:
+        raise ValueError(f"{name}.sweep_le_deg must be in -70..70")
+    if not 0.03 <= d["thickness_ratio"] <= 0.25:
+        raise ValueError(f"{name}.thickness_ratio must be in 0.03..0.25")
+    return d
+
+
+def _lift_surface_script(var: str, label: str, d: Dict[str, float], fin: bool = False) -> str:
+    half = d["span_m"] if fin else d["span_m"] / 2.0     # a fin's span is its height
+    return f"""
+  string {var} = AddGeom( "WING" );
+  SetGeomName( {var}, "{label}" );
+  SetParmVal( {var}, "Sym_Planar_Flag", "Sym", {0 if fin else "SYM_XZ"} );
+  SetDriverGroup( {var}, 1, SPAN_WSECT_DRIVER, TAPER_WSECT_DRIVER, ROOTC_WSECT_DRIVER );
+  SetParmVal( {var}, "SectTess_U", "XSec_1", 14 );
+  SetParmVal( {var}, "Span", "XSec_1", {half:.9g} );
+  SetParmVal( {var}, "Taper", "XSec_1", {d["taper"]:.9g} );
+  SetParmVal( {var}, "Root_Chord", "XSec_1", {d["root_chord_m"]:.9g} );
+  SetParmVal( {var}, "Sweep", "XSec_1", {d["sweep_le_deg"]:.9g} );
+  SetParmVal( {var}, "Sweep_Location", "XSec_1", 0.0 );
+  SetParmVal( {var}, "Dihedral", "XSec_1", {d.get("dihedral_deg", 0.0):.9g} );
+  SetParmVal( {var}, "X_Rel_Location", "XForm", {d["x_m"]:.9g} );
+  SetParmVal( {var}, "Z_Rel_Location", "XForm", {d.get("z_m", 0.0):.9g} );
+  {'SetParmVal( ' + var + ', "X_Rel_Rotation", "XForm", 90.0 );' if fin else ''}
+  Update();
+  {{
+    string xsurf = GetXSecSurf( {var}, 0 );
+    for ( int i = 0 ; i < 2 ; i++ )
+    {{
+      ChangeXSecShape( xsurf, i, XS_FOUR_SERIES );
+      string xs = GetXSec( xsurf, i );
+      SetParmVal( GetXSecParm( xs, "ThickChord" ), {d["thickness_ratio"]:.9g} );
+      SetParmVal( GetXSecParm( xs, "Camber" ), {d.get("camber", 0.0):.9g} );
+    }}
+  }}
+  Update();
+"""
+
+
+def _fuse_profile(length: float, dmax: float, d_exit: float, nose_frac: float, tail_frac: float):
+    """(x fraction, diameter) stations: ogive nose, straight centre, smooth taper to the nozzle."""
+    st = []
+    # few, well spaced stations: OpenVSP skins between circles with tangent continuity, and
+    # closely spaced ones (or equal diameters right next to each other) make it ripple
+    for f in (0.0, nose_frac * 0.35, nose_frac, 1.0 - tail_frac, 1.0):
+        if f <= nose_frac:
+            u = 1.0 - f / nose_frac
+            dia = dmax * math.sqrt(max(0.0, 1.0 - u ** 2.2))
+        elif f <= 1.0 - tail_frac:
+            dia = dmax
+        else:
+            u = (f - (1.0 - tail_frac)) / tail_frac
+            dia = dmax - (dmax - d_exit) * (u * u * (3 - 2 * u))
+        st.append((f, dia))
+    clean = []
+    for f, dia in st:                      # strictly increasing stations
+        if not clean or f > clean[-1][0] + 1e-6:
+            clean.append((f, dia))
+    return clean
+
+
+def _aircraft_script(inp: Dict[str, Any], work: Path) -> Tuple[str, float, float, float, Dict[str, Any]]:
+    fu = dict(inp.get("fuselage") or {})
+    L = _pos(fu, "length_m", 0.98)
+    dmax = _pos(fu, "max_diameter_m", 0.11)
+    d_exit = _pos(fu, "exit_diameter_m", 0.062)
+    nose_frac = _f(fu.get("nose_fraction", 0.22))
+    tail_frac = _f(fu.get("tail_fraction", 0.35))
+    if not (0.05 <= nose_frac <= 0.5 and 0.05 <= tail_frac <= 0.6 and nose_frac + tail_frac < 0.95):
+        raise ValueError("fuselage nose_fraction 0.05..0.5, tail_fraction 0.05..0.6, sum < 0.95")
+    if d_exit >= dmax:
+        raise ValueError("fuselage.exit_diameter_m must be below max_diameter_m")
+    wing = _surface("wing", inp.get("wing"), {"taper": 0.46, "sweep_le_deg": 28.0, "thickness_ratio": 0.09,
+                                              "dihedral_deg": 1.5, "x_m": 0.33, "z_m": -0.006})
+    htail = _surface("htail", inp.get("htail"), {"taper": 0.54, "sweep_le_deg": 35.0, "thickness_ratio": 0.08,
+                                                 "x_m": 0.805, "z_m": 0.0})
+    vfin = _surface("vfin", inp.get("vfin"), {"taper": 0.44, "sweep_le_deg": 40.0, "thickness_ratio": 0.08,
+                                              "x_m": 0.735, "z_m": 0.04})
+    intake = inp.get("intake")
+    prof = _fuse_profile(L, dmax, d_exit, nose_frac, tail_frac)
+    fuse = [f"""
+  string fid = AddGeom( "FUSELAGE" );
+  SetGeomName( fid, "fuselage" );
+  SetParmVal( fid, "Length", "Design", {L:.9g} );
+  Update();
+  string fsurf = GetXSecSurf( fid, 0 );
+  while ( GetNumXSec( fsurf ) < {len(prof)} ) {{ InsertXSec( fid, 1, XS_CIRCLE ); Update(); }}
+  while ( GetNumXSec( fsurf ) > {len(prof)} ) {{ CutXSec( fid, 1 ); Update(); }}
+"""]
+    # positions first from the back so every station stays ordered while it moves
+    for i in range(len(prof) - 1, -1, -1):
+        f, dia = prof[i]
+        shape = "XS_POINT" if i == 0 else "XS_CIRCLE"
+        fuse.append(f"""  ChangeXSecShape( fsurf, {i}, {shape} );
+  {{ string xs = GetXSec( fsurf, {i} );
+    SetParmVal( GetXSecParm( xs, "XLocPercent" ), {f:.9g} );
+    {'' if i == 0 else f'SetParmVal( GetXSecParm( xs, "Circle_Diameter" ), {dia:.9g} );'} }}
+  Update();
+""")
+    pod = ""
+    if intake:
+        il = _pos(intake, "length_m", 0.16)
+        ifr = _pos(intake, "fineness", 2.6)
+        ix = _f(intake.get("x_m", 0.47))
+        iz = _f(intake.get("z_m", dmax / 2.0 + 0.012))
+        pod = f"""
+  string pid = AddGeom( "POD" );
+  SetGeomName( pid, "intake_fairing" );
+  SetParmVal( pid, "Length", "Design", {il:.9g} );
+  SetParmVal( pid, "FineRatio", "Design", {ifr:.9g} );
+  SetParmVal( pid, "X_Rel_Location", "XForm", {ix:.9g} );
+  SetParmVal( pid, "Z_Rel_Location", "XForm", {iz:.9g} );
+  Update();
+"""
+    span = wing["span_m"]
+    mean = wing["root_chord_m"] * (1 + wing["taper"]) / 2.0
+    sref = _f(inp.get("sref_m2", span * mean))
+    bref = _f(inp.get("bref_m", span))
+    cref = _f(inp.get("cref_m", mean))
+    # STEP through the surface-intersection analysis: trimmed, intersected B-Rep (wing-body
+    # junction cut), in metres -- a plain ExportFile STEP is a set of untrimmed surfaces in feet
+    exports = ['  ExportFile( "aircraft.stl", SET_ALL, EXPORT_STL );',
+               '  {',
+               '    string si = "SurfaceIntersection";',
+               '    SetAnalysisInputDefaults( si );',
+               '    array<string> stp(1, "aircraft.stp"); SetStringAnalysisInput( si, "STEPFileName", stp );',
+               '    array<int> one(1, 1); SetIntAnalysisInput( si, "STEPFileFlag", one );',
+               '    array<int> zero(1, 0); SetIntAnalysisInput( si, "IGESFileFlag", zero );',
+               '    array<int> rep(1, STEP_BREP); SetIntAnalysisInput( si, "STEPRepresentation", rep );',
+               '    array<int> unit(1, LEN_M); SetIntAnalysisInput( si, "CADLenUnit", unit );',
+               '    array<int> allset(1, SET_ALL); SetIntAnalysisInput( si, "SelectedSetIndex", allset );',
+               '    ExecAnalysis( si );',
+               '  }']
+    script = ("// generated by the workshop: whole aircraft + VSPAERO\nvoid main()\n{\n"
+              + "".join(fuse) + pod
+              + _lift_surface_script("wid", "wing", wing)
+              + _lift_surface_script("hid", "htail", htail)
+              + _lift_surface_script("vid", "vfin", vfin, fin=True)
+              + '  WriteVSPFile( "aircraft.vsp3", SET_ALL );\n  ClearVSPModel();\n  ReadVSPFile( "aircraft.vsp3" );\n'
+              + "\n".join(exports) + "\n"
+              + "  while ( GetNumTotalErrors() > 0 ) { ErrorObj err = PopLastError(); Print( \"VSPERROR \" + err.GetErrorString() ); }\n"
+              + "}\n")
+    geo = {"length_m": L, "span_m": span, "wing": wing, "htail": htail, "vfin": vfin, "mac_m": cref}
+    return script, sref, bref, cref, geo
+
+
+def _cg_sweep_script(model: str, inp: Dict[str, Any], sref: float, bref: float, cref: float,
+                     xcg: float, tag: str) -> str:
+    block = _sweep_block(inp, sref, bref, cref).replace(
+        'string res = ExecAnalysis( sweep );',
+        f'array<double> xcgv(1, {xcg:.9g}); SetDoubleAnalysisInput( sweep, "Xcg", xcgv );\n'
+        '  string res = ExecAnalysis( sweep );').replace('"results.csv"', f'"results_{tag}.csv"')
+    return f"""// VSPAERO on the aircraft, moments about x = {xcg:.6g} m
+void main()
+{{
+  ReadVSPFile( "{model}" );
+{block}
+}}
+"""
+
+
+def _slope(xs, ys) -> float:
+    import numpy as np
+    a = np.radians(np.asarray(xs, float))
+    b = np.asarray(ys, float)
+    ok = np.isfinite(a) & np.isfinite(b)
+    return float(np.polyfit(a[ok], b[ok], 1)[0])
+
+
+def _aircraft(inp: Dict[str, Any], work: Path) -> Dict[str, Any]:
+    exe = Path(tool("openvsp"))
+    script, sref, bref, cref, geo = _aircraft_script(inp, work)
+    (work / "aircraft.vspscript").write_text(script, encoding="utf-8")
+    proc = run_exe([str(exe), "-script", "aircraft.vspscript"], work, 600)
+    out = (proc.stdout or "") + (proc.stderr or "")
+    (work / "vsp_geometry.log").write_text(out, encoding="utf-8", errors="replace")
+    errs = [ln for ln in out.splitlines() if ln.startswith("VSPERROR")]
+    if not (work / "aircraft.vsp3").is_file():
+        raise ValueError(f"OpenVSP built no aircraft: {out.strip()[-500:]}")
+    values: Dict[str, Any] = {"sref_m2": round(sref, 6), "bref_m": bref, "cref_m": round(cref, 6),
+                              "aspect_ratio": round(bref * bref / sref, 4)}
+    bb = _stl_bbox(work / "aircraft.stl") if (work / "aircraft.stl").is_file() else None
+    if bb:
+        values.update(stl_length_m=round(bb[0], 5), stl_span_m=round(bb[1], 5), stl_height_m=round(bb[2], 5))
+    files = [str(work / n) for n in ("aircraft.vsp3", "aircraft.stp", "aircraft.stl", "vsp_geometry.log")
+             if (work / n).is_file()]
+    notes = ["a loft for shape and aerodynamics: walls, bulkheads and print sections are made in FreeCAD"]
+    if errs:
+        notes.append(f"OpenVSP reported {len(errs)} API error(s), see vsp_geometry.log")
+    if _wants_aero(inp):
+        # leading edge of the mean aerodynamic chord of a straight-tapered wing
+        w = geo["wing"]
+        lam = w["taper"]
+        ybar = (w["span_m"] / 2) / 3 * (1 + 2 * lam) / (1 + lam)
+        x_mac_le = w["x_m"] + ybar * math.tan(math.radians(w["sweep_le_deg"]))
+        if inp.get("cg_x_m") is not None:
+            xcg = _f(inp["cg_x_m"])
+        else:
+            xcg = x_mac_le + _f(inp.get("cg_mac_fraction", 0.25)) * cref
+        sp = work / "sweep_cg.vspscript"
+        sp.write_text(_cg_sweep_script("aircraft.vsp3", inp, sref, bref, cref, xcg, "cg"), encoding="utf-8")
+        proc = run_exe([str(exe), "-script", sp.name], work, 900)
+        (work / "vsp_aero.log").write_text((proc.stdout or "") + (proc.stderr or ""), encoding="utf-8", errors="replace")
+        (work / "results_cg.csv").replace(work / "results.csv")
+        rows = _read_results(work)
+        al = [r.get("Alpha", float("nan")) for r in rows]
+        cl = [r.get("CLtot", float("nan")) for r in rows]
+        cm = [r.get("CMytot", float("nan")) for r in rows]
+        cla, cma = _slope(al, cl), _slope(al, cm)
+        x_np = xcg - cma / cla * cref
+        margin = (x_np - xcg) / cref
+        values.update({"alpha_deg": [round(a, 4) for a in al], "CL": [round(c, 6) for c in cl],
+                       "CMy": [round(c, 6) for c in cm],
+                       "CDi": [round(r.get("CDi", float("nan")), 7) for r in rows],
+                       "CL_alpha_per_rad": round(cla, 5), "Cm_alpha_per_rad": round(cma, 5),
+                       "x_cg_m": round(xcg, 5), "x_mac_le_m": round(x_mac_le, 5),
+                       "x_neutral_point_m": round(x_np, 5), "static_margin_mac": round(margin, 5),
+                       "CL_at_0": round(cl[0], 6) if al and abs(al[0]) < 1e-9 else None})
+        if rows and "L_D" in rows[-1]:
+            values["lift_to_drag_last"] = round(rows[-1]["L_D"], 4)
+        if inp.get("check_neutral_point", False):
+            # the definition, checked: moments about the computed neutral point do not change with alpha
+            sp2 = work / "sweep_np.vspscript"
+            sp2.write_text(_cg_sweep_script("aircraft.vsp3", inp, sref, bref, cref, x_np, "np"), encoding="utf-8")
+            run_exe([str(exe), "-script", sp2.name], work, 900)
+            (work / "results_np.csv").replace(work / "results.csv")
+            rows2 = _read_results(work)
+            cma_np = _slope([r.get("Alpha") for r in rows2], [r.get("CMytot") for r in rows2])
+            values["Cm_alpha_at_np_rel"] = round(abs(cma_np / cla), 6)
+        files.append(str(work / "results.csv"))
+        notes += ["VSPAERO vortex lattice: inviscid and linear, no stall; the fuselage carries no lift "
+                  "here, so the neutral point is the lifting surfaces' (slightly aft of the real one: "
+                  "a fuselage destabilises)",
+                  "static margin = (x_np - x_cg) / MAC: 5 to 15 % is the usual target for a jet model"]
+        head = (f"aircraft {geo['length_m']:.3f} m x {bref:.3f} m: CL_alpha {cla:.3f}/rad, neutral point "
+                f"{x_np:.4f} m, CG {xcg:.4f} m, static margin {margin * 100:.1f} % MAC")
+    else:
+        head = "aircraft geometry only: " + ", ".join(Path(f).name for f in files)
+    return result(values, inp.get("limits"), head, files=files, notes=notes)
 
 
 def _model_script(inp: Dict[str, Any], work: Path) -> Tuple[str, float, float, float]:
@@ -406,6 +662,8 @@ def _run(kind: str, inp: Dict[str, Any], work: Path) -> Dict[str, Any]:
 def run(kind: str, inp: Dict[str, Any], work: Path) -> Dict[str, Any]:
     if kind not in KINDS:
         raise ValueError(f"unknown kind {kind!r}; known: {', '.join(sorted(KINDS))}")
+    if kind == "vsp_aircraft":
+        return _aircraft(inp, Path(work))
     return _run(kind, inp, Path(work))
 
 
@@ -431,6 +689,22 @@ REFERENCES = [
         "expect": {"CL_alpha_per_rad": [_HELMBOLD, 0.08],
                    "aspect_ratio": [_AR, 1e-9],
                    "cdi_vs_cl2_identity_rel": [0.0, 1e-3]},
+    },
+    {   # a whole aircraft: the exported geometry is the one asked for (length, span), a
+        # symmetric aircraft at zero incidence carries no lift, and the neutral point satisfies
+        # its definition (moments about it do not change with alpha)
+        "name": "aircraft_geometry_and_neutral_point", "kind": "vsp_aircraft",
+        "inp": {"fuselage": {"length_m": 0.98, "max_diameter_m": 0.11, "exit_diameter_m": 0.062},
+                "wing": {"span_m": 1.1, "root_chord_m": 0.26, "taper": 0.46, "sweep_le_deg": 28,
+                         "dihedral_deg": 0.0, "x_m": 0.33, "z_m": 0.0},
+                "htail": {"span_m": 0.38, "root_chord_m": 0.13, "taper": 0.54, "sweep_le_deg": 35, "x_m": 0.805},
+                "vfin": {"span_m": 0.15, "root_chord_m": 0.16, "taper": 0.44, "sweep_le_deg": 40, "x_m": 0.735, "z_m": 0.04},
+                "alpha_start_deg": 0.0, "alpha_end_deg": 6.0, "alpha_points": 4,
+                "check_neutral_point": True},
+        # overall length: the swept tailplane tip runs past the nozzle (0.805 + 0.19 tan 35 + 0.0702 m)
+        "expect": {"stl_length_m": [0.805 + 0.19 * math.tan(math.radians(35.0)) + 0.13 * 0.54, 0.01],
+                   "stl_span_m": [1.1, 0.01], "CL_at_0": [0.0, 2e-3],
+                   "Cm_alpha_at_np_rel": [0.0, 0.02]},
     },
     {   # the geometry path to FreeCAD: the exported STL must be the wing that was asked for
         "name": "wing_stl_export_size", "kind": "vsp_wing",

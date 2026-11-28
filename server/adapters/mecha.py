@@ -8,6 +8,11 @@ Kinds:
              sampled sine -> SNR, SINAD, ENOB, against the ideal 6.02 N + 1.76 dB
 - kalman     constant-velocity Kalman filter (position measured): steady-state gain and
              covariance (discrete Riccati), then a Monte-Carlo run that must reproduce them
+- edf        electric ducted fan by momentum theory: static and in-flight thrust from the shaft
+             power (or the power a thrust needs), exit velocity, mass flow, with the fan and exit
+             areas, a fan efficiency, and the intake in front of it (capture area, duct length,
+             lip and bend losses: the fan pays their total-pressure loss before the jet; the ram
+             drag of the captured air is in T = mdot (Ve - V))
 - dc_motor   brushed DC motor (+ gearbox): no-load speed, stall torque/current, operating point
              for a load, efficiency, copper loss and winding temperature, time constants, and a
              simulated voltage step
@@ -50,6 +55,8 @@ KINDS = {
             "doc": "ADC quantisation + noise: FFT SNR, SINAD, ENOB vs ideal 6.02N+1.76 dB"},
     "kalman": {"geometry": False, "timeout": 120,
                "doc": "constant-velocity Kalman filter: steady-state gain/covariance + Monte-Carlo check"},
+    "edf": {"geometry": False, "timeout": 60,
+            "doc": "ducted fan momentum theory: thrust, exit velocity, mass flow vs shaft power and speed"},
     "dc_motor": {"geometry": False, "timeout": 120,
                  "doc": "DC motor + gearbox: no-load, stall, operating point, efficiency, heating, step"},
 }
@@ -66,7 +73,7 @@ def versions() -> Dict[str, str]:
 
 
 def run(kind: str, inp: Dict[str, Any], work: Path) -> Dict[str, Any]:
-    fn = {"allan": _allan, "adc": _adc, "kalman": _kalman, "dc_motor": _dc_motor}.get(kind)
+    fn = {"allan": _allan, "adc": _adc, "kalman": _kalman, "dc_motor": _dc_motor, "edf": _edf}.get(kind)
     if fn is None:
         raise ValueError(f"unknown kind {kind!r}; one of {sorted(KINDS)}")
     return fn(inp, Path(work))
@@ -323,8 +330,108 @@ def _dc_motor(inp: Dict[str, Any], work: Path) -> Dict[str, Any]:
         notes.insert(0, f"current {i:.3g} A above max_current_A {i_max}")
     return result(vals, inp.get("limits"), head, files=files, notes=notes)
 
+# ---------------------------------------------------------------- ducted fan
+def _edf(inp: Dict[str, Any], work: Path) -> Dict[str, Any]:
+    """Momentum theory of a ducted fan whose jet leaves through the exit area A_e:
+    mdot = rho A_e Ve, T = mdot (Ve - V), ideal power = mdot (Ve^2 - V^2) / 2, shaft power =
+    ideal / eta. Static (V = 0): T = (rho A_e)^(1/3) (2 eta P)^(2/3)."""
+    import numpy as np
+    from scipy.optimize import brentq
+    d = _f(inp, "fan_diameter_m", None, 0.01, 2.0)
+    dh = _f(inp, "hub_diameter_m", 0.0, 0.0, d * 0.9)
+    a_fan = math.pi / 4 * (d * d - dh * dh)
+    fsa = _f(inp, "exit_area_ratio", 0.9, 0.3, 1.5)        # exit area / fan swept area
+    a_e = fsa * a_fan
+    rho = _f(inp, "air_density", 1.225, 0.1, 2.0)
+    eta = _f(inp, "fan_efficiency", 0.65, 0.1, 1.0)        # shaft -> jet kinetic power
+
+    # the air path in front of the fan: capture area of the intake, duct length and hydraulic
+    # diameter, lip and bend losses. Its total-pressure loss is paid by the fan before the jet:
+    # eta P = mdot (Ve^2 - V^2)/2 + dp0 * mdot / rho, dp0 = K * rho Vd^2 / 2, Vd = mdot/(rho A_d)
+    intake = inp.get("intake") or {}
+    a_in = float(intake.get("area_m2", 0) or 0)
+    a_d = float(intake.get("duct_area_m2", a_fan) or a_fan)
+    k_lip = float(intake.get("k_lip", 0.05))          # rounded lip 0.03-0.05, sharp 0.5
+    k_bend = float(intake.get("k_bends", 0.0))
+    f_fric = float(intake.get("friction_factor", 0.025))
+    l_d = float(intake.get("duct_length_m", 0.0))
+    d_h = float(intake.get("hydraulic_diameter_m", math.sqrt(4 * a_d / math.pi)))
+    k_tot = (k_lip + k_bend + f_fric * l_d / d_h) if intake else 0.0
+
+    def loss_power(mdot):
+        vd = mdot / (rho * a_d)
+        return k_tot * 0.5 * rho * vd * vd * mdot / rho
+
+    def thrust(p_shaft, v):
+        pi = eta * p_shaft
+        g = lambda x: 0.5 * rho * a_e * x * (x * x - v * v) + loss_power(rho * a_e * x) - pi
+        ve = brentq(g, v + 1e-9, v + 1e4)
+        mdot = rho * a_e * ve
+        return mdot * (ve - v), ve, mdot
+
+    vals: Dict[str, Any] = {"fan_area_m2": round(a_fan, 7), "exit_area_m2": round(a_e, 7)}
+    if inp.get("shaft_power_W") is not None:
+        p = _f(inp, "shaft_power_W", None, 1.0, 1e6)
+    else:
+        t_goal = _f(inp, "static_thrust_N", None, 0.01, 1e5)
+        ve = (t_goal / (rho * a_e)) ** 0.5
+        p = 0.5 * rho * a_e * ve ** 3 / eta
+        vals["shaft_power_for_thrust_W"] = round(p, 3)
+    t0, ve0, md0 = thrust(p, 0.0)
+    if intake:
+        ideal = (rho * a_e) ** (1 / 3) * (2 * eta * p) ** (2 / 3)
+        jet = 0.5 * md0 * ve0 ** 2
+        vals.update({"intake_K_total": round(k_tot, 5),
+                     "duct_velocity_m_s": round(md0 / (rho * a_d), 3),
+                     "duct_loss_W": round(loss_power(md0), 3),
+                     "thrust_loss_vs_ideal_inlet": round(1 - t0 / ideal, 5),
+                     "energy_balance_residual_rel": round(abs(jet + loss_power(md0) - eta * p) / (eta * p), 9)})
+        if a_in > 0:
+            vals["intake_area_ratio"] = round(a_in / a_fan, 4)          # capture / fan swept area
+            vals["intake_velocity_static_m_s"] = round(md0 / (rho * a_in), 3)
+    vals.update({"shaft_power_W": round(p, 3), "static_thrust_N": round(t0, 5),
+                 "static_thrust_kgf": round(t0 / 9.80665, 5), "exit_velocity_m_s": round(ve0, 4),
+                 "mass_flow_kg_s": round(md0, 5),
+                 "thrust_per_power_g_W": round(t0 / 9.80665 * 1000 / p, 4)})
+    speeds = [float(v) for v in (inp.get("speeds_m_s") or [0, 10, 20, 30, 40])]
+    curve = [round(thrust(p, v)[0], 4) for v in speeds]
+    vals["thrust_vs_speed_N"] = dict(zip([f"{v:g}" for v in speeds], curve))
+    if inp.get("mass_kg") is not None:
+        vals["thrust_to_weight"] = round(t0 / (9.80665 * _f(inp, "mass_kg", None, 0.01, 1e4)), 4)
+    if inp.get("cd0_area_m2") is not None:               # drag area CdS: top speed where T = D
+        cds = _f(inp, "cd0_area_m2", None, 1e-6, 100)
+        f = lambda v: thrust(p, v)[0] - 0.5 * rho * v * v * cds
+        vals["top_speed_m_s"] = round(brentq(f, 0.1, ve0 * 0.999), 3)
+        vals["top_speed_kmh"] = round(vals["top_speed_m_s"] * 3.6, 2)
+    head = (f"EDF {d * 1000:.0f} mm, {p:.0f} W shaft: static {t0 / 9.80665:.3f} kgf, jet {ve0:.1f} m/s, "
+            f"{md0:.3f} kg/s" + (f", intake K {k_tot:.3f} costs {vals['thrust_loss_vs_ideal_inlet'] * 100:.1f} % "
+                                 f"of thrust" if intake else ", ideal inlet (no intake given)"))
+    notes_extra = []
+    if intake and a_in > 0 and a_in / a_fan < 0.9:
+        notes_extra.append("intake capture area below 90 % of the fan area: the fan starves on the ground")
+    if not intake:
+        notes_extra.append("NO INTAKE GIVEN: the thrust assumes a perfect inlet; give `intake` for a real airframe")
+    return result(vals, inp.get("limits"), head,
+                  notes=notes_extra + ["momentum theory with a lumped fan efficiency (0.6-0.75 for a good 70 mm "
+                         "unit): tip losses, inlet distortion and duct friction are inside eta; "
+                         "a bench test (thrust, current, rpm) calibrates it"])
+
 
 REFERENCES = [
+    {"name": "edf_static_closed_form", "kind": "edf",   # T = (rho A_e)^(1/3) (2 eta P)^(2/3)
+     "inp": {"fan_diameter_m": 0.07, "hub_diameter_m": 0.03, "exit_area_ratio": 0.9,
+             "fan_efficiency": 0.6, "shaft_power_W": 700.0},
+     "expect": {"static_thrust_N": [(1.225 * 0.9 * math.pi / 4 * (0.07 ** 2 - 0.03 ** 2)) ** (1 / 3)
+                                    * (2 * 0.6 * 700.0) ** (2 / 3), 1e-4]}},
+    {"name": "edf_intake_energy_balance", "kind": "edf",   # jet power + duct loss = eta P, and
+     # a lossy intake gives less thrust than the ideal closed form
+     "inp": {"fan_diameter_m": 0.07, "hub_diameter_m": 0.03, "exit_area_ratio": 0.9,
+             "fan_efficiency": 0.6, "shaft_power_W": 700.0,
+             "intake": {"area_m2": 0.0034, "duct_length_m": 0.22, "k_lip": 0.05, "k_bends": 0.15}},
+     "expect": {"energy_balance_residual_rel": [0.0, 1e-6]}},
+    {"name": "edf_power_for_thrust_inverse", "kind": "edf",   # P(T) then T(P) gives T back
+     "inp": {"fan_diameter_m": 0.07, "hub_diameter_m": 0.03, "static_thrust_N": 13.7},
+     "expect": {"static_thrust_N": [13.7, 1e-6]}},
     {"name": "allan_white_noise_N", "kind": "allan",   # sigma(tau) = N / sqrt(tau), IEEE 952
      "inp": {"rate_hz": 100.0, "duration_s": 20000.0, "N": 0.01, "seed": 3},
      "expect": {"N_error_rel": [0.0, 0.03]}},

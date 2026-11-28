@@ -53,3 +53,24 @@ Vortex lattice: inviscid, linear, no stall, no separation, no compressibility be
 Prandtl-Glauert. This build exposes no panel mode. A propeller in the flow, a high angle of
 attack or a transonic wing is outside it. The Python API bundled with OpenVSP (built for 3.13) is
 never imported - everything goes through files, so a run can be re-done and checked.
+
+## Whole aircraft: `vsp_aircraft`
+`fuselage` {length_m, max_diameter_m, exit_diameter_m, nose_fraction, tail_fraction}, `wing` /
+`htail` / `vfin` {span_m (a fin's height), root_chord_m, taper, sweep_le_deg (leading edge),
+dihedral_deg, thickness_ratio, camber, x_m, z_m}, optional `intake` (closed pod fairing: draw a real
+scoop in FreeCAD), `cg_x_m` or `cg_mac_fraction`, the alpha sweep, `run_aero`.
+
+It returns:
+- `x_neutral_point_m`, `static_margin_mac` (5 to 15 % for a jet model), `CL_alpha_per_rad`,
+  `Cm_alpha_per_rad`, `stl_length_m` / `stl_span_m` / `stl_height_m`;
+- `aircraft.stp`, a trimmed B-Rep (SurfaceIntersection, wing-body junction cut, in metres) that
+  FreeCAD imports as one shell; plus `aircraft.stl` and `aircraft.vsp3` for the OpenVSP GUI.
+
+**Limits:**
+- The fuselage carries no lift in the vortex lattice, so the real neutral point is slightly
+  forward: keep a few % of extra margin.
+- `lift_to_drag_last` from this solver is not reliable (it has come back negative): judge drag
+  elsewhere.
+
+**Validated on:** the exported length and span, zero lift at zero incidence, and moments about
+the computed neutral point that do not change with alpha (1e-6).

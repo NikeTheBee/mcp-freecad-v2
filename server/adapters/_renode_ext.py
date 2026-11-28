@@ -118,3 +118,15 @@ class Renode:
 
     def write(self, addr: int, data: bytes) -> None:
         self.request(SYSTEM_BUS, struct.pack("<iBBQI", self.sysbus, SB_WRITE, AW_MULTI_BYTE, addr, len(data)) + data)
+
+
+def renode_env(root) -> dict:
+    """Environment for one Renode run: its own temp folder under `root`. At start Renode cleans
+    the `renode-<pid>` folders left in the temp folder and asks Windows whether each pid is alive;
+    a pid since reused by a protected process (svchost) answers "access denied" and Renode dies
+    before loading the platform. A private, empty temp folder per run has nothing to clean."""
+    import os
+    from pathlib import Path
+    tmp = Path(root) / "tmp"
+    tmp.mkdir(parents=True, exist_ok=True)
+    return dict(os.environ, TEMP=str(tmp), TMP=str(tmp), TMPDIR=str(tmp))

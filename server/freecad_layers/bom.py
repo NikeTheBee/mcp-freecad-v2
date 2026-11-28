@@ -46,6 +46,11 @@ def _label_stem(label: str) -> str:
     return re.sub(r"[ _]?\d+$", "", label).strip() or label
 
 
+def _dup_free(label: str) -> str:
+    """'Bracket001' -> 'Bracket' (FreeCAD's own duplicate suffix); 'Fus_T1' unchanged."""
+    return re.sub(r"(?<=\D)\d{3}$", "", label) or label
+
+
 def _is_container(o) -> bool:
     return o.TypeId in _CONTAINERS or o.TypeId.startswith("Assembly::")
 
@@ -349,7 +354,13 @@ def collect(doc, include_hidden: bool = True) -> List[Dict[str, Any]]:
                 break
         if g is None:
             by_stem.setdefault(stem, []).append(len(groups))
-            groups.append({"designation": stem + (" (mirrored)" if same else ""),
+            # one instance keeps its label ('Tube_0p6' is not 'Tube_0p', 'Fus_T1' not 'Fus_T'),
+            # less FreeCAD's automatic duplicate suffix ('Bracket001'); the stem names the
+            # row only once several instances with different labels share it
+            name = stem if getattr(part, "StdPart", "") else _dup_free(part.Label)
+            groups.append({"designation": name + (" (mirrored)" if same else ""),
+                           "_stem": stem + (" (mirrored)" if same else ""),
+                           "_label": part.Label,
                            "volume_mm3": round(float(shp.Volume), 2),
                            "bbox_mm": _own_size(shp),
                            "qty": 1, "refs": [inst.Name], "source": source,
@@ -357,6 +368,8 @@ def collect(doc, include_hidden: bool = True) -> List[Dict[str, Any]]:
         else:
             g["qty"] += 1
             g["refs"].append(inst.Name)
+            if part.Label != g["_label"]:
+                g["designation"] = g["_stem"]
     return [{"item": i, **{k: v for k, v in g.items() if not k.startswith("_")}}
             for i, g in enumerate(groups, 1)]
 

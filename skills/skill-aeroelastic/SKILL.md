@@ -30,6 +30,7 @@ modal basis - which is how `fem_modal` (CalculiX) results get in.
 - `S_alpha` is the static unbalance per unit span, **positive when the centre of gravity is aft
   of the elastic axis**. Mass ahead of the axis (a leading-edge balance mass) is the classic fix.
 - `k` in `aic_dlm` is the CLASSICAL reduced frequency omega/V (1/m), not Nastran's omega c/(2V).
+- `g_noise` (default 0.01): a crossing counts only if the mode leaves a clearly damped state (g < -g_noise) or clearly goes unstable (g >= g_noise). High modes that hover at 0 <= g < g_noise at low speed are p-k noise, reported as `lightly_damped_modes`, not as flutter.
 - `g` in the V-g table is the **required structural damping** of the p-k method: negative while
   the mode is stable, zero at the boundary. It is not a damping ratio.
 

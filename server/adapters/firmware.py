@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from _common import result, run_exe, tool
+from _renode_ext import renode_env
 
 ENV = "elec"
 KINDS = {"firmware_sim": {"geometry": False, "timeout": 600,
@@ -185,7 +186,7 @@ def _emulate(elf: Path, run_s: float, timeout: float, work: Path) -> Dict[str, A
             f"emulation RunFor \"{run_s:g}\"\nquit\n", encoding="utf-8")
         flags = 0x08000000 if os.name == "nt" else 0
         proc = subprocess.Popen([tool("renode"), "--disable-gui", "--console", "-e", f"include @{r}/run.resc"],
-                                cwd=str(root), stdout=open(root / "renode.log", "w"), stderr=subprocess.STDOUT,
+                                cwd=str(root), env=renode_env(root), stdout=open(root / "renode.log", "w"), stderr=subprocess.STDOUT,
                                 stdin=subprocess.DEVNULL, creationflags=flags)
         t0, bad = time.time(), []
         try:
