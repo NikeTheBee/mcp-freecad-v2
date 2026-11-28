@@ -7,7 +7,7 @@ Kinds:
 - kicad_fab  fabrication set: Gerber (every copper / mask / silk / edge layer), Excellon drill,
              pick-and-place, IPC-2581 -- refused unless the DRC is clean (like `export` and `check`)
 - kicad_step 3D STEP of the board (+ component models), read back with gmsh: its bounding box is
-             the board outline x thickness, ready for FreeCAD (`check_assembly` against the case)
+             the board outline x dielectric thickness, ready for FreeCAD (`check_assembly`)
 
 Inputs: `board` / `schematic` = a file of the study folder (project files copied by the server);
 the rules are the project's (.kicad_pro next to the board) or KiCad's defaults.
@@ -24,8 +24,10 @@ capabilities (min track, min drill, annular ring) must be in the project's rules
 the STEP bounding box checks the outline and thickness, not every component model.
 
 Exactness: REFERENCES below, on a board generated here (30 x 20 mm, 1.6 mm, two tracks of
-different nets): 2 mm apart -> no violation; 0.10 mm apart -> a clearance violation (default
-clearance 0.2 mm); the fabrication set has the expected layers; the STEP's box is 30 x 20 x 1.6.
+different nets): 2 mm apart -> no violation; 0.10 mm apart -> a clearance violation measured at
+0.10 mm (default clearance 0.2 mm); the fabrication set has the expected layers; the STEP's box is 30 x 20 x 1.51:
+KiCad 10 exports the board body as the dielectric alone, here its default stack-up 1.6 mm minus
+2 x 0.035 mm copper and 2 x 0.01 mm solder mask (copper comes as separate solids only on request).
 """
 from __future__ import annotations
 
@@ -127,6 +129,17 @@ def _drc_values(board: Path, work: Path, parity: bool) -> Dict[str, Any]:
                             "unconnected": len(unc), "parity_issues": len(par)}
     for t, n in sorted(c["by_type"].items()):
         vals[f"type_{t}"] = n
+    # the measured gap of the worst clearance violation, read from "(clearance 0.2000 mm;
+    # actual 0.1000 mm)" in any language: the number before the closing "mm)". The COUNT of
+    # violations is not stable (one per pair of items, deduplicated by threads in any order)
+    gaps = []
+    for v in viol:
+        if v.get("type") == "clearance":
+            m = re.findall(r"(\d+[.,]\d+)\s*mm", str(v.get("description", "")))
+            if m:
+                gaps.append(float(m[-1].replace(",", ".")))
+    if gaps:
+        vals["clearance_actual_min_mm"] = min(gaps)
     return vals
 
 
@@ -228,10 +241,15 @@ def _board_text(gap_mm: float) -> str:
   (net 1 "A")
   (net 2 "B")
   (gr_rect (start 0 0) (end 30 20) (stroke (width 0.1) (type default)) (fill none) (layer "Edge.Cuts"))
-  (segment (start 5 8) (end 25 8) (width 0.25) (layer "F.Cu") (net 1))
-  (segment (start 5 {y2:g}) (end 25 {y2:g}) (width 0.25) (layer "F.Cu") (net 2))
-)
+{_loop(5, 6, 25, 8, 1)}{_loop(8, y2, 22, y2 + 2, 2)})
 """
+
+
+def _loop(x0: float, y0: float, x1: float, y1: float, net: int) -> str:
+    """A closed rectangle of track: no free end, so KiCad 10's dangling-track check stays quiet."""
+    pts = [(x0, y0), (x1, y0), (x1, y1), (x0, y1), (x0, y0)]
+    return "".join(f'  (segment (start {a:g} {b:g}) (end {c:g} {d:g}) (width 0.25) (layer "F.Cu") (net {net}))\n'
+                   for (a, b), (c, d) in zip(pts, pts[1:]))
 
 
 def _setup_clean(inp: Dict[str, Any], work: Path) -> Dict[str, Any]:
@@ -248,9 +266,11 @@ REFERENCES = [
     {"name": "drc_clean_board", "kind": "kicad_drc", "setup": "_setup_clean", "inp": {},
      "expect": {"errors": [0, 0], "violations": [0, 0]}},
     {"name": "drc_finds_clearance_0p10mm", "kind": "kicad_drc", "setup": "_setup_tight", "inp": {},
-     "expect": {"type_clearance": [1, 0]}},
+     # the gap KiCad measures must be the one drawn (0.10 mm); how many violations it lists for it
+     # (one per pair of items) changes from run to run
+     "expect": {"clearance_actual_min_mm": [0.10, 0.01]}},
     {"name": "fab_set_of_clean_board", "kind": "kicad_fab", "setup": "_setup_clean", "inp": {},
      "expect": {"export_failures": [0, 0], "has_edge_cuts": [1.0, 0], "has_ipc2581": [1.0, 0]}},
     {"name": "step_box_is_outline_x_thickness", "kind": "kicad_step", "setup": "_setup_clean", "inp": {},
-     "expect": {"size_x_mm": [30.0, 2e-3], "size_y_mm": [20.0, 2e-3], "size_z_mm": [1.6, 5e-3]}},
+     "expect": {"size_x_mm": [30.0, 2e-3], "size_y_mm": [20.0, 2e-3], "size_z_mm": [1.51, 5e-3]}},
 ]
