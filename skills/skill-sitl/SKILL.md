@@ -1,7 +1,8 @@
 # skill-sitl
 
 **Load when:** "will my drone hover / climb / land", hover throttle of a multirotor, a scripted test
-flight, depth hold of an ROV, a rover driving to a point, with the REAL ArduPilot autopilot code
+flight, a fixed-wing take-off / circuit / landing, depth hold of an ROV, a rover driving to a point,
+with the REAL ArduPilot autopilot code
 (SITL, software in the loop). Aerodynamics and sizing stay in `skill-aero-sim` / `skill-drone`;
 hull, buoyancy and thrusters in `skill-marine`.
 
@@ -17,10 +18,34 @@ time at `speedup` 5. Pass `limits` or the verdict is UNKNOWN ("computed, nothing
 | `sitl_copter` | GUIDED: arm, take off, hover, waypoints, LAND | `model` (quad, x, hexa, hexax, octa, octa-quad, y6, dodeca-hexa), `alt_m` (10), `hover_s` (15), `settle_s` (3), `waypoints` [[north_m, east_m, alt_m]...] from the takeoff point, `frame` {...}, `thrust_to_weight`, `wind_mps`, `wind_dir_deg`, `params` {NAME: value}, `home` [lat, lon, alt_m, hdg], `speedup` (5) | `time_to_alt_s` (to 95 %), `alt_overshoot_m`, `hover_mean_error_m`, `hover_rms_error_m`, `hover_max_error_m`, `hover_throttle` (0..1), `hover_voltage_V`, `max_tilt_deg`, `battery_consumed_mAh`, `battery_consumed_Wh`, `waypoints_reached`, `waypoint_times_s`, `land_time_s`, `landed_disarmed` (1/0), `alerts`, `prearm_messages` |
 | `sitl_sub` | ArduSub: arm (MANUAL), depth hold (ALT_HOLD) | `model` (vectored, vectored_6dof), `depth_m` (5), `hold_s` (20), `settle_s` (3), `params`, `speedup` | `time_to_depth_s` (to 95 %), `depth_overshoot_m`, `depth_mean_error_m` (+ = too deep), `depth_rms_error_m`, `depth_max_error_m`, `heading_mean/rms/max_error_deg`, `max_tilt_deg`, `battery_consumed_mAh` |
 | `sitl_rover` | ArduRover: GUIDED drive to a point, stop | `model` (rover, rover-skid), `north_m` (50), `east_m` (0), `speed_mps` (5), `params`, `speedup` | `time_to_target_s`, `mean_speed_mps`, `max_cross_track_m`, `stop_error_m` |
+| `sitl_plane` | ArduPlane AUTO mission: runway take-off along `home` heading, right-hand rectangle circuit, final approach on the axis, land on the start point | `alt_m` (40), `circuit_length_m` (400), `circuit_width_m` (180), `approach_m` (280), `laps` (1), `cruise_mps` (18), `min_mps`, `max_mps`, `aircraft` {...} or `aero` {...}, `model` (plane, plane-elevon, plane-vtail), `edf_exit_area_m2`, `edf_efficiency` (electrical), `battery_Ah`, `battery_Wh`, `wind_mps`, `params`, `speedup` | `ground_roll_m`, `liftoff_airspeed_mps`, `time_to_alt_s`, `takeoff_overshoot_m`, `waypoints_reached`, `cruise_airspeed_mps`, `cruise_throttle`, `cruise_thrust_fraction` (of THR_MAX), `cruise_thrust_N`, `cruise_power_W_est`, `cruise_endurance_min_est`, `cruise_alt_mean/rms/max_error_m` (from the second leg on), `max_bank_deg`, `max_pitch_deg`, `touchdown_along_m` (+ = past the point), `touchdown_lateral_m`, `touchdown_sink_mps`, `rollout_m`, `landed_disarmed`, `coeffs_loaded` |
 
-Files in the study folder: `telemetry.csv` (t, alt, n, e, roll, pitch, yaw, throttle, voltage),
+Files in the study folder: `telemetry.csv` (t, alt, n, e, roll, pitch, yaw, throttle, voltage,
+airspeed, vz, mission item), `mission.json` and `plane.json` (plane),
 `statustext.log` (every autopilot message), `sitl.log`, `defaults.parm`, `frame.json`, the
 autopilot's own log in `logs/*.BIN`.
+
+### The plane's physics: what SITL really uses
+SITL's fixed wing (`libraries/SITL/SIM_Plane`) is a **2 kg** airframe with a constant thrust of
+`throttle x m g / 0.7` (thrust-to-weight 1.43 at full throttle, no loss with speed) and the
+aerodynamic coefficients of a cambered Skywalker (`c_lift_0` 0.56, `c_lift_a` 6.9, `c_drag_p`
+0.1, S 0.45 m²). Mass and thrust are not settable, so an aircraft goes in by **dynamic
+similarity**: `aircraft` {`mass_kg`, `wing_area_m2`, `span_m`, `mac_m`, `CL_alpha`, `CL_0`,
+`Cm_alpha`, `Cm_0`, `CD0`, `oswald`, `alpha_stall_deg`, `thrust_to_weight`} scales the area by
+2 kg / mass (span and chord by its square root: same wing loading and aspect ratio) and sets
+THR_MAX to the same thrust-to-weight. `aero` {...} passes raw SIM_Plane keys and wins.
+- Give `CL_0` (0 for a symmetric profile): the default 0.56 is a cambered wing.
+- Take `CL_alpha`, `Cm_alpha` (= -CL_alpha x static margin) from `vsp_aircraft`, `CD0` from its
+  parasite drag; `thrust_to_weight` from the `edf` kind (static).
+- Control derivatives (roll damping, aileron and elevator power) stay SITL's. The autopilot is
+  not tuned for the aircraft: bank and altitude overshoots point to a TUNE, not to a crash.
+- The take-off is a runway roll. A hand- or bungee-launched model lifts off at the same speed,
+  but the ground roll does not apply to it.
+- Constant thrust: an EDF loses thrust with speed, so climb and top speed here are optimistic.
+  The cruise power is recomputed from momentum theory at the cruise speed (`edf_exit_area_m2`,
+  `edf_efficiency` = fan x motor), without the intake losses.
+- SITL's plane has no brakes: after touchdown it rolls on. The run waits until it is below
+  5 m/s, then disarms it on the ground (as the pilot would).
 
 ### The copter's physics: what SITL really uses
 `frame` is written as SITL's frame model file (ArduPilot `libraries/SITL/SIM_Frame.h`). Keys:
@@ -75,3 +100,5 @@ autopilot's own log in `logs/*.BIN`.
 | Hexa-X from a generated frame file (5 kg, hoverThrOut 0.5) | same bands, hover throttle 0.5 ± 10 % | the frame file must reach the model | -0.004 m; 1; 0.47 |
 | Sub vectored, 5 m depth hold, 20 s | mean depth error 0 ± 0.3 m | the test's acceptance band | +0.089 m |
 | Rover, 50 m north at 5 m/s | stop error < 2 m | WP_RADIUS = 2 m, the autopilot's "reached" radius | 0.13 m |
+| Plane (SITL default), circuit at 40 m, 20 m/s | landed and disarmed; 5/5 waypoints; cruise altitude mean error 0 ± 3 m | the mission's acceptance: it must end on the ground, every leg flown, TECS within 3 m | 1; 5; +0.75 m |
+| Plane with a coefficient file (`c_drag_p` 0.02) | SITL says it loaded the file; landed and disarmed | the file must reach the model | 1; 1 |

@@ -1,6 +1,6 @@
 """ArduPilot SITL (software in the loop) flight tests, purely simulated (env `aero`).
 
-The real autopilot firmware (ArduCopter / ArduSub / ArduRover 4.7, Windows Cygwin builds,
+The real autopilot firmware (ArduCopter / ArduPlane / ArduSub / ArduRover 4.7, Windows Cygwin builds,
 install/tools.lock.json) runs with its BUILT-IN physics model; this adapter talks to it with
 pymavlink over a loopback TCP link, flies a scripted test and measures it.
 
@@ -8,6 +8,8 @@ Kinds (no geometry):
 - sitl_copter  arm in GUIDED, take off to `alt_m`, hover `hover_s`, optional waypoints, LAND
 - sitl_sub     ArduSub `vectored` model: arm, depth hold (ALT_HOLD) at `depth_m`, heading hold
 - sitl_rover   ArduRover: arm in GUIDED, drive to a point `north_m`/`east_m` away, stop
+- sitl_plane   ArduPlane AUTO mission: runway take-off, rectangle circuit, final approach, land;
+               the aircraft goes in by dynamic similarity (see the plane section)
 
 Times are SIMULATED seconds (autopilot boot clock), not wall time. Altitudes/depths are the
 autopilot's own EKF estimate (GLOBAL_POSITION_INT), relative to home.
@@ -61,6 +63,10 @@ KINDS = {
                         "heading hold error"},
     "sitl_rover": {"timeout": 600,
                    "doc": "ArduRover SITL: GUIDED drive to a point: time, cross-track error, stop error"},
+    "sitl_plane": {"timeout": 900,
+                   "doc": "ArduPlane SITL AUTO: take-off, circuit, approach, land; aircraft by "
+                          "similarity (mass, area, span, CL/Cm slopes, CD0, T/W): ground roll, "
+                          "cruise speed and thrust, altitude error, bank, touchdown"},
 }
 
 COPTER_FRAMES = {            # SITL model -> (FRAME_CLASS, FRAME_TYPE, motors)
@@ -126,7 +132,7 @@ def versions() -> Dict[str, str]:
         out["pymavlink"] = version("pymavlink")
     except Exception:  # noqa: BLE001
         pass
-    for k in ("sitl_copter", "sitl_sub", "sitl_rover"):
+    for k in ("sitl_copter", "sitl_plane", "sitl_sub", "sitl_rover"):
         try:
             data = _binary(k).read_bytes()
             m = re.search(rb"(Ardu\w+) V(\d+\.\d+\.\d+)", data)
@@ -148,6 +154,9 @@ def _refuse_links(inp: Dict[str, Any]) -> None:
     """No caller-chosen link: SITL on loopback is the only target, ever (§10.2)."""
     for key in ("connection", "connect", "device", "serial", "port", "address", "url", "mavlink",
                 "uart", "baud"):
+        # `device` cpu/gpu/both is the compute choice the runner adds to every input, not a link
+        if key == "device" and inp.get(key) in ("cpu", "gpu", "both"):
+            continue
         if key in inp:
             raise PermissionError(f"{key!r} refused: this adapter only talks to the SITL it starts "
                                   "itself on 127.0.0.1 (no link to a real vehicle, no serial port)")
@@ -341,6 +350,10 @@ class Session:
         self.vz = 0.0
         self.roll = self.pitch = self.yaw = 0.0
         self.throttle = math.nan
+        self.airspeed = self.groundspeed = math.nan
+        self.mission_seq = -1
+        self.mission_req = -1
+        self.mission_ack: Optional[int] = None
         self.mah = math.nan
         self.energy_hj = math.nan
         self.voltage = math.nan
@@ -408,13 +421,21 @@ class Session:
                 self.samples.append({"t": self.t_ms / 1000.0, "alt": self.alt,
                                      "roll": self.roll, "pitch": self.pitch, "yaw": self.yaw,
                                      "thr": self.throttle, "n": self.north, "e": self.east,
-                                     "v": self.voltage})
+                                     "v": self.voltage, "as": self.airspeed, "vz": self.vz,
+                                     "seq": self.mission_seq})
         elif t == "LOCAL_POSITION_NED":
             self.north, self.east = msg.x, msg.y
         elif t == "ATTITUDE":
             self.roll, self.pitch, self.yaw = msg.roll, msg.pitch, msg.yaw
         elif t == "VFR_HUD":
             self.throttle = msg.throttle / 100.0
+            self.airspeed, self.groundspeed = float(msg.airspeed), float(msg.groundspeed)
+        elif t in ("MISSION_REQUEST_INT", "MISSION_REQUEST"):
+            self.mission_req = int(msg.seq)
+        elif t == "MISSION_ACK":
+            self.mission_ack = int(msg.type)
+        elif t == "MISSION_CURRENT":
+            self.mission_seq = int(msg.seq)
         elif t == "BATTERY_STATUS":
             if msg.current_consumed >= 0:
                 self.mah = float(msg.current_consumed)
@@ -460,6 +481,24 @@ class Session:
             if self.wait(lambda: self.mode == mode, sim_s / 5, "mode"):
                 return True
         return False
+
+    def upload_mission(self, items: List[Dict[str, Any]], sim_s: float = 30.0) -> bool:
+        """MAVLink mission protocol: COUNT, answer each MISSION_REQUEST(_INT), wait for the ACK."""
+        self.mission_ack, self.mission_req = None, -1
+        t0, last_count = self.t_ms, -1e9
+        while self.mission_ack is None:
+            if self.mission_req < 0 and self.t_ms - last_count > 3000:
+                self.m.mav.mission_count_send(1, 1, len(items), 0)
+                last_count = self.t_ms
+            self.pump()
+            if 0 <= self.mission_req < len(items):
+                q, it = self.mission_req, items[self.mission_req]
+                self.mission_req = -1
+                self.m.mav.mission_item_int_send(1, 1, q, it["frame"], it["cmd"], 0, 1, *it["p"],
+                                                 it["lat"], it["lon"], it["alt"], 0)
+            if self.t_ms - t0 > sim_s * 1000:
+                return False
+        return self.mission_ack == 0
 
     def streams(self) -> None:
         mav = self.m.mav
@@ -706,8 +745,9 @@ def _run_copter(inp: Dict[str, Any], work: Path) -> Dict[str, Any]:
 
 
 def _save_samples(work: Path, samples: List[Dict[str, float]], files: List[str]) -> None:
-    keys = ["t", "alt", "n", "e", "roll", "pitch", "yaw", "thr", "v"]
-    lines = [",".join(keys)] + [",".join(f"{x[k]:.4f}" for k in keys) for x in samples]
+    keys = ["t", "alt", "n", "e", "roll", "pitch", "yaw", "thr", "v", "as", "vz", "seq"]
+    lines = [",".join(keys)] + [",".join(f"{float(x.get(k, math.nan)):.4f}" for k in keys)
+                                for x in samples]
     (work / "telemetry.csv").write_text("\n".join(lines) + "\n", encoding="utf-8")
     files.append("telemetry.csv")
 
@@ -864,6 +904,290 @@ def _run_rover(inp: Dict[str, Any], work: Path) -> Dict[str, Any]:
     return result(values, inp.get("limits"), head, files, ["SITL built-in physics; simulated seconds"])
 
 
+# ------------------------------------------------------------------ plane
+# SITL's built-in fixed-wing model (libraries/SITL/SIM_Plane): mass 2 kg, full-throttle thrust =
+# m g / 0.7 (thrust-to-weight 1.43), aerodynamic coefficients from a JSON file
+# (`--model plane:<file>.json`, keys PLANE_AERO_KEYS). Mass and thrust are not in that file, so an
+# aircraft is flown in DYNAMIC SIMILARITY: same wing loading (area scaled by 2 kg / mass, span and
+# chord by its square root: same aspect ratio), same thrust-to-weight (THR_MAX). SITL's default
+# coefficients are a cambered Skywalker (c_lift_0 0.56, c_drag_p 0.1): give CL_0 for another wing.
+PLANE_MASS_KG, PLANE_HOVER_THR = 2.0, 0.7
+PLANE_AERO_KEYS = (
+    "s", "b", "c", "c_lift_0", "c_lift_deltae", "c_lift_a", "c_lift_q", "mcoeff", "oswald",
+    "alpha_stall", "c_drag_q", "c_drag_deltae", "c_drag_p", "c_y_0", "c_y_b", "c_y_p", "c_y_r",
+    "c_y_deltaa", "c_y_deltar", "c_l_0", "c_l_p", "c_l_b", "c_l_r", "c_l_deltaa", "c_l_deltar",
+    "c_m_0", "c_m_a", "c_m_q", "c_m_deltae", "c_n_0", "c_n_b", "c_n_p", "c_n_r", "c_n_deltaa",
+    "c_n_deltar", "deltaa_max", "deltae_max", "deltar_max")
+_R_EARTH = 6378137.0
+
+
+def _plane_model(inp: Dict[str, Any], work: Path) -> Tuple[str, Optional[float], List[str], Dict[str, Any]]:
+    """Model string, THR_MAX (or None), notes, values. `aircraft` (similarity) and/or `aero`
+    (raw SIM_Plane coefficients, they win) write plane.json."""
+    model = str(inp.get("model", "plane"))
+    if model not in ("plane", "plane-elevon", "plane-vtail"):
+        raise ValueError("model: plane | plane-elevon | plane-vtail")
+    coeffs: Dict[str, float] = {}
+    notes: List[str] = []
+    values: Dict[str, Any] = {}
+    thr_max = None
+    ac = dict(inp.get("aircraft") or {})
+    if ac:
+        known = {"mass_kg", "wing_area_m2", "span_m", "mac_m", "CL_alpha", "CL_0", "Cm_alpha",
+                 "Cm_0", "CD0", "oswald", "alpha_stall_deg", "thrust_to_weight"}
+        bad = sorted(set(ac) - known)
+        if bad:
+            raise ValueError(f"aircraft keys {bad}; known: {sorted(known)}")
+        m = float(ac.get("mass_kg", PLANE_MASS_KG))
+        if not 0.2 <= m <= 25:
+            raise ValueError("aircraft.mass_kg: 0.2 .. 25")
+        k = PLANE_MASS_KG / m
+        if "wing_area_m2" in ac:
+            coeffs["s"] = float(ac["wing_area_m2"]) * k
+        if "span_m" in ac:
+            coeffs["b"] = float(ac["span_m"]) * math.sqrt(k)
+        if "mac_m" in ac:
+            coeffs["c"] = float(ac["mac_m"]) * math.sqrt(k)
+        for src, dst in (("CL_alpha", "c_lift_a"), ("CL_0", "c_lift_0"), ("Cm_alpha", "c_m_a"),
+                         ("Cm_0", "c_m_0"), ("CD0", "c_drag_p"), ("oswald", "oswald")):
+            if src in ac:
+                coeffs[dst] = float(ac[src])
+        if "alpha_stall_deg" in ac:
+            coeffs["alpha_stall"] = math.radians(float(ac["alpha_stall_deg"]))
+        if "thrust_to_weight" in ac:
+            twr = float(ac["thrust_to_weight"])
+            if not 0.3 <= twr <= 1.0 / PLANE_HOVER_THR:
+                raise ValueError(f"aircraft.thrust_to_weight: 0.3 .. {1 / PLANE_HOVER_THR:.2f} "
+                                 "(SITL's plane tops out there)")
+            thr_max = round(100.0 * twr * PLANE_HOVER_THR, 1)
+            values["thr_max_pct"] = thr_max
+        values["similarity_scale"] = k
+        values["_mass_kg"] = m
+        notes.append(f"dynamic similarity with SITL's {PLANE_MASS_KG:g} kg plane: area x{k:.3f}, "
+                     f"span and chord x{math.sqrt(k):.3f} (same wing loading and aspect ratio)"
+                     + (f", THR_MAX {thr_max:g} % (same thrust-to-weight)" if thr_max else ""))
+    for key, v in (inp.get("aero") or {}).items():
+        if key not in PLANE_AERO_KEYS:
+            raise ValueError(f"aero.{key}: not a SIM_Plane coefficient; known: {list(PLANE_AERO_KEYS)}")
+        coeffs[key] = float(v)
+    for key, v in coeffs.items():
+        if not math.isfinite(v):
+            raise ValueError(f"{key}: not a finite number")
+    if coeffs:
+        if coeffs.get("s", 1) <= 0 or coeffs.get("b", 1) <= 0 or coeffs.get("c", 1) <= 0:
+            raise ValueError("wing area, span and chord must be > 0")
+        (work / "plane.json").write_text(json.dumps(coeffs, indent=1), encoding="utf-8")
+        model = f"{model}:plane.json"
+        values["aero_coefficients"] = {k: round(v, 5) for k, v in coeffs.items()}
+    return model, thr_max, notes, values
+
+
+def _offset(home: str, along: float, right: float, hdg_deg: float) -> Tuple[int, int]:
+    lat0, lon0 = (float(x) for x in home.split(",")[:2])
+    h = math.radians(hdg_deg)
+    n = along * math.cos(h) - right * math.sin(h)
+    e = along * math.sin(h) + right * math.cos(h)
+    lat = lat0 + math.degrees(n / _R_EARTH)
+    lon = lon0 + math.degrees(e / (_R_EARTH * math.cos(math.radians(lat0))))
+    return int(round(lat * 1e7)), int(round(lon * 1e7))
+
+
+def _run_plane(inp: Dict[str, Any], work: Path) -> Dict[str, Any]:
+    alt = _num(inp, "alt_m", 40, 15, 150)
+    length = _num(inp, "circuit_length_m", 400, 150, 1500)
+    width = _num(inp, "circuit_width_m", 180, 80, 800)
+    laps = int(_num(inp, "laps", 1, 1, 5))
+    approach = _num(inp, "approach_m", 280, 120, 800)
+    speedup = _num(inp, "speedup", 5, 1, 20)
+    cruise = _num(inp, "cruise_mps", 18, 6, 60)
+    vmin = _num(inp, "min_mps", min(12.0, cruise - 2), 4, 50)
+    vmax = _num(inp, "max_mps", max(30.0, cruise + 5), 8, 80)
+    if not vmin < cruise < vmax:
+        raise ValueError("min_mps < cruise_mps < max_mps")
+    model, thr_max, notes, values = _plane_model(inp, work)
+    ac_mass = values.pop("_mass_kg", None)
+    home = _home(inp)
+    hdg = float(home.split(",")[3])
+    params = dict(_CAL, **_COMMON)
+    params.update(THR_FAILSAFE=0, FS_GCS_ENABL=0, FS_LONG_ACTN=0, FS_SHORT_ACTN=3,
+                  TKOFF_THR_MINSPD=0, TKOFF_THR_MINACC=0, TKOFF_ROTATE_SPD=0.8 * vmin,
+                  AIRSPEED_CRUISE=cruise, AIRSPEED_MIN=vmin, AIRSPEED_MAX=vmax,
+                  ARSPD_TYPE=100, ARSPD_USE=1, WP_RADIUS=30, WP_LOITER_RAD=60,
+                  LAND_DISARMDELAY=3, RTL_AUTOLAND=0, SIM_BATT_VOLTAGE=16.8,
+                  # SIM_Plane reads each output over 1000..2000 us; ArduPlane's default range is
+                  # 1100..1900, which left 10 % thrust at idle and cut 10 % at full throttle
+                  **{f"SERVO{i}_{k}": v for i in (1, 2, 3, 4)
+                     for k, v in (("MIN", 1000), ("MAX", 2000), ("TRIM", 1500))})
+    if thr_max is not None:
+        params["THR_MAX"] = thr_max
+    cap = _num(inp, "battery_Ah", 0, 0, 50)
+    params["SIM_BATT_CAP_AH"] = cap
+    if cap > 0:
+        params["BATT_CAPACITY"] = cap * 1000
+    if inp.get("wind_mps"):
+        params["SIM_WIND_SPD"] = _num(inp, "wind_mps", 0, 0, 20)
+        params["SIM_WIND_DIR"] = _num(inp, "wind_dir_deg", 0, 0, 360)
+    params.update(_user_params(inp))
+    thr_cap = float(params.get("THR_MAX", 100))
+
+    # mission: home, takeoff along the runway heading, rectangle circuit (right-hand), final
+    # approach on the runway axis, land on the start point
+    lat0, lon0 = _offset(home, 0, 0, hdg)
+    items = [dict(cmd=16, frame=0, p=(0, 0, 0, 0), lat=lat0, lon=lon0, alt=0.0),
+             dict(cmd=22, frame=6, p=(12, 0, 0, 0), lat=0, lon=0, alt=alt)]
+    corners = [(length, 0), (length, width), (-approach, width)]
+    for _ in range(laps):
+        for a, r in corners:
+            la, lo = _offset(home, a, r, hdg)
+            items.append(dict(cmd=16, frame=6, p=(0, 0, 0, 0), lat=la, lon=lo, alt=alt))
+    first_wp, last_cruise = 2, len(items) - 1
+    land_alt = min(alt, max(15.0, approach * math.tan(math.radians(5))))
+    la, lo = _offset(home, -approach, 0, hdg)
+    items.append(dict(cmd=16, frame=6, p=(0, 0, 0, 0), lat=la, lon=lo, alt=land_alt))
+    items.append(dict(cmd=21, frame=6, p=(0, 0, 0, 0), lat=lat0, lon=lon0, alt=0.0))
+    land_seq = len(items) - 1
+    (work / "mission.json").write_text(json.dumps(items, indent=1), encoding="utf-8")
+    values.update(alt_target_m=alt, cruise_target_mps=cruise, speedup=speedup,
+                  waypoints_total=len(items) - 2)
+    files = ["defaults.parm", "sitl.log", "sitl_command.json", "statustext.log", "mission.json"] + \
+        (["plane.json"] if (work / "plane.json").exists() else [])
+    head = f"ArduPlane SITL {model}"
+    with Sitl("sitl_plane", work, model, params, home, speedup) as sitl:
+        try:
+            s = _startup(sitl, float(inp.get("wall_budget_s", 600)), "rc")
+            log_txt = _tail(work / "sitl.log", 4000)
+            values["coeffs_loaded"] = 1.0 if "Loaded plane aero coefficients" in log_txt else 0.0
+            if (work / "plane.json").exists() and not values["coeffs_loaded"]:
+                return _unknown(head, ["SITL did not report loading plane.json"], values, files)
+            if not s.wait_ekf(1 | 2 | 4 | 16 | 32):
+                return _unknown(head, ["EKF never reported a GPS position (90 s)", *s.prearm()[-5:]],
+                                values, files)
+            if not s.upload_mission(items):
+                return _unknown(head, ["mission upload refused", *s.alerts()[-5:]], values, files)
+            if not s.set_mode(10):                                 # AUTO
+                return _unknown(head, ["AUTO refused", *s.alerts()[-5:]], values, files)
+            if not s.wait(lambda: math.isfinite(s.north), 10, "pos"):
+                return _unknown(head, ["no local position"], values, files)
+            n0, e0 = s.north, s.east
+            if not s.arm():
+                return _unknown(head, ["could not arm (pre-arm checks)", *s.prearm()[-6:]], values, files)
+            mah0, ej0 = s.mah, s.energy_hj
+            s.recording = True
+            t_arm = s.t_ms / 1000.0
+            if not s.wait(lambda: s.alt > 1.5, 60, "liftoff"):
+                return _unknown(head, ["no lift-off in 60 s (thrust or rotation speed too low)",
+                                       *s.alerts()[-5:]], values, files)
+            values["ground_roll_m"] = math.hypot(s.north - n0, s.east - e0)
+            values["liftoff_time_s"] = s.t_ms / 1000.0 - t_arm
+            values["liftoff_airspeed_mps"] = s.airspeed
+            if not s.wait(lambda: s.mission_seq >= first_wp, alt / 1.0 + 60, "climb"):
+                return _unknown(head, [f"takeoff to {alt:g} m not completed",
+                                       *s.alerts()[-5:]], values, files)
+            values["time_to_alt_s"] = s.t_ms / 1000.0 - t_arm
+            leg_s = (2 * (length + approach) * laps + 2 * width * laps + approach) / max(cruise * 0.5, 3)
+            if not s.wait(lambda: s.mission_seq >= land_seq, leg_s + 120, "circuit"):
+                values["waypoints_reached"] = max(0, s.mission_seq - 1)
+                return _unknown(head, ["circuit not completed", *s.alerts()[-5:]], values, files)
+            t_land = s.t_ms / 1000.0
+            n_txt = len(s.texts)
+
+            def hit() -> Optional[float]:
+                for _, _, txt in s.texts[n_txt:]:
+                    mm = re.search(r"SIM Hit ground at ([0-9.]+) m/s", txt)
+                    if mm:
+                        return float(mm.group(1))
+                return None
+            touched = s.wait(lambda: hit() is not None or not s.armed, 150, "touchdown")
+            values["waypoints_reached"] = len(items) - 2
+            values["landing_time_s"] = s.t_ms / 1000.0 - t_land
+            if touched:
+                values["touchdown_sink_mps"] = hit() if hit() is not None else math.nan
+                h = math.radians(hdg)
+                dn, de = s.north - n0, s.east - e0
+                values["touchdown_distance_m"] = math.hypot(dn, de)
+                values["touchdown_along_m"] = dn * math.cos(h) + de * math.sin(h)
+                values["touchdown_lateral_m"] = -dn * math.sin(h) + de * math.cos(h)
+                tn, te = s.north, s.east
+                # SITL's plane has no brakes: it rolls on at a few m/s. Rollout = until it is
+                # slower than 5 m/s (taxi speed), then the pilot disarms on the ground
+                s.wait(lambda: s.groundspeed < 5.0 or not s.armed, 60, "rollout")
+                values["rollout_m"] = math.hypot(s.north - tn, s.east - te)
+                if s.armed and abs(s.alt) < 1.5:
+                    s.command(400, 0, 21196)                    # disarm (forced: on the ground)
+                    s.wait(lambda: not s.armed, 5, "disarm")
+            s.sleep_sim(1)
+            values["landed_disarmed"] = 1.0 if (touched and not s.armed and abs(s.alt) < 1.5) else 0.0
+            # the climb-out ends with a zoom above the take-off altitude: reported apart, the
+            # cruise window starts on the second leg
+            climb = [x["alt"] for x in s.samples if x["seq"] <= first_wp]
+            values["takeoff_overshoot_m"] = max(0.0, max(climb, default=alt) - alt)
+            cr = [x for x in s.samples if first_wp < x["seq"] <= last_cruise and x["t"] > t_arm]
+            err = [x["alt"] - alt for x in cr]
+            mean, rms, mx = _stats(err)
+            values.update(cruise_alt_mean_error_m=mean, cruise_alt_rms_error_m=rms,
+                          cruise_alt_max_error_m=mx)
+            asp = [x["as"] for x in cr if math.isfinite(x["as"])]
+            values["cruise_airspeed_mps"] = sum(asp) / len(asp) if asp else math.nan
+            values["min_airspeed_airborne_mps"] = min((x["as"] for x in s.samples
+                                                       if x["alt"] > 3 and math.isfinite(x["as"])),
+                                                      default=math.nan)
+            thr = [x["thr"] for x in cr if math.isfinite(x["thr"])]
+            thr_m = sum(thr) / len(thr) if thr else math.nan
+            values["cruise_throttle"] = thr_m                 # output 0..1 of full SITL throttle
+            values["cruise_thrust_fraction"] = thr_m * 100.0 / thr_cap if thr_cap else math.nan
+            air = [x for x in s.samples if x["alt"] > 1.5]
+            values["max_bank_deg"] = max((abs(math.degrees(x["roll"])) for x in air), default=math.nan)
+            values["max_pitch_deg"] = max((abs(math.degrees(x["pitch"])) for x in air), default=math.nan)
+            values["flight_time_s"] = t_land - t_arm + values["landing_time_s"]
+            if math.isfinite(s.mah) and math.isfinite(mah0):
+                values["sitl_battery_consumed_mAh"] = s.mah - mah0
+            # the aircraft's own thrust and power at cruise. Similarity: SITL thrust is
+            # throttle * m_sitl g / 0.7, the real one the same over the real mass. Power of a ducted
+            # fan at flight speed V (momentum theory): T = rho A Ve (Ve - V),
+            # P = rho A Ve (Ve^2 - V^2) / (2 eta); inlet losses not included (see the `edf` kind)
+            m_real = float(ac_mass) if ac_mass else PLANE_MASS_KG
+            if math.isfinite(thr_m):
+                t_c = thr_m * m_real * 9.80665 / PLANE_HOVER_THR
+                values["cruise_thrust_N"] = t_c
+                a_e = _num(inp, "edf_exit_area_m2", 0, 0, 1)
+                eta = _num(inp, "edf_efficiency", 0.55, 0.1, 1)
+                v = values["cruise_airspeed_mps"]
+                if a_e and math.isfinite(v) and t_c > 0:
+                    rho = 1.225
+                    ve = (v + math.sqrt(v * v + 4 * t_c / (rho * a_e))) / 2
+                    p_c = rho * a_e * ve * (ve * ve - v * v) / (2 * eta)
+                    values["cruise_exit_velocity_mps"] = ve
+                    values["cruise_power_W_est"] = p_c
+                    wh = _num(inp, "battery_Wh", 0, 0, 5000)
+                    if wh:
+                        values["cruise_endurance_min_est"] = 0.8 * wh / p_c * 60.0
+            alerts = s.alerts()
+            values["prearm_messages"] = s.prearm()[-8:]
+            values["n_alerts"] = len(alerts)
+            values["alerts"] = alerts[-15:]
+            _save_samples(work, s.samples, files)
+            sitl.audit(force=True)
+            if sitl.violation:
+                raise PermissionError(sitl.violation)
+        except PermissionError as e:
+            return _unknown(head, [str(e)], {}, files)
+    head += (f": lift-off after {values['ground_roll_m']:.0f} m at {values['liftoff_airspeed_mps']:.1f} m/s, "
+             f"{values['waypoints_reached']}/{values['waypoints_total']} waypoints, cruise "
+             f"{values['cruise_airspeed_mps']:.1f} m/s at {values['cruise_thrust_fraction'] * 100:.0f} % thrust, "
+             f"altitude error rms {values['cruise_alt_rms_error_m']:.1f} m, bank max "
+             f"{values['max_bank_deg']:.0f} deg, "
+             + (f"touchdown {values['touchdown_along_m']:+.0f} m along / {values['touchdown_lateral_m']:+.1f} m "
+                f"across the start point at {values['touchdown_sink_mps']:.2f} m/s sink, "
+                if "touchdown_along_m" in values else "")
+             + ("landed and disarmed" if values["landed_disarmed"] else "LANDING NOT CONFIRMED"))
+    if values["n_alerts"]:
+        notes.append(f"{values['n_alerts']} autopilot warnings (values.alerts)")
+    notes.append("SITL built-in plane physics (runway take-off, constant thrust with speed: an EDF "
+                 "loses thrust as it speeds up, so climb and top speed are optimistic); "
+                 "control derivatives are SITL's, not the aircraft's; simulated seconds")
+    return result(values, inp.get("limits"), head, files, notes)
+
+
 def run(kind: str, inp: Dict[str, Any], work: Path) -> Dict[str, Any]:
     _refuse_links(inp)
     work = Path(work).resolve()
@@ -873,6 +1197,8 @@ def run(kind: str, inp: Dict[str, Any], work: Path) -> Dict[str, Any]:
         return _run_sub(inp, work)
     if kind == "sitl_rover":
         return _run_rover(inp, work)
+    if kind == "sitl_plane":
+        return _run_plane(inp, work)
     raise ValueError(f"unknown kind {kind!r}")
 
 
@@ -887,7 +1213,10 @@ def run(kind: str, inp: Dict[str, Any], work: Path) -> Dict[str, Any]:
 # - a 5 kg hexa-X frame file with hoverThrOut 0.5: the generated frame.json must reach the model
 #   (same definition, same 10 % band);
 # - landed_disarmed 1: LAND must end on the ground with the motors disarmed (exact);
-# - rover stop error < 2 m: WP_RADIUS = 2 m is the autopilot's own "target reached" radius.
+# - rover stop error < 2 m: WP_RADIUS = 2 m is the autopilot's own "target reached" radius;
+# - plane: the AUTO mission must end landed and disarmed (exact), every waypoint flown (exact),
+#   cruise altitude mean error within 3 m (acceptance band of the test plan, TECS holds +/- 1..2 m
+#   in still air); with a coefficient file SITL must say it loaded it (exact).
 REFERENCES = [
     {"name": "copter_hover_10m", "kind": "sitl_copter",
      "inp": {"model": "quad", "alt_m": 10, "hover_s": 15, "speedup": 5,
@@ -906,4 +1235,11 @@ REFERENCES = [
     {"name": "rover_guided_50m", "kind": "sitl_rover",
      "inp": {"north_m": 50, "east_m": 0, "speed_mps": 5, "speedup": 5},
      "expect": {"stop_error_m": [0.0, 2.0]}},
+    {"name": "plane_circuit_stock", "kind": "sitl_plane",
+     "inp": {"alt_m": 40, "cruise_mps": 20, "speedup": 5},
+     "expect": {"landed_disarmed": [1.0, 0.0], "waypoints_reached": [5.0, 0.0],
+                "cruise_alt_mean_error_m": [0.0, 3.0]}},
+    {"name": "plane_coefficient_file", "kind": "sitl_plane",
+     "inp": {"alt_m": 40, "cruise_mps": 20, "speedup": 5, "aero": {"c_drag_p": 0.02}},
+     "expect": {"coeffs_loaded": [1.0, 0.0], "landed_disarmed": [1.0, 0.0]}},
 ]

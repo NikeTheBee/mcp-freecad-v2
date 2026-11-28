@@ -354,7 +354,8 @@ def auto_calibrate(project_dir: Path, name: str, quantity: str, param: str, note
 _SAFETY = {   # kinds or input keys -> precautions for the REAL test (FEUILLE_DE_ROUTE §10.2)
     "pressure": "Pressure test: hydrostatic (water), never pneumatic; shield and distance; "
                 "relief valve set below the test pressure; nobody in line with closures.",
-    "rotation": "Rotating parts: guard in place, hands off, stop at the rated speed first.",
+    "rotation": "Rotating parts: guard in place, hands off, nobody in the plane of the rotor (a "
+                "blade lets go along it), stop at the rated speed first.",
     "marine": "Underwater: SELV only, IP68 connectors, insulation monitor or RCD on any shore "
               "cable; pressure test beyond the maximum depth BEFORE going in the water.",
     "elec": "Electrical: SELV (<= 60 V DC) unless a qualified person is present; fuse near the "
@@ -388,7 +389,7 @@ def test_plan(project_dir: Path, name: str, predicted: Optional[Dict[str, str]] 
     hazards = ["load"]
     if '"pressure"' in text or "pressure_hull" in keys:
         hazards.append("pressure")
-    if '"rotation"' in text or "thruster" in keys:
+    if '"rotation"' in text or keys & {"thruster", "edf", "dc_motor", "motor_fit", "rotor_dynamics"}:
         hazards.append("rotation")
     if keys & {"hydrostatics", "added_mass", "thruster", "pressure_hull", "tether_static"}:
         hazards.append("marine")

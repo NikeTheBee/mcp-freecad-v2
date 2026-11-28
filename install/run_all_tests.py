@@ -138,7 +138,13 @@ _SKIP_LINE = re.compile(r"^[A-Z0-9_]+_SKIP\b.*$", re.MULTILINE)
 _RUN_TMP = None
 
 
+# the reference cases run every fast adapter through the real runner (Renode, VSPAERO, pyCycle...):
+# several minutes on their own, more while the machine is busy
+_SLOW = {"refcases_test.py": 900}
+
+
 def _run(cmd, env=None) -> tuple[bool, str]:
+    limit = max([v for k, v in _SLOW.items() if any(str(c).endswith(k) for c in cmd)] or [300])
     try:
         env = dict(os.environ if env is None else env)
         if _RUN_TMP is not None:
@@ -146,7 +152,7 @@ def _run(cmd, env=None) -> tuple[bool, str]:
         # freecadcmd writes in the ANSI code page whatever PYTHONUTF8 says; a strict
         # decode lost the WHOLE output on the first "Ø" (sentinels are ASCII).
         p = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
-                           errors="replace", timeout=300, env=env)
+                           errors="replace", timeout=limit, env=env)
         return p.returncode == 0, (p.stdout or "") + (p.stderr or "")
     except Exception as e:  # noqa: BLE001
         return False, f"<runner error: {e}>"
