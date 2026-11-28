@@ -58,6 +58,9 @@ KINDS = {
                       "doc": "RocketPy 6-DOF to apogee: apogee, max v/a, rail exit v, static margin"},
     "fluid_props": {"timeout": 60,
                     "doc": "CoolProp: density, viscosity, cp, conductivity, saturation of a fluid at T, p"},
+    "control_surface": {"timeout": 60,
+                        "doc": "plain flap / aileron / elevator: Glauert thin-airfoil effectiveness, hinge "
+                               "moment derivatives, worst-case hinge moment and servo torque"},
 }
 
 G0 = 9.80665                       # standard gravity, m/s^2
@@ -819,6 +822,76 @@ def _run_fluid_props(inp) -> Dict[str, Any]:
 
 
 # ================================================================== dispatch
+# ================================================================== control surface (thin airfoil)
+def _glauert_flap(E: float) -> Dict[str, float]:
+    """Thin-airfoil theory (Glauert) of a plain flap of chord ratio E = c_f / c, hinge on the
+    camber line at x/c = 1 - E, hinge gap sealed. Closed-form loading of a flap deflection:
+      dCp_delta(theta) = 4/pi [ (pi - th) cot(theta/2) + ln| sin((theta+th)/2) / sin((theta-th)/2) | ]
+    with cos(th) = 2E - 1; the angle of attack loads dCp_alpha = 4 cot(theta/2). The hinge moment
+    coefficient Ch = H / (q c_f^2) per unit span (positive = trailing edge down) is the moment of
+    the loading aft of the hinge, integrated numerically."""
+    from scipy import integrate
+    th = math.acos(max(-1.0, min(1.0, 2 * E - 1)))
+    xh = 1.0 - E
+
+    def x(t):
+        return (1 - math.cos(t)) / 2
+
+    def dx(t):
+        return math.sin(t) / 2
+
+    def dcp_a(t):
+        return 4 * (1 + math.cos(t)) / math.sin(t)
+
+    def dcp_d(t):
+        return 4 / math.pi * ((math.pi - th) * (1 + math.cos(t)) / math.sin(t)
+                              + math.log(abs(math.sin((t + th) / 2) / math.sin((t - th) / 2))))
+    lo = th if E < 1 else 1e-12
+    ch_a = -integrate.quad(lambda t: dcp_a(t) * (x(t) - xh) * dx(t), lo, math.pi, limit=400)[0] / E ** 2
+    ch_d = -integrate.quad(lambda t: dcp_d(t) * (x(t) - xh) * dx(t), lo, math.pi, limit=400)[0] / E ** 2
+    tau = 1 - (th - math.sin(th)) / math.pi
+    return {"tau": tau, "Cl_delta_per_rad": 2 * math.pi * tau, "Ch_alpha_per_rad": ch_a,
+            "Ch_delta_per_rad": ch_d}
+
+
+def _run_control_surface(inp) -> Dict[str, Any]:
+    """Hinge moment and servo torque of a plain control surface, worst case (top speed, largest
+    deflection, largest local angle of attack, same signs). Thin-airfoil values are an upper bound
+    of the real ones (the boundary layer unloads the trailing edge); `viscous_factor` (1.0) can
+    apply a sourced reduction. Horn / servo arm ratio multiplies the torque the servo sees down."""
+    E = _need(inp, "flap_chord_ratio")
+    if not 0.05 <= E <= 1.0:
+        raise ValueError("flap_chord_ratio: 0.05 .. 1 (c_f / c)")
+    c = _need(inp, "chord_m")
+    b_f = _need(inp, "flap_span_m")
+    v = _need(inp, "speed_m_s")
+    rho = _num(inp, "rho_kg_m3", 1.225, positive=True)
+    d_max = math.radians(_num(inp, "deflection_deg", 20.0, positive=True))
+    a_max = math.radians(_num(inp, "alpha_deg", 5.0) or 0.0)
+    kv = _num(inp, "viscous_factor", 1.0, positive=True)
+    ratio = _num(inp, "horn_to_arm_ratio", 1.0, positive=True)
+    g = _glauert_flap(E)
+    q = 0.5 * rho * v * v
+    cf = E * c
+    ch = kv * (abs(g["Ch_delta_per_rad"]) * d_max + abs(g["Ch_alpha_per_rad"]) * abs(a_max))
+    h = ch * q * cf * cf * b_f                        # N m on the hinge line
+    t_servo = h / ratio
+    vals: Dict[str, Any] = {k: round(val, 6) for k, val in g.items()}
+    vals.update(dynamic_pressure_Pa=round(q, 3), flap_chord_m=round(cf, 5), flap_area_m2=round(cf * b_f, 6),
+                hinge_coefficient=round(ch, 5), hinge_moment_Nm=round(h, 6),
+                servo_torque_Nm=round(t_servo, 6), servo_torque_kgcm=round(t_servo / 0.0980665, 4),
+                delta_Cl_section=round(g["Cl_delta_per_rad"] * d_max, 5))
+    st = _num(inp, "servo_stall_torque_kgcm", None, positive=True)
+    if st:
+        vals["servo_margin"] = round(st / vals["servo_torque_kgcm"], 4)
+    head = (f"control surface c_f/c {E:g}: tau {g['tau']:.3f}, Ch_delta {g['Ch_delta_per_rad']:.3f}/rad, "
+            f"Ch_alpha {g['Ch_alpha_per_rad']:.3f}/rad; at {v:g} m/s, {math.degrees(d_max):g} deg: hinge "
+            f"{h:.4f} N m, servo {vals['servo_torque_kgcm']:.3f} kg cm (horn/arm {ratio:g})")
+    notes = ["thin-airfoil theory, sealed gap, 2-D: an upper bound of the real hinge moment (viscous "
+             "and 3-D effects lower it); unsealed gaps, horn balance and tabs are not modelled"]
+    return result(vals, inp.get("limits"), head, notes=notes)
+
+
 def run(kind: str, inp: Dict[str, Any], work: Path) -> Dict[str, Any]:
     inp = dict(inp)
     if kind == "airfoil":
@@ -835,6 +908,8 @@ def run(kind: str, inp: Dict[str, Any], work: Path) -> Dict[str, Any]:
         return _run_rocket_flight(inp, work)
     if kind == "fluid_props":
         return _run_fluid_props(inp)
+    if kind == "control_surface":
+        return _run_control_surface(inp)
     raise ValueError(f"unknown kind {kind!r} for the aero adapter: {sorted(KINDS)}")
 
 
@@ -946,5 +1021,19 @@ REFERENCES = [
         "name": "water_psat_100C", "kind": "fluid_props",
         "inp": {"fluid": "Water", "T_C": 100.0, "p_bar": 1.01325},
         "expect": {"p_sat_bar": [1.01418, 1e-4]},
+    },
+    {   # Glauert flap effectiveness, closed form: tau = 1 - (th - sin th)/pi, cos th = 2E - 1;
+        # E 0.25 -> th = 2 pi / 3, tau = 1/3 + sqrt(3)/(2 pi) (Abbott & von Doenhoff, Theory of Wing
+        # Sections, sec. 8.2); its lift Cl_delta = 2 pi tau checks the integrated loading
+        "name": "flap_effectiveness_glauert", "kind": "control_surface",
+        "inp": {"flap_chord_ratio": 0.25, "chord_m": 0.2, "flap_span_m": 0.3, "speed_m_s": 20.0},
+        "expect": {"tau": [1 / 3 + math.sqrt(3) / (2 * math.pi), 1e-6],
+                   "Cl_delta_per_rad": [2 * math.pi * (1 / 3 + math.sqrt(3) / (2 * math.pi)), 1e-6]},
+    },
+    {   # a flap as long as the chord is the whole plate hinged at its leading edge: Ch is the
+        # thin-airfoil moment about the leading edge, Cm_LE = -Cl/4 = -pi/2 per rad, for alpha and delta
+        "name": "full_chord_flap_leading_edge_moment", "kind": "control_surface",
+        "inp": {"flap_chord_ratio": 1.0, "chord_m": 0.2, "flap_span_m": 0.3, "speed_m_s": 20.0},
+        "expect": {"Ch_alpha_per_rad": [-math.pi / 2, 1e-6], "Ch_delta_per_rad": [-math.pi / 2, 1e-6]},
     },
 ]

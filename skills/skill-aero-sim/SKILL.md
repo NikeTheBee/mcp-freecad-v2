@@ -18,6 +18,7 @@ No geometry: every input is a number. Offline (no weather, no download). Pass `l
 | `combustion` | Cantera equilibrium + expansion | `fuel`, `oxidizer` (name or {species: moles}), `of_ratio` or `phi`, `pc_bar`, `area_ratio` and/or `pa_bar`, `mechanism` (nasa / gri30 / h2o2), `h_fuel_kJ_mol`, `h_ox_kJ_mol`, or `reactants` [{name, moles or mass, T_K, h_kJ_mol}] | `T_chamber_K`, `M_chamber_g_mol`, `gamma_s_equilibrium`, `c_star_eq_m_s`, `Isp_vac_eq_s`, `Isp_eq_s`, and the `_frozen` values |
 | `rocket_flight` | RocketPy 6-DOF to apogee | `thrust_curve` [[t, N]...], `propellant_mass_kg`, `radius_m`, `dry_mass_kg` (without motor), `cg_m`, `inertia_kg_m2`, `cd` or `drag_curve` [[mach, cd]...], `nose` {length_m, kind, tip_position_m}, `fins` {n, root_chord_m, tip_chord_m, span_m, position_m}, `rail_length_m`, `inclination_deg` (85) | `apogee_m` (above ground), `max_speed_m_s`, `max_acceleration_g`, `rail_exit_velocity_m_s`, `static_margin_rail_exit_cal` |
 | `fluid_props` | CoolProp | `fluid` (Water, Nitrogen, NitrousOxide...), `T_C` or `T_K`, `p_bar` | `density_kg_m3`, `viscosity_Pa_s`, `cp_J_kgK`, `p_sat_bar`, `T_sat_K` |
+| `control_surface` | Glauert thin-airfoil theory (closed-form flap loading) | `flap_chord_ratio` (c_f/c), `chord_m` (local mean), `flap_span_m`, `speed_m_s` (top speed), `deflection_deg` (20), `alpha_deg` (5, local), `horn_to_arm_ratio`, `servo_stall_torque_kgcm`, `viscous_factor` (1) | `tau`, `Cl_delta_per_rad`, `Ch_alpha_per_rad`, `Ch_delta_per_rad`, `hinge_moment_Nm`, `servo_torque_kgcm`, `servo_margin` |
 
 Rocket positions are in m **from the tail** (nozzle exit = 0). Nose `tip_position_m` = rocket length.
 Fin `position_m` = leading edge of the root chord.
@@ -57,3 +58,11 @@ hardware.
 | Argon through the Cantera expansion: c*, CF_vac 1.5, Isp_vac | exact | 0.2 % |
 | RocketPy, vertical flight, no drag, constant thrust: apogee, v at burnout, a max | closed form | 0.5 % |
 | Water at 25 degC: 997.05 kg/m3, 890.0 uPa s; p_sat at 100 degC 1.01418 bar | IAPWS-95/2008 | 1e-4 |
+
+### Control surfaces and servos
+`control_surface` sizes a servo: worst case = top speed, full deflection and the largest local angle
+of attack adding up. Thin-airfoil hinge moments are an upper bound (the boundary layer unloads the
+trailing edge): keep `viscous_factor` 1 unless a sourced test says otherwise, and ask a servo
+margin of 2. A horn / servo-arm ratio r divides the torque by r and multiplies the servo travel by r.
+Validated on Glauert's closed form (tau at c_f/c 0.25 = 1/3 + sqrt(3)/(2 pi)) and on the full-chord
+flap, which is the plate's leading-edge moment (-pi/2 per rad).
